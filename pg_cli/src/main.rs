@@ -1,14 +1,33 @@
 use std::path::PathBuf;
 use std::time::Instant;
+use clap::Parser;
+use simplelog::LevelFilter;
 use pg_graph::{Owner, ParityGame};
 use pg_graph::solvers::register_game::RegisterGame;
 use pg_graph::solvers::small_progress::SmallProgressSolver;
 use pg_parser::parse_pg;
+use crate::args::SubCommands;
 
+mod args;
+mod utils;
 
 fn main() -> eyre::Result<()> {
-    // simplelog::SimpleLogger::init(LevelFilter::Trace, Default::default())?;
-    let input = std::fs::read_to_string(example_dir().join("amba_decomposed_arbiter_10.tlsf.ehoa.pg")).unwrap();
+    let args = args::ClapArgs::parse();
+    
+    let now = std::time::Instant::now();
+    
+    match args.commands {
+        SubCommands::Solve(solv) => {
+            solv.run()?;
+        }
+        SubCommands::Convert(conv) => {
+            conv.run()?;
+        }
+    }
+    
+    println!("Runtime: {:?}", now.elapsed());
+    
+    let input = std::fs::read_to_string(example_dir().join("amba_decomposed_arbiter_6.tlsf.ehoa.pg")).unwrap();
     let pg = parse_pg(&mut input.as_str()).unwrap();
     let game = ParityGame::new(pg).unwrap();
     println!("Memory Usage: {:#?}", memory_stats::memory_stats());
