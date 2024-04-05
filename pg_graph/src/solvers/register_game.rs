@@ -41,6 +41,7 @@ impl RegisterGame {
     /// The registers will be controlled by `controller`.
     ///
     /// TODO: Consider making `k` a const-generic
+    #[tracing::instrument(name="Construct Register Game", skip(game))]
     pub fn construct(game: crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
         let empty_registers = eco_vec!(0; k as usize);
         
@@ -184,7 +185,8 @@ impl RegisterGame {
         
         output.into_iter().flatten().collect()
     }
-    
+
+    #[tracing::instrument(name="Convert to Parity Game", skip(self))]
     pub fn to_game(&self) -> eyre::Result<crate::parity_game::ParityGame> {
         let mut parsed_game = vec![];
 

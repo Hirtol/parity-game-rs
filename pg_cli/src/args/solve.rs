@@ -29,6 +29,20 @@ pub enum Solver {
     }
 }
 
+macro_rules! timed_solve {
+    ($to_run:expr) => {
+        timed_solve!($to_run, "Solving done")
+    };
+    ($to_run:expr, $text:expr) => {
+        {
+            let now = std::time::Instant::now();
+            let out = $to_run;
+            tracing::info!(elapsed=?now.elapsed(), $text);
+            out
+        }
+    };
+}
+
 impl SolveCommand {
     #[tracing::instrument(name="Solve Parity Game",skip(self), fields(path=?self.game_path))]
     pub fn run(self) -> eyre::Result<()> {
@@ -42,18 +56,18 @@ impl SolveCommand {
             Solver::Spm => {
                 let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(parity_game);
 
-                solver.run()
+                timed_solve!(solver.run())
             }
             Solver::RegisterGameSpm{
                 k
             } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog10()) as u8;
-                tracing::debug!(k, "Running with");
-                let register_game = RegisterGame::construct(parity_game, k, Owner::Even);
+                tracing::debug!(k, "Constructing with register index");
+                let register_game = timed_solve!(RegisterGame::construct(parity_game, k, Owner::Even), "Constructed Register Game");
                 let game = register_game.to_game()?;
                 let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(game);
 
-                let solution = solver.run();
+                let solution = timed_solve!(solver.run());
 
                 register_game.project_winners_original(&solution)
             }
@@ -74,4 +88,3 @@ impl SolveCommand {
         Ok(())
     }
 }
-

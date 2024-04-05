@@ -53,6 +53,7 @@ impl SmallProgressSolver {
     }
 
     /// Run the solver and return a Vec corresponding to each [crate::parity_game::Vertex] indicating who wins.
+    #[tracing::instrument(name="Run SPM", skip(self))]
     pub fn run(&mut self) -> Vec<Owner> {
         let mut queue = VecDeque::from((0..self.game.vertex_count()).map(VertexId::new).collect_vec());
         
