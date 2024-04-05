@@ -48,7 +48,6 @@ impl SolveCommand {
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
 
-        tracing::info!(size=parity_game.vertex_count(), "Loaded parity game");
         let solver = self.solver.unwrap_or(Solver::Spm);
         tracing::info!(?solver, "Using solver");
 
