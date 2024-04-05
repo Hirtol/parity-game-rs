@@ -1,0 +1,15 @@
+%% Vertex based priorities register game example representing `rg_vertex_example.mmd`
+%% Each node has text which represents the following (Priority, OriginalVertexPriority, Register State, next move is move (1) or register reset (0))
+flowchart TD
+    A(1,A2,2,0) -->|E_skip| B
+    A -->|E_r1| C
+    B(1,A2,2,1) -->|E_move| Z
+    C(2,A2,0,1) -->|E_move| Q
+    Z(1,B1,2,0) -->|E_skip| Y
+    Z -->|E_r1| X
+    Y{{1,B1,2,1}} -->|E_move| A
+    X{{2,B1,0,1}} -->|E_move| A
+    Q(1,B1,1,0) -->|E_skip| K
+    Q -->|E_r1| J
+    K{{1,B1,1,1}} -->|E_move| A
+    J{{3,B1,0,1}} -->|E_move| A

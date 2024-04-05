@@ -1,0 +1,11 @@
+[package]
+name = "pg_parser"
+version = "0.1.0"
+edition = "2021"
+description = "Parity game solver"
+repository = "https://github.com/Hirtol/parity-game-rs"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+eyre.workspace = true
+winnow = "0.6.5"

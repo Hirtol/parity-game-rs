@@ -1,0 +1,33 @@
+[package]
+name = "pg_graph"
+version = "0.1.0"
+edition = "2021"
+description = "Parity game solver"
+repository = "https://github.com/Hirtol/parity-game-rs"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+eyre.workspace = true
+thiserror.workspace = true
+
+aquamarine = "0.5.0"
+ecow = "0.2.2"
+
+log = "0.4.21"
+itertools = "0.12.1"
+
+petgraph = "0.6.4"
+
+pg_parser = { path = "../pg_parser"}
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+divan = "0.1.14"
+
+[[bench]]
+name = "solvers"
+harness = false
+
+[[bench]]
+name = "divan"
+harness = false

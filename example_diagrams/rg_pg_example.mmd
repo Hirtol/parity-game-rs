@@ -1,0 +1,25 @@
+%% 1-Register game expansion based on the `rg_example.mmd`
+%% Odd should win this, even though the underlying PG will be won by Even
+%% Round owned by even, Hexagon owned by odd
+flowchart TD
+    C(A_c_even, 0, 0) -->|2, E_r1| A
+    C -->|1, E_skip| A
+    A{{A_a, 0, 1}} -->|1, E_move| D
+    A -->|1, E_move| C
+    G(A_g_even, 2, 0) -->|1, E_skip| K
+    G -->|2, E_r1| A
+    K{{A_k, 2, 1}} -->|1, E_move| G
+    K -->|1, E_move| J
+    D(B_d_even, 1, 0) -->|1, E_skip| E
+    D -->|3, E_r1| F
+    E{{B_e, 1, 1}} -->|1, E_move| D
+    E -->|1, E_move| G
+    E -->|1, E_move| D
+    F{{B_f, 0, 1}} -->|1, E_move| H
+    F -->|1, E_move| G
+    H(B_h_even, 0, 0) -->|1, E_skip| F
+    H -->|2, E_r1| F
+    J(B_j_even, 2, 0) -->|1, E_skip| I
+    J -->|2, E_r1| F
+    I{{B_i, 2, 1}} -->|1, E_move| J
+    I -->|1, E_move| G

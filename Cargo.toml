@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["pg_*"]
+default-members = ["pg_cli"]
+
+[workspace.dependencies]
+eyre = "0.6"
+thiserror = "1"
+
+# Build dependencies with full release optimizations in debug builds since they'll rarely change
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+incremental = true
+debug = 0
+
+
