@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use itertools::Itertools;
-use petgraph::Direction;
 use crate::Owner;
 
 
@@ -88,7 +87,7 @@ impl SmallProgressSolver {
         let existing_prog = self.progress_measures.get_measure(vertex_id)?;
         let prog_values = self.game.edges(vertex_id).flat_map(|other_id| {
             let next = self.prog(vertex_id, other_id, for_player);
-            log::trace!("  - From: {} To: {} ({:?}) with value `{:?}`", vertex_id.index(), other_id.index(), self.game.label(other_id), next);
+            tracing::trace!("  - From: {} To: {} ({:?}) with value `{:?}`", vertex_id.index(), other_id.index(), self.game.label(other_id), next);
             next
         });
         
@@ -101,11 +100,11 @@ impl SmallProgressSolver {
         
         // Max(self, new)
         if &possible_measure > existing_prog {
-            log::trace!("Vertex: {} ({:?}) from measure: `{:?}` to: `{:?}`", vertex_id.index(), self.game.label(vertex_id), existing_prog, possible_measure);
+            tracing::trace!("Vertex: {} ({:?}) from measure: `{:?}` to: `{:?}`", vertex_id.index(), self.game.label(vertex_id), existing_prog, possible_measure);
             self.progress_measures.set_measure(vertex_id, possible_measure);
             Some(true)
         } else {
-            log::trace!("Vertex: {} ({:?}) keeps measure: `{:?}` instead of: `{:?}`", vertex_id.index(), self.game.label(vertex_id), existing_prog, possible_measure);
+            tracing::trace!("Vertex: {} ({:?}) keeps measure: `{:?}` instead of: `{:?}`", vertex_id.index(), self.game.label(vertex_id), existing_prog, possible_measure);
             Some(false)
         }
     }
@@ -116,7 +115,7 @@ impl SmallProgressSolver {
         let to_progress = self.progress_measures.get_measure(to)?;
         
         let next = to_progress.calculate_next(calculating_for, v_from.priority, from_progress, self.max_measure(calculating_for));
-        log::trace!("      * From: `{:?}` To: `{:?}` Next: `{:?}`", from_progress, to_progress, next);
+        tracing::trace!("      * From: `{:?}` To: `{:?}` Next: `{:?}`", from_progress, to_progress, next);
         
         Some(next)
     }

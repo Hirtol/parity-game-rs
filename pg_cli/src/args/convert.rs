@@ -34,7 +34,7 @@ pub enum ConversionGoal {
 }
 
 impl ConvertCommand {
-    #[tracing::instrument]
+    #[tracing::instrument(name="Convert Parity Game", skip(self), fields(path=?self.game_path, goal=?self.goal))]
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
         
@@ -54,6 +54,7 @@ impl ConvertCommand {
             }
             ConversionGoal::RegisterGame { k } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog10()) as u8;
+                let had_nodes = parity_game.vertex_count();
                 let register_game = RegisterGame::construct(parity_game, k, Owner::Even);
                 
                 if let Some(path) = self.mermaid_path {
@@ -65,6 +66,8 @@ impl ConvertCommand {
                 if let Some(path) = self.pg_path {
                     let game = register_game.to_game()?;
 
+                    tracing::debug!(from_vertex=had_nodes, to_vertex=game.vertex_count(), ratio=game.vertex_count() / had_nodes, "Converted from PG to RG PG");
+                    
                     std::fs::write(&path, game.to_pg())?;
                     
                     tracing::info!(?path, "Wrote PG graph to path")

@@ -22,7 +22,7 @@ pub enum Solver {
     #[clap(name = "rgspm")]
     RegisterGameSpm {
         /// Create a `k`-register-index game, upper bound for valid results is `1 + log(n)`
-        /// 
+        ///
         /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
         #[clap(short)]
         k: Option<u32>
@@ -30,37 +30,47 @@ pub enum Solver {
 }
 
 impl SolveCommand {
-    #[tracing::instrument]
+    #[tracing::instrument(name="Solve Parity Game",skip(self), fields(path=?self.game_path))]
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
-        
+
         tracing::info!(size=parity_game.vertex_count(), "Loaded parity game");
-        tracing::info!(?self.solver, "Using solver");
-        
-        let solution = match self.solver.unwrap_or(Solver::Spm) {
+        let solver = self.solver.unwrap_or(Solver::Spm);
+        tracing::info!(?solver, "Using solver");
+
+        let solution = match solver {
             Solver::Spm => {
                 let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(parity_game);
-                
+
                 solver.run()
             }
             Solver::RegisterGameSpm{
                 k
             } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog10()) as u8;
+                tracing::debug!(k, "Running with");
                 let register_game = RegisterGame::construct(parity_game, k, Owner::Even);
                 let game = register_game.to_game()?;
                 let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(game);
 
                 let solution = solver.run();
-                
+
                 register_game.project_winners_original(&solution)
             }
         };
-        
+
+        let (even_wins, odd_wins) = solution.iter().fold((0, 0), |acc, win| {
+            match win {
+                Owner::Even => (acc.0 + 1, acc.1),
+                Owner::Odd => (acc.0, acc.1 + 1)
+            }
+        });
+        tracing::info!(even_wins, odd_wins, "Results");
+
         if self.print_solution {
-            println!("Solution: {:?}", solution);
+            tracing::info!("Solution: {:?}", solution);
         }
-        
+
         Ok(())
     }
 }
