@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+
 use pg_graph::Owner;
 use pg_graph::solvers::register_game::RegisterGame;
 
@@ -61,9 +62,12 @@ impl SolveCommand {
                 k
             } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog10()) as u8;
+                let had_nodes = parity_game.vertex_count();
+                
                 tracing::debug!(k, "Constructing with register index");
                 let register_game = timed_solve!(RegisterGame::construct(parity_game, k, Owner::Even), "Constructed Register Game");
                 let game = register_game.to_game()?;
+                tracing::debug!(from_vertex=had_nodes, to_vertex=game.vertex_count(), ratio=game.vertex_count() / had_nodes, "Converted from PG to RG PG");
                 let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(game);
 
                 let solution = timed_solve!(solver.run());
