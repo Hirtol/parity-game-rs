@@ -13,6 +13,10 @@ pub struct SolveCommand {
     /// Whether to print which vertices are won by which player.
     #[clap(short)]
     print_solution: bool,
+    /// Export the solution to a Mermaid.js graph where the vertices are coloured according to their winner
+    /// Green = Even, Red = Odd
+    #[clap(short = 'm')]
+    solution_mermaid: Option<PathBuf>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -49,6 +53,7 @@ impl SolveCommand {
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
 
+        let mermaid_output = self.solution_mermaid.map(|out| (out, parity_game.to_mermaid()));
         let solver = self.solver.unwrap_or(Solver::Spm);
         tracing::info!(?solver, "Using solver");
 
@@ -86,6 +91,19 @@ impl SolveCommand {
 
         if self.print_solution {
             tracing::info!("Solution: {:?}", solution);
+        }
+
+        if let Some((out_path, mut mermaid)) = mermaid_output {
+            use std::fmt::Write;
+            for (v_id, winner) in solution.iter().enumerate() {
+                let fill = match winner {
+                    Owner::Even => "#013220",
+                    Owner::Odd => "#b10000"
+                };
+                writeln!(&mut mermaid, "style {v_id} fill:{fill}")?;
+            }
+
+            std::fs::write(out_path, mermaid)?;
         }
 
         Ok(())
