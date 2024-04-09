@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use pg_graph::Owner;
-use pg_graph::solvers::register_game::RegisterGame;
+use pg_graph::register_game::RegisterGame;
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {

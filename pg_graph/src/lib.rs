@@ -6,6 +6,7 @@ pub use parity_game::*;
 pub mod solvers;
 mod parity_game;
 mod datatypes;
+pub mod register_game;
 
 
 #[cfg(test)]
