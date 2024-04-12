@@ -6,11 +6,18 @@ description = "Parity game solver"
 repository = "https://github.com/Hirtol/parity-game-rs"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = []
+profiling-tracy = ["profiling/profile-with-tracy", "tracy-client"]
+
 [dependencies]
 eyre.workspace = true
 thiserror.workspace = true
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+tracy-client = { version = "0.17", features = ["enable"], optional = true }
+profiling = "1"
 
 clap = { version = "4.5", features = ["derive", "env"] }
 indicatif = "0.17.8"

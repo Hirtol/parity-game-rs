@@ -54,6 +54,7 @@ impl SmallProgressSolver {
 
     /// Run the solver and return a Vec corresponding to each [crate::parity_game::Vertex] indicating who wins.
     #[tracing::instrument(name="Run SPM", skip(self))]
+    #[profiling::function]
     pub fn run(&mut self) -> Vec<Owner> {
         let mut queue = VecDeque::from((0..self.game.vertex_count()).map(VertexId::new).collect_vec());
         
@@ -81,6 +82,7 @@ impl SmallProgressSolver {
     /// 
     /// * `true` if a change was made, and thus the fixed point has not yet been reached
     /// * `false` if no change was made, and therefore a fixed point _may_ have been reached.
+    #[profiling::function]
     fn lift(&mut self, vertex_id: VertexId, for_player: Owner) -> Option<bool> {
         let vertex = self.game.get(vertex_id)?;
         self.prog_count += 1;
@@ -109,7 +111,7 @@ impl SmallProgressSolver {
             Some(false)
         }
     }
-
+    
     fn prog(&self, from: VertexId, to: VertexId, calculating_for: Owner) -> Option<ProgressMeasure> {
         let v_from = self.game.get(from)?;
         let from_progress = self.progress_measures.get_measure(from)?;
@@ -200,7 +202,8 @@ impl ProgressMeasure {
             },
         }
     }
-    
+
+    #[profiling::function]
     #[inline]
     pub fn calculate_next(&self, calculate_for: Owner, incoming_priority: Priority, incoming_progress: &ProgressMeasure, max_prog: &[Progress]) -> ProgressMeasure {
         match self {

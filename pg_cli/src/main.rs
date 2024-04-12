@@ -11,6 +11,7 @@ mod args;
 mod utils;
 mod trace;
 
+#[profiling::function]
 fn main() -> eyre::Result<()> {
     let args = args::ClapArgs::parse();
     
