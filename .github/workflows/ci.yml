@@ -29,7 +29,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Compile tests
-        run: cargo nextest --all-features --workspace --no-run
+        run: cargo nextest run --all-features --workspace --no-run
       
       - name: Run tests
         run: cargo nextest run --all-features --workspace
