@@ -16,10 +16,10 @@ pub type Rank = u8;
 /// A Register Game is an expansion of the original parity game with a certain `k`-amount of registers.
 ///
 /// An expansion works as follows, given the below parity game (Diamond == [Owner::Odd], Round == [Owner::Even]):
-/// include_mmd!("example_diagrams/rg_example.mmd")
+/// include_mmd!("../example_diagrams/rg_example.mmd")
 ///
 /// Would be represented as the 1-Register Game:
-/// include_mmd!("example_diagrams/rg_pg_example.mmd")
+/// include_mmd!("../example_diagrams/rg_pg_example.mmd")
 ///
 /// Note that in the above example, whilst the original parity game has [Owner::Even] as the winner, the Register Game
 /// has [Owner::Odd]. You need at least a 2-Register Game (`1 + log_2(n=2) = 2`) to ensure the correct result.

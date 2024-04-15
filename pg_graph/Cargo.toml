@@ -17,8 +17,9 @@ tracing = { version = "0.1.40" }
 itertools = "0.12.1"
 
 petgraph = "0.6.4"
+oxidd = "0.6.0"
 
-pg_parser = { path = "../pg_parser"}
+pg_parser = { path = "../pg_parser" }
 profiling = "1"
 
 [dev-dependencies]
