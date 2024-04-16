@@ -9,10 +9,10 @@ pub fn parse_pg<'a>(input: &mut &'a str) -> winnow::PResult<Vec<Vertex<'a>>> {
         let _ = winnow::ascii::line_ending.parse_next(input)?;
     }
 
-    let vertexes: Vec<Vertex> =
+    let vertices: Vec<Vertex> =
         separated(0.., parse_node, winnow::ascii::line_ending).parse_next(input)?;
 
-    Ok(vertexes)
+    Ok(vertices)
 }
 
 fn parse_header(input: &mut &str) -> winnow::PResult<usize> {

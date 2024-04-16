@@ -9,6 +9,23 @@ pub enum Owner {
 }
 
 impl Owner {
+    /// Get the player associated with the parity of the given `priority`
+    pub fn from_priority(priority: Priority) -> Owner {
+        if priority % 2 == 0 {
+            Owner::Even
+        } else {
+            Owner::Odd
+        }
+    }
+    
+    /// Return the opposite player
+    pub fn other(&self) -> Owner {
+        match self {
+            Owner::Even => Owner::Odd,
+            Owner::Odd => Owner::Even
+        }
+    }
+    
     #[inline]
     pub fn is_even(&self) -> bool {
         matches!(self, Owner::Even)

@@ -55,7 +55,7 @@ impl ConvertCommand {
             ConversionGoal::RegisterGame { k } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog10()) as u8;
                 let had_nodes = parity_game.vertex_count();
-                let register_game = RegisterGame::construct(parity_game, k, Owner::Even);
+                let register_game = RegisterGame::construct(&parity_game, k, Owner::Even);
                 
                 if let Some(path) = self.mermaid_path {
                     std::fs::write(&path, register_game.to_mermaid())?;

@@ -16,7 +16,7 @@ fn bench_solvers(c: &mut Criterion) -> eyre::Result<()> {
         }
         group.bench_with_input(BenchmarkId::new("SmallProgress", i), i, |b, i| {
             b.iter(|| {
-                let mut game = solvers::small_progress::SmallProgressSolver::new(parity_game.clone());
+                let mut game = solvers::small_progress::SmallProgressSolver::new(&parity_game);
                 
                 game.run();
             });

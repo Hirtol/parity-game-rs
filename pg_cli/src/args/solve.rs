@@ -17,21 +17,21 @@ pub struct SolveCommand {
     /// Green = Even, Red = Odd
     #[clap(short = 'm')]
     solution_mermaid: Option<PathBuf>,
+    /// Whether to first convert the given game into an explicit expanded `k`-register game.
+    /// 
+    /// Creates a `k`-register-index game, upper bound for valid results is `1 + log(n)`
+    /// Provide `k = 0` to use the upper-bound k for correct results.
+    /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
+    #[clap(short)]
+    register_game_k: Option<u32>
 }
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Solver {
     /// Use the traditional small progress measure algorithm
     Spm,
-    /// First convert the PG to a Register Game, and then use SPM to solve it.
-    #[clap(name = "rgspm")]
-    RegisterGameSpm {
-        /// Create a `k`-register-index game, upper bound for valid results is `1 + log(n)`
-        ///
-        /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
-        #[clap(short)]
-        k: Option<u32>
-    }
+    /// Use the recursive Zielonka algorithm
+    Zielonka,
 }
 
 macro_rules! timed_solve {
@@ -52,33 +52,45 @@ impl SolveCommand {
     #[tracing::instrument(name="Solve Parity Game",skip(self), fields(path=?self.game_path))]
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
+        let register_game = if let Some(k) = self.register_game_k {
+            let k = if k == 0 { 1 + parity_game.vertex_count().ilog10() } else {k} as u8;
+
+            tracing::debug!(k, "Constructing with register index");
+            let register_game = timed_solve!(RegisterGame::construct(&parity_game, k, Owner::Even), "Constructed Register Game");
+            
+            Some((register_game.to_game()?, register_game))
+        } else {
+            None
+        };
 
         let mermaid_output = self.solution_mermaid.map(|out| (out, parity_game.to_mermaid()));
         let solver = self.solver.unwrap_or(Solver::Spm);
         tracing::info!(?solver, "Using solver");
 
+        let game_to_solve = if let Some((rg_pg, rg)) = &register_game {
+            tracing::debug!(from_vertex=rg.original_game.vertex_count(), to_vertex=rg_pg.vertex_count(), ratio=rg_pg.vertex_count() / rg.original_game.vertex_count(), "Converted from PG to RG PG");
+            rg_pg
+        } else {
+            &parity_game
+        };
+
         let solution = match solver {
             Solver::Spm => {
-                let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(parity_game);
+                let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(&game_to_solve);
 
                 timed_solve!(solver.run())
             }
-            Solver::RegisterGameSpm{
-                k
-            } => {
-                let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog10()) as u8;
-                let had_nodes = parity_game.vertex_count();
-                
-                tracing::debug!(k, "Constructing with register index");
-                let register_game = timed_solve!(RegisterGame::construct(parity_game, k, Owner::Even), "Constructed Register Game");
-                let game = register_game.to_game()?;
-                tracing::debug!(from_vertex=had_nodes, to_vertex=game.vertex_count(), ratio=game.vertex_count() / had_nodes, "Converted from PG to RG PG");
-                let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(game);
+            Solver::Zielonka => {
+                let mut solver = pg_graph::solvers::zielonka::ZielonkaSolver::new(&game_to_solve);
 
-                let solution = timed_solve!(solver.run());
-
-                register_game.project_winners_original(&solution)
+                timed_solve!(solver.run()).winners
             }
+        };
+        
+        let solution = if let Some((_, rg)) = register_game {
+            rg.project_winners_original(&solution)
+        } else {
+            solution
         };
 
         let (even_wins, odd_wins) = solution.iter().fold((0, 0), |acc, win| {

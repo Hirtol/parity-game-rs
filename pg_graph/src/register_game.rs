@@ -23,8 +23,8 @@ pub type Rank = u8;
 ///
 /// Note that in the above example, whilst the original parity game has [Owner::Even] as the winner, the Register Game
 /// has [Owner::Odd]. You need at least a 2-Register Game (`1 + log_2(n=2) = 2`) to ensure the correct result.
-pub struct RegisterGame {
-    pub original_game: crate::parity_game::ParityGame,
+pub struct RegisterGame<'a> {
+    pub original_game: &'a crate::parity_game::ParityGame,
     pub vertices: Vec<RegisterVertex>,
     pub edges: HashMap<VertexId, Vec<VertexId>>,
 }
@@ -35,14 +35,14 @@ enum ToExpand {
     RegisterVertex(VertexId),
 }
 
-impl RegisterGame {
+impl<'a> RegisterGame<'a> {
     /// Construct a `k`-register based parity game derived from the given `game`.
     ///
     /// The registers will be controlled by `controller`.
     ///
     /// TODO: Consider making `k` a const-generic
     #[tracing::instrument(name="Construct Register Game", skip(game))]
-    pub fn construct(game: crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
+    pub fn construct(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
         let empty_registers = eco_vec!(0; k as usize);
         
         let mut to_expand = game.vertices_index()

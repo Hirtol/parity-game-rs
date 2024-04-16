@@ -57,7 +57,7 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
 
         Ok(out)
     }
-
+    
     pub fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
         self.labels[vertex_id.index()].as_deref()
     }
@@ -76,6 +76,10 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
 
     pub fn vertices_by_priority(&self, priority: Priority) -> impl Iterator<Item=&Vertex> + '_{
         self.vertices().filter(move |v| v.priority == priority)
+    }
+
+    pub fn vertices_by_priority_idx(&self, priority: Priority) -> impl Iterator<Item=(NodeIndex<Ix>, &Vertex)> + '_{
+        self.vertices_index().zip(self.vertices()).filter(move |v| v.1.priority == priority)
     }
 
     pub fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {

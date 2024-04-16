@@ -19,7 +19,7 @@ mod solver_benches {
             let parity_game = pg_graph::ParityGame::new(graph).unwrap();
             parity_game
         }).bench_values(|parity_game| {
-            let mut game = solvers::small_progress::SmallProgressSolver::new(parity_game.clone());
+            let mut game = solvers::small_progress::SmallProgressSolver::new(&parity_game);
 
             game.run();
         });

@@ -10,16 +10,16 @@ type Progress = u32;
 type ProgressMeasureData<'a> = &'a [Progress];
 
 #[derive(Debug)]
-pub struct SmallProgressSolver {
-    game: ParityGame,
+pub struct SmallProgressSolver<'a> {
+    game: &'a ParityGame,
     progress_measures: ProgressMeasures,
     max_m_even: Vec<Progress>,
     max_m_odd: Vec<Progress>,
     pub prog_count: usize,
 }
 
-impl SmallProgressSolver {
-    pub fn new(game: ParityGame) -> Self {
+impl<'a> SmallProgressSolver<'a> {
+    pub fn new(game: &'a ParityGame) -> Self {
         // `d` in the original paper
         let tuple_dimension = game.priority_max() + 1;
         let priority_class_counts = game.priorities_class_count();
@@ -257,7 +257,7 @@ mod tests {
         let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
-        let mut solver = SmallProgressSolver::new(game);
+        let mut solver = SmallProgressSolver::new(&game);
 
         let solution = solver.run();
         
@@ -273,7 +273,7 @@ mod tests {
         let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
-        let mut solver = SmallProgressSolver::new(game);
+        let mut solver = SmallProgressSolver::new(&game);
         
         let now = Instant::now();
         let solution = solver.run();
@@ -299,7 +299,7 @@ mod tests {
         let input = std::fs::read_to_string(example_dir().join("amba_decomposed_arbiter_6.tlsf.ehoa.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
-        let mut solver = SmallProgressSolver::new(game);
+        let mut solver = SmallProgressSolver::new(&game);
 
         let now = Instant::now();
         let solution = solver.run();
