@@ -5,6 +5,7 @@ use crate::Owner;
 
 
 use crate::parity_game::{ParityGame, Priority, VertexId};
+use crate::solvers::SolverOutput;
 
 type Progress = u32;
 type ProgressMeasureData<'a> = &'a [Progress];
@@ -54,8 +55,8 @@ impl<'a> SmallProgressSolver<'a> {
 
     /// Run the solver and return a Vec corresponding to each [crate::parity_game::Vertex] indicating who wins.
     #[tracing::instrument(name="Run SPM", skip(self))]
-    #[profiling::function]
-    pub fn run(&mut self) -> Vec<Owner> {
+    // #[profiling::function]
+    pub fn run(&mut self) -> SolverOutput {
         let mut queue = VecDeque::from((0..self.game.vertex_count()).map(VertexId::new).collect_vec());
         
         while let Some(vertex_id) = queue.pop_back() {
@@ -67,13 +68,18 @@ impl<'a> SmallProgressSolver<'a> {
         }
         
         // Final assignment
-        self.progress_measures.0.iter().map(|prog| {
+        let winners = self.progress_measures.0.iter().map(|prog| {
             if prog == &ProgressMeasure::Top {
                 Owner::Odd
             } else {
                 Owner::Even
             }
-        }).collect()
+        }).collect();
+        
+        SolverOutput {
+            winners,
+            strategy: None,
+        }
     }
 
     /// Progress the progress measure of the given vertex if possible
@@ -265,7 +271,7 @@ mod tests {
 
         println!("Parity Game: {:#?}", solver);
 
-        assert_eq!(solution, vec![Owner::Odd; 7]);
+        assert_eq!(solution.winners, vec![Owner::Odd; 7]);
     }
 
     #[test]
@@ -281,7 +287,7 @@ mod tests {
         println!("Solution: {:#?}", solution);
         println!("Prog Count: {}", solver.prog_count);
         println!("Took: {:?}", now.elapsed());
-        assert_eq!(solution, vec![
+        assert_eq!(solution.winners, vec![
             Owner::Even,
             Owner::Odd,
             Owner::Even,

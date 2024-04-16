@@ -83,16 +83,16 @@ impl SolveCommand {
             Solver::Zielonka => {
                 let mut solver = pg_graph::solvers::zielonka::ZielonkaSolver::new(&game_to_solve);
 
-                let out = timed_solve!(solver.run()).winners;
+                let out = timed_solve!(solver.run());
                 tracing::info!(n=solver.recursive_calls, "Solved with recursive calls");
                 out
             }
         };
         
         let solution = if let Some((_, rg)) = register_game {
-            rg.project_winners_original(&solution)
+            rg.project_winners_original(&solution.winners)
         } else {
-            solution
+            solution.winners
         };
 
         let (even_wins, odd_wins) = solution.iter().fold((0, 0), |acc, win| {
