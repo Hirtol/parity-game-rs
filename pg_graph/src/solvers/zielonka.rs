@@ -6,11 +6,12 @@ use crate::{solvers::SolverOutput, Owner, ParityGame, VertexId};
 
 pub struct ZielonkaSolver<'a> {
     game: &'a ParityGame,
+    pub recursive_calls: usize,
 }
 
 impl<'a> ZielonkaSolver<'a> {
     pub fn new(game: &'a ParityGame) -> Self {
-        ZielonkaSolver { game }
+        ZielonkaSolver { game, recursive_calls: 0 }
     }
 
     #[tracing::instrument(name = "Run Zielonka", skip(self))]
@@ -29,6 +30,7 @@ impl<'a> ZielonkaSolver<'a> {
     }
 
     fn zielonka(&mut self, ignored: HashSet<VertexId>) -> (Vec<VertexId>, Vec<VertexId>) {
+        self.recursive_calls += 1;
         // If all the vertices are ignord
         if ignored.len() == self.game.vertex_count() {
             (Vec::new(), Vec::new())

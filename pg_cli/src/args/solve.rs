@@ -83,7 +83,9 @@ impl SolveCommand {
             Solver::Zielonka => {
                 let mut solver = pg_graph::solvers::zielonka::ZielonkaSolver::new(&game_to_solve);
 
-                timed_solve!(solver.run()).winners
+                let out = timed_solve!(solver.run()).winners;
+                tracing::info!(n=solver.recursive_calls, "Solved with recursive calls");
+                out
             }
         };
         
