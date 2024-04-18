@@ -53,7 +53,7 @@ impl SolveCommand {
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
         let register_game = if let Some(k) = self.register_game_k {
-            let k = if k == 0 { 1 + parity_game.vertex_count().ilog10() } else {k} as u8;
+            let k = if k == 0 { 1 + parity_game.vertex_count().ilog2() } else {k} as u8;
 
             tracing::debug!(k, "Constructing with register index");
             let register_game = timed_solve!(RegisterGame::construct(&parity_game, k, Owner::Even), "Constructed Register Game");

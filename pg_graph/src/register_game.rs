@@ -43,7 +43,7 @@ impl<'a> RegisterGame<'a> {
     /// TODO: Consider making `k` a const-generic
     #[tracing::instrument(name="Construct Register Game", skip(game))]
     pub fn construct(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
-        let empty_registers = eco_vec!(0; k as usize);
+        let base_registers = game.priorities_unique().map(|pr| (pr, eco_vec!(pr; k as usize))).collect::<HashMap<_, _>>();
         
         let mut to_expand = game.vertices_index()
             .map(ToExpand::OriginalVertex)
@@ -77,11 +77,7 @@ impl<'a> RegisterGame<'a> {
                 // Expand the given original vertex as a starting node, aka, assuming fresh registers
                 ToExpand::OriginalVertex(v_id) => {
                     let vertex = &game[v_id];
-                    let register_values = if vertex.priority > 0 {
-                        eco_vec!(vertex.priority; k as usize)
-                    } else {
-                        empty_registers.clone()
-                    };
+                    let register_values = base_registers.get(&vertex.priority).expect("Priority register wasn't initialised");
 
                     // We assume we start with the next action being a register change instead of a move,
                     // thus the owner is always the controller.
@@ -261,6 +257,7 @@ fn neutral_priority(owner: Owner) -> Priority {
 fn rank_to_priority(rank: Rank, saved_priority: Priority, controller: Owner) -> Priority {
     // Rank is 0-indexed for us, but 1-indexed in the original paper
     let out = 2 * (rank + 1) as Priority;
+    
     match controller {
         Owner::Even => {
             if controller.priority_aligned(saved_priority) {
