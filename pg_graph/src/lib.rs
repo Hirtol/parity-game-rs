@@ -5,6 +5,7 @@ pub use parity_game::*;
 
 pub mod solvers;
 mod parity_game;
+mod symbolic;
 mod datatypes;
 pub mod register_game;
 

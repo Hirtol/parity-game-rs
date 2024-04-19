@@ -119,6 +119,10 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
     pub fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.graph.edges(v).map(|e| e.target())
     }
+    
+    pub fn graph_edges(&self) -> petgraph::graph::EdgeReferences<'_, (), Ix> {
+        self.graph.edge_references()
+    }
 
     pub fn to_mermaid(&self) -> String {
         use std::fmt::Write;
