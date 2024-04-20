@@ -15,7 +15,7 @@ mod trace;
 fn main() -> eyre::Result<()> {
     let args = args::ClapArgs::parse();
     
-    trace::create_subscriber("DEBUG,pg_graph=INFO").init();
+    trace::create_subscriber("DEBUG,pg_graph=TRACE").init();
     
     let now = std::time::Instant::now();
     

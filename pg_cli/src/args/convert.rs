@@ -9,6 +9,9 @@ pub struct ConvertCommand {
     /// What the given game should be converted into.
     #[clap(subcommand)]
     goal: ConversionGoal,
+    /// Write the visualised result of the `goal` conversion into a GraphViz file.
+    #[clap(short, long)]
+    dot_path: Option<PathBuf>,
     /// Write the visualised result of the `goal` conversion into a Mermaid.js file
     #[clap(short, long)]
     mermaid_path: Option<PathBuf>,
@@ -22,6 +25,9 @@ pub enum ConversionGoal {
     /// Keep the current parity game
     #[clap(name = "pg")]
     ParityGame,
+    /// Convert a given normal parity game into a symbolic parity game
+    #[clap(name = "sy")]
+    SymbolicParityGame,
     /// Convert the given parity game into a register game.
     #[clap(name = "rg")]
     RegisterGame {
@@ -71,6 +77,17 @@ impl ConvertCommand {
                     std::fs::write(&path, game.to_pg())?;
                     
                     tracing::info!(?path, "Wrote PG graph to path")
+                }
+            }
+            ConversionGoal::SymbolicParityGame => {
+                let s_pg = pg_graph::symbolic::SymbolicParityGame::from_explicit(&parity_game)?;
+                
+                tracing::info!(parity_node_count=parity_game.vertex_count(), symbolic_node_count=s_pg.vertex_count(), "Converted to symbolic parity game");
+                
+                if let Some(path) = self.dot_path {
+                    std::fs::write(&path, s_pg.to_dot())?;
+
+                    tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
             }
         }

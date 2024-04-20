@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use oxidd::{bdd::BDDFunction, BooleanFunction, BooleanFunctionQuant, ManagerRef};
-use oxidd::bdd::BDDManagerRef;
+use oxidd::{bdd::{BDDFunction, BDDManagerRef}, BooleanFunction, BooleanFunctionQuant, Manager, ManagerRef};
 use petgraph::prelude::EdgeRef;
 
 use crate::{Owner, ParityGame, Priority};
@@ -21,7 +20,7 @@ pub struct SymbolicParityGame {
 }
 
 impl SymbolicParityGame {
-    #[tracing::instrument(name = "Build Symbolic Parity Game")]
+    #[tracing::instrument(name = "Build Symbolic Parity Game", skip_all)]
     /// For now, translated from [https://github.com/olijzenga/bdd-parity-game-solver/blob/master/src/pg.py].
     pub fn from_explicit(explicit: &ParityGame) -> eyre::Result<Self> {
         Self::from_explicit_impl(explicit).map_err(|e| eyre::eyre!("Could not construct BDD due to: {e:?}"))
@@ -33,7 +32,7 @@ impl SymbolicParityGame {
         // Lastly need a duplication of the variable set (which is distinct!) to then create a BDD representing the edge relation E.
 
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
-        let manager = oxidd::bdd::new_manager(1024, 1024, 1);
+        let manager = oxidd::bdd::new_manager(2_usize.pow(24), 2_usize.pow(24), 12);
         let variables = manager
             .with_manager_exclusive(|man| (0..n_variables).flat_map(|x| BDDFunction::new_var(man)).collect_vec());
         let edge_variables = manager
@@ -64,12 +63,35 @@ impl SymbolicParityGame {
         let mut s_vertices = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::t(man));
         // Declare Vertices, exclude ones which are not part of the statespace
         if ((explicit.vertex_count() as f64).log2() - n_variables as f64) < f64::EPSILON {
-            tracing::trace!(
-                excluded = (explicit.vertex_count() as f64).log2() - n_variables as f64,
-                "Excluding (inefficiently?) vertices"
-            );
-            for v_idx in explicit.vertex_count()..2_usize.pow(n_variables as u32) {
-                s_vertices = s_vertices.and(&v_to_expr(v_idx as u32, false)?.not_owned()?)?;
+            let items_to_exclude = 2_usize.pow(n_variables as u32) - explicit.vertex_count();
+            // We either exclude all items explicitly (in-efficient if we're really close to the next power of two),
+            // or explicitly include all valid vertices with their last bit == 1, while blacklisting everything else
+            let include_threshold = 2_usize.pow((n_variables - 1) as u32) / 2;
+
+            if items_to_exclude > include_threshold {
+                let start = 2_usize.pow((n_variables - 1) as u32);
+
+                tracing::trace!(
+                    n_included = explicit.vertex_count() - start,
+                    items_to_exclude,
+                    include_threshold,
+                    "Explicitly including additional vertices"
+                );
+                let mut blacklist = variables.last().expect("Impossible").not()?;
+
+                for v_idx in start..explicit.vertex_count() {
+                    blacklist = blacklist.or(&v_to_expr(v_idx as u32, false)?)?;
+                }
+
+                s_vertices = s_vertices.and(&blacklist)?;
+            } else {
+                tracing::trace!(
+                    n_excluded = items_to_exclude,
+                    "Explicitly excluding vertices"
+                );
+                for v_idx in explicit.vertex_count()..2_usize.pow(n_variables as u32) {
+                    s_vertices = s_vertices.and(&v_to_expr(v_idx as u32, false)?.not_owned()?)?;
+                }
             }
         }
 
@@ -117,13 +139,53 @@ impl SymbolicParityGame {
             priorities: s_priorities,
         })
     }
-}
+    
+    /// Get the amount of BDD nodes.
+    pub fn vertex_count(&self) -> usize {
+        self.manager.with_manager_shared(|man| man.num_inner_nodes())
+    }
 
+    pub fn to_dot(&self) -> String {
+        let mut out = Vec::new();
+        
+        self.manager.with_manager_exclusive(|man| {
+            let variables = self
+                .variables
+                .iter()
+                .chain(self.variables_edges.iter())
+                .enumerate()
+                .map(|(i, v)| {
+                    (
+                        v,
+                        if i >= self.variables.len() {
+                            format!("x_{}", i - self.variables.len())
+                        } else {
+                            format!("x{i}")
+                        },
+                    )
+                });
+            let functions = self
+                .priorities
+                .iter()
+                .map(|(p, bdd)| (bdd, format!("Priority {p}")))
+                .chain([
+                    (&self.vertices, "vertices".into()),
+                    (&self.vertices_even, "vertices_even".into()),
+                    (&self.vertices_odd, "vertices_odd".into()),
+                    (&self.edges, "edges".into()),
+                ]);
+
+            oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
+        }).expect("Failed to lock");
+
+        String::from_utf8(out).expect("Invalid UTF-8")
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use oxidd::ManagerRef;
-    use crate::{ParityGame};
+
+    use crate::ParityGame;
 
     #[test]
     pub fn test_symbolic() -> eyre::Result<()> {
@@ -134,16 +196,7 @@ mod tests {
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         let pg = ParityGame::new(pg)?;
         let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
-        let mut out = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("out.dot")?;
-        s_pg.manager.with_manager_exclusive(move |man| {
-            let variables = s_pg.variables.iter().chain(s_pg.variables_edges.iter()).enumerate().map(|(i, v)| (v, format!("x{i}")));
-            oxidd_dump::dot::dump_all(out, man, variables, [
-                (&s_pg.vertices, "vertices"),
-                (&s_pg.vertices_even, "vertices_even"),
-                (&s_pg.vertices_odd, "vertices_odd"),
-                (&s_pg.edges, "edges"),
-            ])
-        })?;
+        std::fs::write("out.dot", s_pg.to_dot())?;
 
         Ok(())
     }

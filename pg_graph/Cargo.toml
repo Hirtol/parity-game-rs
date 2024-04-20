@@ -19,6 +19,7 @@ itertools = "0.12.1"
 petgraph = "0.6.4"
 oxidd = "0.6.0"
 oxidd-dump = "0.1.0"
+oxidd-reorder = "0.1.0"
 
 pg_parser = { path = "../pg_parser" }
 profiling = "1"
