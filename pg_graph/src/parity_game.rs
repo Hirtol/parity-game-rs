@@ -105,8 +105,8 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
     }
 
     /// Count the amount of vertices for each priority
-    pub fn priorities_class_count(&self) -> HashMap<Priority, u32> {
-        self.vertices().fold(HashMap::new(), |mut hash: HashMap<Priority, u32>, v| {
+    pub fn priorities_class_count(&self) -> ahash::HashMap<Priority, u32> {
+        self.vertices().fold(HashMap::default(), |mut hash: ahash::HashMap<Priority, u32>, v| {
             hash.entry(v.priority).and_modify(|count| *count += 1).or_insert(1);
             hash
         })

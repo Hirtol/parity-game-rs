@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::{Owner, VertexId};
 
 pub mod small_progress;

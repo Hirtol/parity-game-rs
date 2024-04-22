@@ -6,7 +6,6 @@ use oxidd::{
     BooleanFunction, BooleanFunctionQuant, Manager, ManagerRef,
 };
 use petgraph::prelude::EdgeRef;
-use tracing::log;
 
 use crate::{Owner, ParityGame, Priority};
 
@@ -86,7 +85,7 @@ impl SymbolicParityGame {
             };
         }
 
-        log::trace!("Starting vertex BDD construction");
+        tracing::trace!("Starting vertex BDD construction");
         // Contains all vertices in the graph
         let mut s_vertices = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::t(man));
         // Declare Vertices, exclude ones which are not part of the statespace
@@ -120,7 +119,7 @@ impl SymbolicParityGame {
             }
         }
 
-        log::trace!("Starting edge BDD construction");
+        tracing::trace!("Starting edge BDD construction");
         // Edges
         let mut s_edges = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
         for edge in explicit.graph_edges() {
@@ -137,7 +136,7 @@ impl SymbolicParityGame {
         let mut s_even = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
         let mut s_odd = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
 
-        log::trace!("Starting priority/owner BDD construction");
+        tracing::trace!("Starting priority/owner BDD construction");
         for v_idx in explicit.vertices_index() {
             let vertex = explicit.get(v_idx).expect("Impossible");
             let expr = v_to_expr_cached!(v_idx.index() as u32, false);

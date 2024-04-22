@@ -1,5 +1,5 @@
 //! See [RegisterGame]
-use std::collections::{HashMap, VecDeque};
+use std::collections::{VecDeque};
 
 use ecow::{eco_vec, EcoVec};
 
@@ -26,7 +26,7 @@ pub type Rank = u8;
 pub struct RegisterGame<'a> {
     pub original_game: &'a crate::parity_game::ParityGame,
     pub vertices: Vec<RegisterVertex>,
-    pub edges: HashMap<VertexId, Vec<VertexId>>,
+    pub edges: ahash::HashMap<VertexId, Vec<VertexId>>,
 }
 
 enum ToExpand {
@@ -43,15 +43,15 @@ impl<'a> RegisterGame<'a> {
     /// TODO: Consider making `k` a const-generic
     #[tracing::instrument(name="Construct Register Game", skip(game))]
     pub fn construct(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
-        let base_registers = game.priorities_unique().map(|pr| (pr, eco_vec!(pr; k as usize))).collect::<HashMap<_, _>>();
+        let base_registers = game.priorities_unique().map(|pr| (pr, eco_vec!(pr; k as usize))).collect::<ahash::HashMap<_, _>>();
         
         let mut to_expand = game.vertices_index()
             .map(ToExpand::OriginalVertex)
             .collect::<VecDeque<_>>();
 
-        let mut reg_v_index = HashMap::new();
+        let mut reg_v_index = ahash::HashMap::default();
         let mut final_graph = Vec::new();
-        let mut final_edges = HashMap::new();
+        let mut final_edges = ahash::HashMap::default();
 
         // Only expand the new register vertex if it's actually unique.
         // Done as a macro as we mutably borrow `to_expand`

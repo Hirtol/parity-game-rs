@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{VecDeque};
 
 use itertools::Itertools;
 
@@ -17,7 +17,7 @@ impl<'a> ZielonkaSolver<'a> {
     #[tracing::instrument(name = "Run Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.zielonka(HashSet::new());
+        let (even, odd) = self.zielonka(ahash::HashSet::default());
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
         for idx in odd {
             winners[idx.index()] = Owner::Odd;
@@ -29,7 +29,7 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka(&mut self, ignored: HashSet<VertexId>) -> (Vec<VertexId>, Vec<VertexId>) {
+    fn zielonka(&mut self, ignored: ahash::HashSet<VertexId>) -> (Vec<VertexId>, Vec<VertexId>) {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if ignored.len() == self.game.vertex_count() {
@@ -80,10 +80,10 @@ impl<'a> ZielonkaSolver<'a> {
 pub fn attractor_set(
     player: Owner,
     starting_set: impl IntoIterator<Item = VertexId>,
-    ignored: &HashSet<VertexId>,
+    ignored: &ahash::HashSet<VertexId>,
     game: &ParityGame,
-) -> HashSet<VertexId> {
-    let mut attract_set = HashSet::from_iter(starting_set);
+) -> ahash::HashSet<VertexId> {
+    let mut attract_set = ahash::HashSet::from_iter(starting_set);
     let mut explore_queue = VecDeque::from_iter(attract_set.iter().copied());
 
     while let Some(next_item) = explore_queue.pop_back() {
