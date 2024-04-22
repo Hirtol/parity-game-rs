@@ -1,8 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use itertools::Itertools;
-use oxidd::{bdd::{BDDFunction, BDDManagerRef}, BooleanFunction, BooleanFunctionQuant, Manager, ManagerRef};
+use oxidd::{
+    bdd::{BDDFunction, BDDManagerRef},
+    BooleanFunction, BooleanFunctionQuant, Manager, ManagerRef,
+};
 use petgraph::prelude::EdgeRef;
+use tracing::log;
 
 use crate::{Owner, ParityGame, Priority};
 
@@ -32,11 +36,14 @@ impl SymbolicParityGame {
         // Lastly need a duplication of the variable set (which is distinct!) to then create a BDD representing the edge relation E.
 
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
-        let manager = oxidd::bdd::new_manager(2_usize.pow(24), 2_usize.pow(24), 12);
+        let manager = oxidd::bdd::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
         let variables = manager
             .with_manager_exclusive(|man| (0..n_variables).flat_map(|x| BDDFunction::new_var(man)).collect_vec());
         let edge_variables = manager
             .with_manager_exclusive(|man| (0..n_variables).flat_map(|x| BDDFunction::new_var(man)).collect_vec());
+
+        let mut v_bdd_cache: HashMap<u32, BDDFunction, ahash::RandomState> = HashMap::default();
+        let mut v_bdd_cache_2: HashMap<u32, BDDFunction, ahash::RandomState> = HashMap::default();
 
         let v_to_expr = |v_idx: u32, successor: bool| {
             let variable_set = if successor { &edge_variables } else { &variables };
@@ -58,7 +65,28 @@ impl SymbolicParityGame {
 
             Ok::<_, oxidd::util::OutOfMemory>(expr)
         };
+        macro_rules! v_to_expr_cached {
+            ($v_idx:expr, false) => {
+                match v_bdd_cache.entry($v_idx) {
+                    Entry::Occupied(val) => val.into_mut(),
+                    Entry::Vacant(val) => {
+                        let symbolic_v = v_to_expr($v_idx, false)?;
+                        val.insert(symbolic_v)
+                    }
+                }
+            };
+            ($v_idx:expr, true) => {
+                match v_bdd_cache_2.entry($v_idx) {
+                    Entry::Occupied(val) => val.into_mut(),
+                    Entry::Vacant(val) => {
+                        let symbolic_v = v_to_expr($v_idx, true)?;
+                        val.insert(symbolic_v)
+                    }
+                }
+            };
+        }
 
+        log::trace!("Starting vertex BDD construction");
         // Contains all vertices in the graph
         let mut s_vertices = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::t(man));
         // Declare Vertices, exclude ones which are not part of the statespace
@@ -80,26 +108,24 @@ impl SymbolicParityGame {
                 let mut blacklist = variables.last().expect("Impossible").not()?;
 
                 for v_idx in start..explicit.vertex_count() {
-                    blacklist = blacklist.or(&v_to_expr(v_idx as u32, false)?)?;
+                    blacklist = blacklist.or(v_to_expr_cached!(v_idx as u32, false))?;
                 }
 
                 s_vertices = s_vertices.and(&blacklist)?;
             } else {
-                tracing::trace!(
-                    n_excluded = items_to_exclude,
-                    "Explicitly excluding vertices"
-                );
+                tracing::trace!(n_excluded = items_to_exclude, "Explicitly excluding vertices");
                 for v_idx in explicit.vertex_count()..2_usize.pow(n_variables as u32) {
-                    s_vertices = s_vertices.and(&v_to_expr(v_idx as u32, false)?.not_owned()?)?;
+                    s_vertices = s_vertices.and(&v_to_expr_cached!(v_idx as u32, false).not()?)?;
                 }
             }
         }
 
+        log::trace!("Starting edge BDD construction");
         // Edges
         let mut s_edges = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
         for edge in explicit.graph_edges() {
-            let s_edge =
-                v_to_expr(edge.source().index() as u32, false)?.and(&v_to_expr(edge.target().index() as u32, true)?)?;
+            let s_edge = v_to_expr_cached!(edge.source().index() as u32, false)
+                .and(v_to_expr_cached!(edge.target().index() as u32, true))?;
             s_edges = s_edges.or(&s_edge)?;
         }
 
@@ -111,9 +137,10 @@ impl SymbolicParityGame {
         let mut s_even = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
         let mut s_odd = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
 
+        log::trace!("Starting priority/owner BDD construction");
         for v_idx in explicit.vertices_index() {
             let vertex = explicit.get(v_idx).expect("Impossible");
-            let expr = v_to_expr(v_idx.index() as u32, false)?;
+            let expr = v_to_expr_cached!(v_idx.index() as u32, false);
             let priority = vertex.priority;
 
             // Fill priority
@@ -139,7 +166,12 @@ impl SymbolicParityGame {
             priorities: s_priorities,
         })
     }
-    
+
+    /// Remove unreferenced nodes.
+    pub fn gc(&self) -> usize {
+        self.manager.with_manager_exclusive(|man| man.gc())
+    }
+
     /// Get the amount of BDD nodes.
     pub fn vertex_count(&self) -> usize {
         self.manager.with_manager_shared(|man| man.num_inner_nodes())
@@ -147,36 +179,38 @@ impl SymbolicParityGame {
 
     pub fn to_dot(&self) -> String {
         let mut out = Vec::new();
-        
-        self.manager.with_manager_exclusive(|man| {
-            let variables = self
-                .variables
-                .iter()
-                .chain(self.variables_edges.iter())
-                .enumerate()
-                .map(|(i, v)| {
-                    (
-                        v,
-                        if i >= self.variables.len() {
-                            format!("x_{}", i - self.variables.len())
-                        } else {
-                            format!("x{i}")
-                        },
-                    )
-                });
-            let functions = self
-                .priorities
-                .iter()
-                .map(|(p, bdd)| (bdd, format!("Priority {p}")))
-                .chain([
-                    (&self.vertices, "vertices".into()),
-                    (&self.vertices_even, "vertices_even".into()),
-                    (&self.vertices_odd, "vertices_odd".into()),
-                    (&self.edges, "edges".into()),
-                ]);
 
-            oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
-        }).expect("Failed to lock");
+        self.manager
+            .with_manager_exclusive(|man| {
+                let variables = self
+                    .variables
+                    .iter()
+                    .chain(self.variables_edges.iter())
+                    .enumerate()
+                    .map(|(i, v)| {
+                        (
+                            v,
+                            if i >= self.variables.len() {
+                                format!("x_{}", i - self.variables.len())
+                            } else {
+                                format!("x{i}")
+                            },
+                        )
+                    });
+                let functions = self
+                    .priorities
+                    .iter()
+                    .map(|(p, bdd)| (bdd, format!("Priority {p}")))
+                    .chain([
+                        (&self.vertices, "vertices".into()),
+                        (&self.vertices_even, "vertices_even".into()),
+                        (&self.vertices_odd, "vertices_odd".into()),
+                        (&self.edges, "edges".into()),
+                    ]);
+
+                oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
+            })
+            .expect("Failed to lock");
 
         String::from_utf8(out).expect("Invalid UTF-8")
     }
@@ -184,7 +218,6 @@ impl SymbolicParityGame {
 
 #[cfg(test)]
 mod tests {
-
     use crate::ParityGame;
 
     #[test]
