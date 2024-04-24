@@ -405,9 +405,9 @@ fn reset_to_priority_2021(rank: Rank, saved_priority: Priority, vertex_priority:
         }
         Owner::Odd => {
             if is_aligned {
-                out + 2
-            } else {
                 out + 1
+            } else {
+                out + 2
             }
         }
     }
