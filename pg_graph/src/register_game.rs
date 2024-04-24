@@ -1,4 +1,5 @@
 //! See [RegisterGame]
+use std::cmp::Ordering;
 use std::collections::{VecDeque};
 
 use ecow::{eco_vec, EcoVec};
@@ -43,7 +44,7 @@ impl<'a> RegisterGame<'a> {
     /// TODO: Consider making `k` a const-generic
     #[tracing::instrument(name="Construct Register Game", skip(game))]
     pub fn construct(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
-        let base_registers = game.priorities_unique().map(|pr| (pr, eco_vec!(pr; k as usize))).collect::<ahash::HashMap<_, _>>();
+        let base_registers = game.priorities_unique().chain([0]).map(|pr| (pr, eco_vec!(pr; k as usize))).collect::<ahash::HashMap<_, _>>();
         
         let mut to_expand = game.vertices_index()
             .map(ToExpand::OriginalVertex)
@@ -144,6 +145,116 @@ impl<'a> RegisterGame<'a> {
                                         *reg = next.priority;
                                     }
                                 }
+
+                                edges.push(add_new_register_vertex!(r_next));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Self {
+            original_game: game,
+            vertices: final_graph,
+            edges: final_edges,
+        }
+    }
+
+    #[tracing::instrument(name="Construct Register Game 2021", skip(game))]
+    pub fn construct_2021(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
+        let reg_quantity = k as usize + 1;
+        let base_registers = game.priorities_unique().chain([0]).map(|pr| (pr, eco_vec!(pr; reg_quantity))).collect::<ahash::HashMap<_, _>>();
+
+        let mut to_expand = game.vertices_index()
+            .map(ToExpand::OriginalVertex)
+            .collect::<VecDeque<_>>();
+
+        let mut reg_v_index = ahash::HashMap::default();
+        let mut final_graph = Vec::new();
+        let mut final_edges = ahash::HashMap::default();
+
+        // Only expand the new register vertex if it's actually unique.
+        // Done as a macro as we mutably borrow `to_expand`
+        macro_rules! add_new_register_vertex {
+            ($reg:expr) => {{
+                let reg = $reg;
+
+                if let Some(&r_id) = reg_v_index.get(&reg) {
+                    VertexId::new(r_id)
+                } else {
+                    final_graph.push(reg.clone());
+                    let r_id = final_graph.len() - 1;
+                    reg_v_index.insert(reg, r_id);
+                    // Ensure this one is listed for further expansion
+                    to_expand.push_back(ToExpand::RegisterVertex(VertexId::new(r_id)));
+                    VertexId::new(r_id)
+                }
+            }};
+        }
+
+        while let Some(expanding) = to_expand.pop_back() {
+            match expanding {
+                // Expand the given original vertex as a starting node, aka, assuming fresh registers
+                ToExpand::OriginalVertex(v_id) => {
+                    let register_values = base_registers.get(&0).expect("Priority register wasn't initialised");
+
+                    // We assume we start with the next action being a register change instead of a move,
+                    // thus the owner is always the controller.
+                    let register_vertex = RegisterVertex {
+                        original_graph_id: v_id,
+                        priority: neutral_priority(controller),
+                        owner: controller,
+                        register_state: register_values.clone(),
+                        next_action: ChosenAction::RegisterChange,
+                    };
+
+                    let _: VertexId = add_new_register_vertex!(register_vertex);
+                }
+                ToExpand::RegisterVertex(reg_id) => {
+                    let reg_v = &final_graph[reg_id.index()];
+                    let edges = final_edges.entry(reg_id).or_insert_with(Vec::new);
+                    let original_vertex = &game[reg_v.original_graph_id];
+
+                    match reg_v.next_action {
+                        ChosenAction::RegisterChange => {
+                            // Now create its edges to expand (E_r)
+                            for r in 0..reg_quantity {
+                                let reg_v = &final_graph[reg_id.index()];
+                                let new_priority = reset_to_priority_2021(r as Rank, reg_v.register_state[r], original_vertex.priority, controller);
+                                let mut new_registers = reg_v.register_state.clone();
+                                
+                                let new_r = new_registers.make_mut();
+                                for i in 0..reg_quantity {
+                                    match i.cmp(&r) {
+                                        Ordering::Less => new_r[i] = 0,
+                                        Ordering::Equal => new_r[i] = original_vertex.priority,
+                                        Ordering::Greater => new_r[i] = new_r[i].max(original_vertex.priority)
+                                    }
+                                }
+
+                                let e_r = RegisterVertex {
+                                    original_graph_id: reg_v.original_graph_id,
+                                    priority: new_priority,
+                                    owner: original_vertex.owner,
+                                    register_state: new_registers,
+                                    next_action: ChosenAction::Move,
+                                };
+
+                                edges.push(add_new_register_vertex!(e_r));
+                            }
+                        }
+                        ChosenAction::Move => {
+                            for edge_node in game.edges(reg_v.original_graph_id) {
+                                let reg_v = &final_graph[reg_id.index()];
+                                let r_next = RegisterVertex {
+                                    original_graph_id: edge_node,
+                                    priority: neutral_priority(controller),
+                                    register_state: reg_v.register_state.clone(),
+                                    next_action: ChosenAction::RegisterChange,
+                                    // After a move it'll always be the controller's turn again
+                                    owner: controller,
+                                };
 
                                 edges.push(add_new_register_vertex!(r_next));
                             }
@@ -276,6 +387,27 @@ fn rank_to_priority(rank: Rank, saved_priority: Priority, controller: Owner) -> 
                 out - 1
             } else {
                 out
+            }
+        }
+    }
+}
+
+fn reset_to_priority_2021(rank: Rank, saved_priority: Priority, vertex_priority: Priority, controller: Owner) -> Priority {
+    let is_aligned = controller.priority_aligned(saved_priority.max(vertex_priority));
+    let out = 2 * rank as Priority;
+    match controller {
+        Owner::Even => {
+            if is_aligned {
+                out
+            } else {
+                out + 1
+            }
+        }
+        Owner::Odd => {
+            if is_aligned {
+                out + 2
+            } else {
+                out + 1
             }
         }
     }
