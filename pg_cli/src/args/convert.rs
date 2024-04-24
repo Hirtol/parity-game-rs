@@ -42,7 +42,7 @@ pub enum ConversionGoal {
 }
 
 #[derive(Debug, clap::ValueEnum, Copy, Clone)]
-enum RgVersion {
+pub enum RgVersion {
     Old,
     New
 }

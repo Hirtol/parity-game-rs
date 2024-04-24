@@ -4,7 +4,7 @@ use std::collections::{VecDeque};
 
 use ecow::{eco_vec, EcoVec};
 
-use crate::Owner;
+use crate::{Owner, ParityGame};
 
 use crate::parity_game::{Priority, VertexId};
 
@@ -269,6 +269,19 @@ impl<'a> RegisterGame<'a> {
             vertices: final_graph,
             edges: final_edges,
         }
+    }
+    
+    /// Calculate the max `k` which assures the validity of calculated results on a `k`-register game.
+    /// 
+    /// Note that register games of `j < k` might also be valid, but it's not guaranteed.
+    /// This only assures that the register-index of the particular given `pg` is not _more_ than the result.
+    pub fn max_register_index(pg: &ParityGame) -> Rank {
+        // Ideally we'd use the result of https://faculty.runi.ac.il/udiboker/files/ToWeak.pdf
+        // Where the max register-index would be 1 + log(z), where z is the maximal number of vertex-disjoint cycles.
+        // Calculating that seems(?) to be an NP-hard problem though. 
+        // Just calculating the strongly connected components isn't enough, as everyone uses the (maximal) SCC definition,
+        // but we don't want the maximal SCCs!
+        (1 + pg.vertex_count().ilog2()) as Rank
     }
 
     /// Project the given register game winners back to the original game's vertices.
