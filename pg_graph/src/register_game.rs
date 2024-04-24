@@ -76,8 +76,7 @@ impl<'a> RegisterGame<'a> {
             match expanding {
                 // Expand the given original vertex as a starting node, aka, assuming fresh registers
                 ToExpand::OriginalVertex(v_id) => {
-                    let vertex = &game[v_id];
-                    let register_values = base_registers.get(&vertex.priority).expect("Priority register wasn't initialised");
+                    let register_values = base_registers.get(&0).expect("Priority register wasn't initialised");
 
                     // We assume we start with the next action being a register change instead of a move,
                     // thus the owner is always the controller.
@@ -166,7 +165,13 @@ impl<'a> RegisterGame<'a> {
         let mut output = vec![None; self.original_game.vertex_count()];
         
         for (reg_id, &winner) in game_winners.iter().enumerate() {
-            let original_id = self.vertices[reg_id].original_graph_id;
+            // Only persist the result of the 0-initialised registers, as they're the starting registers
+            let reg_v = &self.vertices[reg_id];
+            if reg_v.register_state.iter().any(|r| *r != 0) {
+                continue;
+            }
+            
+            let original_id = reg_v.original_graph_id;
             let current_winner = &mut output[original_id.index()];
             
             if let Some(curr_win) = current_winner {

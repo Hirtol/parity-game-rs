@@ -19,6 +19,7 @@ itertools = "0.12.1"
 
 petgraph = "0.6.4"
 oxidd = { version = "0.6.0", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
+oxidd-core = "0.6.0"
 oxidd-dump = "0.1.0"
 oxidd-reorder = "0.1.0"
 
