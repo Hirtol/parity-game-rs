@@ -203,7 +203,7 @@ impl<'a> RegisterGame<'a> {
                     // thus the owner is always the controller.
                     let register_vertex = RegisterVertex {
                         original_graph_id: v_id,
-                        priority: neutral_priority(controller),
+                        priority: neutral_priority_2021(controller),
                         owner: controller,
                         register_state: register_values.clone(),
                         next_action: ChosenAction::RegisterChange,
@@ -249,7 +249,7 @@ impl<'a> RegisterGame<'a> {
                                 let reg_v = &final_graph[reg_id.index()];
                                 let r_next = RegisterVertex {
                                     original_graph_id: edge_node,
-                                    priority: neutral_priority(controller),
+                                    priority: neutral_priority_2021(controller),
                                     register_state: reg_v.register_state.clone(),
                                     next_action: ChosenAction::RegisterChange,
                                     // After a move it'll always be the controller's turn again
@@ -367,6 +367,10 @@ fn neutral_priority(owner: Owner) -> Priority {
         Owner::Even => 1,
         Owner::Odd => 0,
     }
+}
+
+fn neutral_priority_2021(_owner: Owner) -> Priority {
+    0
 }
 
 /// Convert a reset of a particular rank to a priority to be used in the register game.

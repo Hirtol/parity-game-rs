@@ -56,8 +56,8 @@ impl SolveCommand {
             let k = if k == 0 { 1 + parity_game.vertex_count().ilog2() } else {k} as u8;
 
             tracing::debug!(k, "Constructing with register index");
-            let register_game = timed_solve!(RegisterGame::construct(&parity_game, k, Owner::Even), "Constructed Register Game");
-            
+            let register_game = timed_solve!(RegisterGame::construct_2021(&parity_game, k, Owner::Even), "Constructed Register Game");
+
             Some((register_game.to_game()?, register_game))
         } else {
             None
