@@ -26,6 +26,9 @@ fn main() -> eyre::Result<()> {
         SubCommands::Convert(conv) => {
             conv.run()?;
         }
+        SubCommands::Bench(bench) => {
+            bench.run()?;
+        }
     }
     
     tracing::info!("Runtime: {:.2?} - Peak Memory Usage: {} MB", now.elapsed(), PEAK_ALLOC.peak_usage_as_mb());

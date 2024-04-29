@@ -1,8 +1,10 @@
 use convert::ConvertCommand;
 use solve::SolveCommand;
+use crate::args::bench::BenchCommand;
 
 pub mod solve;
 pub mod convert;
+pub mod bench;
 
 #[derive(clap::Parser, Debug)]
 #[clap(version, about)]
@@ -23,4 +25,8 @@ pub enum SubCommands {
     #[clap(arg_required_else_help(true))]
     #[clap(alias = "c")]
     Convert(ConvertCommand),
+    /// Run the benchmark for the paper.
+    #[clap(arg_required_else_help(true))]
+    #[clap(alias = "b")]
+    Bench(BenchCommand),
 }

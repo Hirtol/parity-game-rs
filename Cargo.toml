@@ -6,6 +6,7 @@ default-members = ["pg_cli"]
 [workspace.dependencies]
 eyre = "0.6"
 thiserror = "1"
+itertools = "0.12.1"
 
 # Build dependencies with full release optimizations in debug builds since they'll rarely change
 [profile.dev.package."*"]

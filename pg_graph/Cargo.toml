@@ -15,7 +15,7 @@ ecow = "0.2.2"
 ahash = "0.8.11"
 
 tracing = { version = "0.1.40" }
-itertools = "0.12.1"
+itertools.workspace = true
 
 petgraph = "0.6.4"
 oxidd = { version = "0.6.0", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
