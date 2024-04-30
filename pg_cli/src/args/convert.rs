@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use pg_graph::Owner;
 use pg_graph::register_game::RegisterGame;
-use pg_graph::visualize::{DotWriter, MermaidWriter};
+use pg_graph::visualize::{DotWriter, MermaidWriter, VisualRegisterGame};
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {
@@ -38,7 +38,10 @@ pub enum ConversionGoal {
         #[clap(short)]
         k: Option<u32>,
         #[clap(short, default_value = "old")]
-        v: RgVersion
+        v: RgVersion,
+        /// Whether this should use the paper renderer.
+        #[clap(short)]
+        p: bool,
     }
 }
 
@@ -73,7 +76,7 @@ impl ConvertCommand {
                     tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
             }
-            ConversionGoal::RegisterGame { k, v } => {
+            ConversionGoal::RegisterGame { k, v, p } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog2()) as u8;
                 let had_nodes = parity_game.vertex_count();
                 let register_game = match v {
@@ -82,9 +85,25 @@ impl ConvertCommand {
                 };
                 
                 if let Some(path) = self.mermaid_path {
-                    std::fs::write(&path, MermaidWriter::write_mermaid(&register_game)?)?;
+                    let out_str = if p {
+                        MermaidWriter::write_mermaid(&VisualRegisterGame(&register_game))?
+                    } else {
+                        MermaidWriter::write_mermaid(&register_game)?
+                    };
+                    std::fs::write(&path, out_str)?;
                     
                     tracing::info!(?path, "Wrote Mermaid graph to path")
+                }
+                
+                if let Some(path) = self.dot_path {
+                    let out_str = if p {
+                        DotWriter::write_dot(&VisualRegisterGame(&register_game))?
+                    } else {
+                        DotWriter::write_dot(&register_game)?
+                    };
+                    std::fs::write(&path, out_str)?;
+
+                    tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
                 
                 if let Some(path) = self.pg_path {
@@ -95,12 +114,6 @@ impl ConvertCommand {
                     std::fs::write(&path, game.to_pg())?;
                     
                     tracing::info!(?path, "Wrote PG graph to path")
-                }
-
-                if let Some(path) = self.dot_path {
-                    std::fs::write(&path, DotWriter::write_dot(&register_game)?)?;
-
-                    tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
             }
             ConversionGoal::SymbolicParityGame => {

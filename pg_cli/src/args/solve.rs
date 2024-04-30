@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use pg_graph::Owner;
 use pg_graph::register_game::RegisterGame;
+use pg_graph::visualize::MermaidWriter;
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {
@@ -63,7 +64,7 @@ impl SolveCommand {
             None
         };
 
-        let mermaid_output = self.solution_mermaid.map(|out| (out, parity_game.to_mermaid()));
+        let mermaid_output = self.solution_mermaid.map(|out| (out, MermaidWriter::write_mermaid(&parity_game).unwrap()));
         let solver = self.solver.unwrap_or(Solver::Spm);
         tracing::info!(?solver, "Using solver");
 
