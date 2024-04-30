@@ -1,12 +1,14 @@
 //! See [RegisterGame]
 use std::cmp::Ordering;
 use std::collections::{VecDeque};
+use std::fmt::Write;
 
 use ecow::{eco_vec, EcoVec};
 
 use crate::{Owner, ParityGame};
 
 use crate::parity_game::{Priority, VertexId};
+use crate::visualize::VisualVertex;
 
 /// The value type for `k` in a register game.
 ///
@@ -332,45 +334,37 @@ impl<'a> RegisterGame<'a> {
         
         crate::parity_game::ParityGame::new(parsed_game)
     }
+}
 
-    pub fn to_mermaid(&self) -> String {
-        use std::fmt::Write;
-        let mut output = String::from("flowchart TD\n");
+impl<'a> crate::visualize::VisualGraph for RegisterGame<'a> {
+    fn vertices(&self) -> Box<dyn Iterator<Item=VisualVertex> + '_> {
+        Box::new(self.vertices.iter().enumerate()
+            .map(|(i, v)| VisualVertex {
+            id: VertexId::new(i),
+            owner: v.owner,
+        }))
+    }
 
-        for (v_id, v) in self.vertices.iter().enumerate() {
-            let (open_token, close_token) = match v.owner {
-                Owner::Even => ("(", ")"),
-                Owner::Odd => ("{{", "}}"),
-            };
+    fn edges(&self) -> Box<dyn Iterator<Item=(VertexId, VertexId)> + '_> {
+        Box::new(self.edges.iter().flat_map(|(v, targets)| targets.iter().map(|u| (*v, *u))))
+    }
 
-            writeln!(
-                &mut output,
-                "{}{}\"{priority},{orig}({orig_label},{orig_priority}),{regs:?},{next_move:?}\"{close}",
-                v_id,
-                open_token,
-                priority = v.priority,
-                orig = v.original_graph_id.index(),
-                orig_label = self.original_game.label(v.original_graph_id).unwrap_or_default(),
-                orig_priority = self.original_game[v.original_graph_id].priority,
-                regs = v.register_state,
-                next_move = v.next_action,
-                close = close_token
-            )
-            .unwrap()
+    fn node_text(&self, node: VertexId, sink: &mut dyn Write) -> std::fmt::Result {
+        let v = &self.vertices[node.index()];
+        write!(sink, "{priority},{orig}({orig_label},{orig_priority}),{regs:?},{next_move:?}",
+               priority = v.priority,
+               orig = v.original_graph_id.index(),
+               orig_label = self.original_game.label(v.original_graph_id).unwrap_or_default(),
+               orig_priority = self.original_game[v.original_graph_id].priority,
+               regs = v.register_state,
+               next_move = v.next_action,)
+    }
+
+    fn edge_text(&self, edge: (VertexId, VertexId), sink: &mut dyn Write) -> std::fmt::Result {
+        match self.vertices[edge.0.index()].next_action {
+            ChosenAction::RegisterChange => write!(sink, "E_i"),
+            ChosenAction::Move => write!(sink, "E_move")
         }
-
-        for (v_id, edges) in &self.edges {
-            let vertex = &self.vertices[v_id.index()];
-            let edge_txt = match vertex.next_action {
-                ChosenAction::RegisterChange => "E_skip/rn",
-                ChosenAction::Move => "E_move",
-            };
-            for edge in edges {
-                writeln!(&mut output, "{} -->|{}| {}", v_id.index(), edge_txt, edge.index()).unwrap();
-            }
-        }
-
-        output
     }
 }
 

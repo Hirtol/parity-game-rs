@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::ops::Index;
 use itertools::Itertools;
 use petgraph::adj::IndexType;
 use petgraph::graph::NodeIndex;
 use petgraph::prelude::EdgeRef;
-use crate::{Owner, Vertex};
+use crate::{Vertex};
+use crate::visualize::VisualVertex;
 
 pub type VertexId<Ix = u32> = NodeIndex<Ix>;
 pub type Priority = u32;
@@ -124,36 +126,6 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
         self.graph.edge_references()
     }
 
-    pub fn to_mermaid(&self) -> String {
-        use std::fmt::Write;
-        let mut output = String::from("flowchart TD\n");
-
-        for (v_id, v) in self.graph.node_indices().zip(self.graph.node_weights()) {
-            let (open_token, close_token) = match v.owner {
-                Owner::Even => ("(", ")"),
-                Owner::Odd => ("{{", "}}"),
-            };
-
-            writeln!(
-                &mut output,
-                "{}{}\"{priority},{id}({orig_label})\"{close}",
-                v_id.index(),
-                open_token,
-                priority = v.priority,
-                id = v_id.index(),
-                orig_label = self.label(v_id).unwrap_or_default(),
-                close = close_token
-            )
-                .unwrap();
-
-            for edge in self.graph.edges(v_id) {
-                writeln!(&mut output, "{} --> {}", v_id.index(), edge.target().index()).unwrap();
-            }
-        }
-
-        output
-    }
-
     pub fn to_pg(&self) -> String {
         use std::fmt::Write;
         let mut output = format!("parity {};\n", self.vertex_count());
@@ -172,6 +144,36 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
         }
 
         output
+    }
+}
+
+impl crate::visualize::VisualGraph for ParityGame<Vertex> {
+    fn vertices(&self) -> Box<dyn Iterator<Item=VisualVertex> + '_> {
+        Box::new(self.graph.node_indices()
+            .map(|i| (i, self.graph.node_weight(i).unwrap()))
+            .map(|(i, v)| VisualVertex {
+                id: i,
+                owner: v.owner,
+            }))
+    }
+
+    fn edges(&self) -> Box<dyn Iterator<Item=(VertexId, VertexId)> + '_> {
+        Box::new(self.graph.edge_references().map(|e| (e.source(), e.target())))
+    }
+
+    fn node_text(&self, node: VertexId, sink: &mut dyn Write) -> std::fmt::Result {
+        let v = self.get(node).expect("Invalid vertex id");
+        write!(
+            sink,
+            "{priority},{id}({orig_label})",
+            priority = v.priority,
+            id = node.index(),
+            orig_label = self.label(node).unwrap_or_default(),
+        )
+    }
+
+    fn edge_text(&self, _edge: (VertexId, VertexId), _sink: &mut dyn Write) -> std::fmt::Result {
+        Ok(())
     }
 }
 

@@ -8,6 +8,7 @@ pub mod parity_game;
 pub mod symbolic;
 mod datatypes;
 pub mod register_game;
+pub mod visualize;
 
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use pg_graph::Owner;
 use pg_graph::register_game::RegisterGame;
+use pg_graph::visualize::{DotWriter, MermaidWriter};
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {
@@ -55,7 +56,7 @@ impl ConvertCommand {
         match self.goal {
             ConversionGoal::ParityGame => {
                 if let Some(path) = self.mermaid_path {
-                    std::fs::write(&path, parity_game.to_mermaid())?;
+                    std::fs::write(&path, MermaidWriter::write_mermaid(&parity_game)?)?;
 
                     tracing::info!(?path, "Wrote Mermaid graph to path")
                 }
@@ -64,6 +65,12 @@ impl ConvertCommand {
                     std::fs::write(&path, parity_game.to_pg())?;
 
                     tracing::info!(?path, "Wrote PG graph to path")
+                }
+
+                if let Some(path) = self.dot_path {
+                    std::fs::write(&path, DotWriter::write_dot(&parity_game)?)?;
+
+                    tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
             }
             ConversionGoal::RegisterGame { k, v } => {
@@ -75,7 +82,7 @@ impl ConvertCommand {
                 };
                 
                 if let Some(path) = self.mermaid_path {
-                    std::fs::write(&path, register_game.to_mermaid())?;
+                    std::fs::write(&path, MermaidWriter::write_mermaid(&register_game)?)?;
                     
                     tracing::info!(?path, "Wrote Mermaid graph to path")
                 }
@@ -88,6 +95,12 @@ impl ConvertCommand {
                     std::fs::write(&path, game.to_pg())?;
                     
                     tracing::info!(?path, "Wrote PG graph to path")
+                }
+
+                if let Some(path) = self.dot_path {
+                    std::fs::write(&path, DotWriter::write_dot(&register_game)?)?;
+
+                    tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
             }
             ConversionGoal::SymbolicParityGame => {
