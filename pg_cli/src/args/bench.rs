@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use eyre::eyre;
 use itertools::Itertools;
 use serde_with::{serde_as, DurationSecondsWithFrac};
-use pg_graph::{Owner, ParityGame};
+use pg_graph::{Owner, ParityGame, ParityGraph};
 use pg_graph::register_game::{Rank, RegisterGame};
 use pg_graph::solvers::zielonka::ZielonkaSolver;
 

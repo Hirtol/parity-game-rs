@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use pg_graph::Owner;
+use pg_graph::{Owner, ParityGraph};
 use pg_graph::register_game::RegisterGame;
 use pg_graph::visualize::{DotWriter, MermaidWriter, VisualRegisterGame};
 

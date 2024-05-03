@@ -1,8 +1,6 @@
 use std::collections::{VecDeque};
 
-use itertools::Itertools;
-
-use crate::{solvers::SolverOutput, Owner, ParityGame, VertexId};
+use crate::{solvers::SolverOutput, Owner, ParityGame, VertexId, ParityGraph};
 
 pub struct ZielonkaSolver<'a> {
     game: &'a ParityGame,

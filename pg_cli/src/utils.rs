@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::path::Path;
+use pg_graph::ParityGraph;
 
 /// Load the parity game, with an expected `.pg` format, from the provided path.
 #[tracing::instrument(level = "debug", skip_all)]

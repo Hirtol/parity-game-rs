@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use itertools::Itertools;
-use crate::Owner;
+use crate::{Owner, ParityGraph};
 
 
 use crate::parity_game::{ParityGame, Priority, VertexId};

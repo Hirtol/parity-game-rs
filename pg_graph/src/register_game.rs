@@ -5,7 +5,7 @@ use std::fmt::Write;
 
 use ecow::{eco_vec, EcoVec};
 
-use crate::{Owner, ParityGame};
+use crate::{Owner, ParityGame, ParityGraph};
 
 use crate::parity_game::{Priority, VertexId};
 use crate::visualize::VisualVertex;

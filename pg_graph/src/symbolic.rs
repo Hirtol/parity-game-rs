@@ -3,11 +3,11 @@ use std::collections::{hash_map::Entry, HashMap};
 use itertools::Itertools;
 use oxidd::{
     bdd::{BDDFunction, BDDManagerRef},
-    BooleanFunction, BooleanFunctionQuant, Manager, ManagerRef,
+    BooleanFunction, Manager, ManagerRef,
 };
 use petgraph::prelude::EdgeRef;
 
-use crate::{Owner, ParityGame, Priority};
+use crate::{Owner, ParityGame, ParityGraph, Priority};
 
 type BDD = BDDFunction;
 

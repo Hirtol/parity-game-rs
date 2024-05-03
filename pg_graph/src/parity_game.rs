@@ -1,25 +1,111 @@
-use std::collections::HashMap;
-use std::fmt::Write;
-use std::ops::Index;
+use std::{collections::HashMap, fmt::Write, ops::Index};
+
 use itertools::Itertools;
-use petgraph::adj::IndexType;
-use petgraph::Graph;
-use petgraph::graph::{NodeIndex};
-use petgraph::prelude::EdgeRef;
-use crate::{Vertex};
-use crate::visualize::VisualVertex;
+use petgraph::{
+    adj::IndexType,
+    graph::{EdgeReference, NodeIndex},
+    prelude::EdgeRef,
+};
+
+use crate::{visualize::VisualVertex, Vertex};
 
 pub type VertexId<Ix = u32> = NodeIndex<Ix>;
 pub type Priority = u32;
 
+pub trait ParityGraph<Ix: IndexType = u32>: Sized {
+    fn vertex_count(&self) -> usize;
+
+    fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
+
+    fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_;
+    
+    fn vertices_and_index(&self) -> impl Iterator<Item = (NodeIndex<Ix>, &Vertex)> + '_ {
+        self.vertices_index().zip(self.vertices())
+    }
+
+    fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str>;
+
+    fn vertices_by_priority(&self, priority: Priority) -> impl Iterator<Item = &Vertex> + '_ {
+        self.vertices().filter(move |v| v.priority == priority)
+    }
+
+    fn vertices_by_priority_idx(&self, priority: Priority) -> impl Iterator<Item = (NodeIndex<Ix>, &Vertex)> + '_ {
+        self.vertices_index()
+            .zip(self.vertices())
+            .filter(move |v| v.1.priority == priority)
+    }
+
+    fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex>;
+
+    /// Return all predecessors of the given vertex
+    ///
+    /// Efficiently pre-calculated.
+    fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
+
+    /// Create a sub-game by excluding all vertices in `exclude`.
+    ///
+    /// Note that `exclude` should be sorted!
+    fn create_subgame(&self, exclude: ahash::HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self> {
+        SubGame {
+            parent: &self,
+            ignored: exclude,
+        }
+    }
+
+    /// Return the maximal priority found in the given game.
+    fn priority_max(&self) -> Priority {
+        self.vertices().map(|v| v.priority).max().expect("No node in graph")
+    }
+
+    /// Calculate all the unique priorities present in the given game
+    fn priorities_unique(&self) -> impl Iterator<Item = Priority> + '_ {
+        self.vertices().map(|v| v.priority).unique()
+    }
+
+    /// Count the amount of vertices for each priority
+    fn priorities_class_count(&self) -> ahash::HashMap<Priority, u32> {
+        self.vertices()
+            .fold(HashMap::default(), |mut hash: ahash::HashMap<Priority, u32>, v| {
+                hash.entry(v.priority).and_modify(|count| *count += 1).or_insert(1);
+                hash
+            })
+    }
+
+    fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool;
+
+    fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
+
+    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>>;
+
+    fn to_pg(&self) -> String {
+        use std::fmt::Write;
+        let mut output = format!("parity {};\n", self.vertex_count());
+
+        for (v_id, v) in self.vertices_index().zip(self.vertices()) {
+            writeln!(
+                &mut output,
+                "{id} {priority} {owner:?} {edges} \"{label}\";",
+                id = v_id.index(),
+                priority = v.priority,
+                owner = v.owner as u8,
+                edges = self.edges(v_id).map(|target| target.index()).join(","),
+                label = self.label(v_id).unwrap_or_default(),
+            )
+                .unwrap();
+        }
+
+        output
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct ParityGame<V = Vertex, Ix: IndexType = u32> {
-    pub graph: petgraph::Graph<V, (), petgraph::Directed, Ix>,
+pub struct ParityGame<Ix: IndexType = u32> {
+    pub graph: petgraph::Graph<Vertex, (), petgraph::Directed, Ix>,
     inverted_vertices: Vec<Vec<VertexId<Ix>>>,
     labels: Vec<Option<String>>,
 }
 
-impl<Ix: IndexType> ParityGame<Vertex, Ix> {
+impl<Ix: IndexType> ParityGame<Ix> {
     pub fn empty() -> Self {
         Self {
             graph: petgraph::Graph::with_capacity(20, 20),
@@ -35,11 +121,16 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
         }
 
         let mut out = Self::empty();
-
-        let vertices: Vec<_> = parsed_game.iter().map(|v| Vertex {
-            priority: v.priority.try_into().expect("Priority too large"),
-            owner: v.owner.try_into().expect("Impossible failure"),
-        }).map(|v| out.graph.add_node(v)).collect();
+        // Add vertices in priority decreasing order
+        let vertices: Vec<_> = parsed_game
+            .iter()
+            .map(|v| Vertex {
+                priority: v.priority.try_into().expect("Priority too large"),
+                owner: v.owner.try_into().expect("Impossible failure"),
+            })
+            .sorted_by(|a, b| b.priority.cmp(&a.priority))
+            .map(|v| out.graph.add_node(v))
+            .collect();
 
         for (p_v, v_idx) in parsed_game.iter().zip(vertices) {
             for &target_v in &p_v.outgoing_edges {
@@ -60,137 +151,67 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
 
         Ok(out)
     }
-    
-    pub fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
+}
+
+impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
+    fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
         self.labels[vertex_id.index()].as_deref()
     }
 
-    pub fn vertex_count(&self) -> usize {
+    fn vertex_count(&self) -> usize {
         self.graph.node_count()
     }
 
-    pub fn vertices_index(&self) -> impl Iterator<Item=NodeIndex<Ix>> + '_ {
+    fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.graph.node_indices()
     }
-    
-    pub fn vertices(&self) -> impl Iterator<Item=&Vertex> + '_ {
+
+    fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_ {
         self.graph.node_weights()
     }
 
-    pub fn vertices_by_priority(&self, priority: Priority) -> impl Iterator<Item=&Vertex> + '_{
-        self.vertices().filter(move |v| v.priority == priority)
-    }
-
-    pub fn vertices_by_priority_idx(&self, priority: Priority) -> impl Iterator<Item=(NodeIndex<Ix>, &Vertex)> + '_{
-        self.vertices_index().zip(self.vertices()).filter(move |v| v.1.priority == priority)
-    }
-
-    pub fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {
+    fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {
         self.graph.node_weight(id)
     }
 
-    /// Return all predecessors of the given vertex
-    ///
-    /// Efficiently pre-calculated.
-    pub fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item=NodeIndex<Ix>> + '_ {
-        // self.graph.edges_directed(id, Direction::Incoming).map(|e| e.source())
-        self.inverted_vertices.get(id.index()).map(|v| v.iter().copied()).into_iter().flatten()
-    }
-    
-    /// Create a subgame by excluding all vertices in `exclude`.
-    /// 
-    /// Note that `exclude` should be sorted!
-    pub fn subgame(&self, exclude: &[NodeIndex<Ix>]) -> ParityGame {
-        let mut sub_graph = Graph::with_capacity(0, 0);
-        // mapping from old node index to new node index, end represents removed.
-        let mut node_index_map = vec![NodeIndex::end(); self.vertex_count()];
-        let mut inverted_graph = vec![Vec::new(); self.vertex_count()];
-        
-        for (i, node) in self.graph.node_weights().enumerate() {
-            if exclude.binary_search(&NodeIndex::new(i)).is_err() {
-                node_index_map[i] = sub_graph.add_node(*node)
-            }
-        }
-        for edge in self.graph_edges() {
-            // skip edge if any endpoint was removed
-            let source = node_index_map[edge.source().index()];
-            let target = node_index_map[edge.target().index()];
-            if source != NodeIndex::end() && target != NodeIndex::end() {
-                sub_graph.add_edge(source, target, ());
-                inverted_graph[target.index()].push(source)
-            }
-        }
-
-        ParityGame {
-            graph: sub_graph,
-            inverted_vertices: inverted_graph,
-            labels: Vec::new(),
-        }
+    fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        self.inverted_vertices
+            .get(id.index())
+            .map(|v| v.iter().copied())
+            .into_iter()
+            .flatten()
     }
 
-    /// Return the maximal priority found in the given game.
-    pub fn priority_max(&self) -> Priority {
-        self.vertices().map(|v| v.priority).max().unwrap_or_default()
-    }
-
-    /// Calculate all the unique priorities present in the given game
-    pub fn priorities_unique(&self) -> impl Iterator<Item=Priority> + '_ {
-        self.vertices().map(|v| v.priority).unique()
-    }
-
-    /// Count the amount of vertices for each priority
-    pub fn priorities_class_count(&self) -> ahash::HashMap<Priority, u32> {
-        self.vertices().fold(HashMap::default(), |mut hash: ahash::HashMap<Priority, u32>, v| {
-            hash.entry(v.priority).and_modify(|count| *count += 1).or_insert(1);
-            hash
-        })
-    }
-
-    pub fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
+    fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
         self.graph.contains_edge(from, to)
     }
-    
-    pub fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+
+    fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.graph.edges(v).map(|e| e.target())
     }
-    
-    pub fn graph_edges(&self) -> petgraph::graph::EdgeReferences<'_, (), Ix> {
+
+    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
         self.graph.edge_references()
     }
 
-    pub fn to_pg(&self) -> String {
-        use std::fmt::Write;
-        let mut output = format!("parity {};\n", self.vertex_count());
-
-        for (v_id, v) in self.graph.node_indices().zip(self.graph.node_weights()) {
-            writeln!(
-                &mut output,
-                "{id} {priority} {owner:?} {edges} \"{label}\";",
-                id=v_id.index(),
-                priority = v.priority,
-                owner=v.owner as u8,
-                edges=self.graph.edges(v_id).map(|v| v.target().index()).join(","),
-                label = self.label(v_id.into()).unwrap_or_default(),
-            )
-                .unwrap();
-        }
-
-        output
+    fn priority_max(&self) -> Priority {
+        // Nodes are sorted from high to low priority, so just grab the first item in the list!
+        self.graph
+            .node_weight(NodeIndex::new(0))
+            .map(|v| v.priority)
+            .unwrap_or_default()
     }
 }
 
-impl crate::visualize::VisualGraph for ParityGame<Vertex> {
-    fn vertices(&self) -> Box<dyn Iterator<Item=VisualVertex> + '_> {
-        Box::new(self.graph.node_indices()
-            .map(|i| (i, self.graph.node_weight(i).unwrap()))
-            .map(|(i, v)| VisualVertex {
-                id: i,
-                owner: v.owner,
-            }))
+impl<T: ParityGraph<u32>> crate::visualize::VisualGraph for T {
+    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex> + '_> {
+        Box::new(
+            self.vertices_and_index().map(|(i, v)| VisualVertex { id: i, owner: v.owner })
+        )
     }
 
-    fn edges(&self) -> Box<dyn Iterator<Item=(VertexId, VertexId)> + '_> {
-        Box::new(self.graph.edge_references().map(|e| (e.source(), e.target())))
+    fn edges(&self) -> Box<dyn Iterator<Item = (VertexId, VertexId)> + '_> {
+        Box::new(self.graph_edges().map(|e| (e.source(), e.target())))
     }
 
     fn node_text(&self, node: VertexId, sink: &mut dyn Write) -> std::fmt::Result {
@@ -209,10 +230,63 @@ impl crate::visualize::VisualGraph for ParityGame<Vertex> {
     }
 }
 
-impl<Ix: IndexType> Index<VertexId<Ix>> for ParityGame<Vertex, Ix> {
+impl<Ix: IndexType> Index<VertexId<Ix>> for ParityGame<Ix> {
     type Output = Vertex;
 
     fn index(&self, index: VertexId<Ix>) -> &Self::Output {
         self.graph.node_weight(index).expect("Invalid Id")
+    }
+}
+
+pub struct SubGame<'a, Ix: IndexType, Parent: ParityGraph<Ix>> {
+    parent: &'a Parent,
+    ignored: ahash::HashSet<NodeIndex<Ix>>,
+}
+
+impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a, Ix, Parent> {
+    fn vertex_count(&self) -> usize {
+        self.vertices_index().count()
+    }
+
+    fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        self.parent.vertices_index().filter(|ix| !self.ignored.contains(ix))
+    }
+
+    fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_ {
+        self.vertices_index().flat_map(|ix| self.parent.get(ix))
+    }
+
+    fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
+        if !self.ignored.contains(&vertex_id) {
+            self.parent.label(vertex_id)
+        } else {
+            None
+        }
+    }
+
+    fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {
+        if !self.ignored.contains(&id) {
+            self.parent.get(id)
+        } else {
+            None
+        }
+    }
+
+    fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        self.parent.predecessors(id).filter(|idx| !self.ignored.contains(idx))
+    }
+
+    fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
+        !self.ignored.contains(&from) && !self.ignored.contains(&to) && self.parent.has_edge(from, to)
+    }
+
+    fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        self.parent.edges(v).filter(|idx| !self.ignored.contains(idx))
+    }
+
+    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
+        self.parent
+            .graph_edges()
+            .filter(|edge| !self.ignored.contains(&edge.source()) && !self.ignored.contains(&edge.target()))
     }
 }
