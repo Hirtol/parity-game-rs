@@ -16,30 +16,38 @@ pub type Priority = u32;
 pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     type Parent: ParityGraph<Ix>;
 
+    #[inline(always)]
     fn vertex_count(&self) -> usize;
 
+    #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
+    #[inline(always)]
     fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_;
 
+    #[inline(always)]
     fn vertices_and_index(&self) -> impl Iterator<Item = (NodeIndex<Ix>, &Vertex)> + '_ {
         self.vertices_index().zip(self.vertices())
     }
 
     fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str>;
 
+    #[inline(always)]
     fn vertices_by_priority(&self, priority: Priority) -> impl Iterator<Item = &Vertex> + '_ {
         self.vertices().filter(move |v| v.priority == priority)
     }
 
+    #[inline(always)]
     fn vertices_by_priority_idx(&self, priority: Priority) -> impl Iterator<Item = (NodeIndex<Ix>, &Vertex)> + '_ {
         self.vertices_index()
             .zip(self.vertices())
             .filter(move |v| v.1.priority == priority)
     }
 
+    #[inline(always)]
     fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex>;
 
+    #[inline(always)]
     /// Return all predecessors of the given vertex
     ///
     /// Efficiently pre-calculated.
@@ -50,16 +58,19 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     /// Note that `exclude` should be sorted!
     fn create_subgame<'a>(&'a self, exclude: &'a ahash::HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
 
+    #[inline(always)]
     /// Return the maximal priority found in the given game.
     fn priority_max(&self) -> Priority {
         self.vertices().map(|v| v.priority).max().expect("No node in graph")
     }
 
+    #[inline(always)]
     /// Calculate all the unique priorities present in the given game
     fn priorities_unique(&self) -> impl Iterator<Item = Priority> + '_ {
         self.vertices().map(|v| v.priority).unique()
     }
 
+    #[inline(always)]
     /// Count the amount of vertices for each priority
     fn priorities_class_count(&self) -> ahash::HashMap<Priority, u32> {
         self.vertices()
@@ -69,10 +80,13 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
             })
     }
 
+    #[inline(always)]
     fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool;
 
+    #[inline(always)]
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
+    #[inline(always)]
     fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>>;
 
     fn to_pg(&self) -> String {
@@ -153,26 +167,32 @@ impl<Ix: IndexType> ParityGame<Ix> {
 impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
     type Parent = Self;
 
-    fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
-        self.labels[vertex_id.index()].as_deref()
-    }
-
+    #[inline(always)]
     fn vertex_count(&self) -> usize {
         self.graph.node_count()
     }
 
+    #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.graph.node_indices()
     }
 
+    #[inline(always)]
     fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_ {
         self.graph.node_weights()
     }
 
+    #[inline(always)]
+    fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
+        self.labels[vertex_id.index()].as_deref()
+    }
+
+    #[inline(always)]
     fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {
         self.graph.node_weight(id)
     }
 
+    #[inline(always)]
     fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.inverted_vertices
             .get(id.index())
@@ -181,23 +201,26 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
             .flatten()
     }
 
-    fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
-        self.graph.contains_edge(from, to)
-    }
-
-    fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.graph.edges(v).map(|e| e.target())
-    }
-
-    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
-        self.graph.edge_references()
-    }
-
     fn create_subgame<'a>(&'a self, exclude: &'a HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         SubGame {
             parent: &self,
             ignored: exclude.clone(),
         }
+    }
+
+    #[inline(always)]
+    fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
+        self.graph.contains_edge(from, to)
+    }
+
+    #[inline(always)]
+    fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        self.graph.edges(v).map(|e| e.target())
+    }
+
+    #[inline(always)]
+    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
+        self.graph.edge_references()
     }
 }
 
@@ -245,18 +268,23 @@ pub struct SubGame<'a, Ix: IndexType, Parent: ParityGraph<Ix>> {
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a, Ix, Parent> {
     type Parent = Parent;
 
+    #[inline(always)]
     fn vertex_count(&self) -> usize {
-        self.vertices_index().count()
+        // More efficient than doing a `.count()` call on `vertices_index()`
+        self.parent.vertex_count() - self.ignored.len()
     }
 
+    #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.parent.vertices_index().filter(|ix| !self.ignored.contains(ix))
     }
 
+    #[inline(always)]
     fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_ {
         self.vertices_index().flat_map(|ix| self.parent.get(ix))
     }
 
+    #[inline(always)]
     fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
         if !self.ignored.contains(&vertex_id) {
             self.parent.label(vertex_id)
@@ -265,14 +293,17 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         }
     }
 
+    #[inline(always)]
     fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {
         self.parent.get(id)
     }
 
+    #[inline(always)]
     fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.parent.predecessors(id).filter(|idx| !self.ignored.contains(idx))
     }
 
+    #[inline(always)]
     fn create_subgame<'b>(&'b self, exclude: &'b HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         let mut new_ignore = self.ignored.clone();
         new_ignore.extend(exclude);
@@ -282,14 +313,17 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         }
     }
 
+    #[inline(always)]
     fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
         !self.ignored.contains(&from) && !self.ignored.contains(&to) && self.parent.has_edge(from, to)
     }
 
+    #[inline(always)]
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.parent.edges(v).filter(|idx| !self.ignored.contains(idx))
     }
 
+    #[inline(always)]
     fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
         self.parent
             .graph_edges()

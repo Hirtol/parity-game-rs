@@ -1,10 +1,12 @@
-use std::collections::VecDeque;
-
-use crate::{Owner, ParityGame, ParityGraph, solvers::SolverOutput, SubGame, VertexId};
+use crate::{
+    solvers::{AttractionComputer, SolverOutput},
+    Owner, ParityGame, ParityGraph, SubGame, VertexId,
+};
 
 pub struct ZielonkaSolver<'a> {
-    game: &'a ParityGame,
     pub recursive_calls: usize,
+    game: &'a ParityGame,
+    attract: AttractionComputer,
 }
 
 impl<'a> ZielonkaSolver<'a> {
@@ -12,6 +14,7 @@ impl<'a> ZielonkaSolver<'a> {
         ZielonkaSolver {
             game,
             recursive_calls: 0,
+            attract: AttractionComputer::new(),
         }
     }
 
@@ -23,7 +26,7 @@ impl<'a> ZielonkaSolver<'a> {
         for idx in odd {
             winners[idx.index()] = Owner::Odd;
         }
-        
+
         SolverOutput {
             winners,
             strategy: None,
@@ -39,7 +42,7 @@ impl<'a> ZielonkaSolver<'a> {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
-            let attraction_set = attractor_set(attraction_owner, starting_set, game);
+            let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
 
             let sub_game = game.create_subgame(&attraction_set);
 
@@ -54,7 +57,11 @@ impl<'a> ZielonkaSolver<'a> {
                 attraction_owner_set.extend(attraction_set);
                 (even, odd)
             } else {
-                let b_attr = attractor_set(attraction_owner.other(), not_attraction_owner_set.iter().copied(), game);
+                let b_attr = self.attract.attractor_set(
+                    game,
+                    attraction_owner.other(),
+                    not_attraction_owner_set.iter().copied(),
+                );
                 let sub_game = game.create_subgame(&b_attr);
 
                 let (mut even, mut odd) = self.zielonka(&sub_game);
@@ -71,65 +78,17 @@ impl<'a> ZielonkaSolver<'a> {
     }
 }
 
-pub fn attractor_set<T: ParityGraph>(
-    player: Owner,
-    starting_set: impl IntoIterator<Item = VertexId>,
-    game: &T,
-) -> ahash::HashSet<VertexId> {
-    let mut attract_set = ahash::HashSet::from_iter(starting_set);
-    let mut explore_queue = VecDeque::from_iter(attract_set.iter().copied());
-    
-    while let Some(next_item) = explore_queue.pop_back() {
-        for predecessor in game.predecessors(next_item) {
-            let vertex = game.get(predecessor).expect("Invalid predecessor");
-            let should_add = if vertex.owner == player {
-                // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
-                true
-            } else {
-                game.edges(predecessor).all(|v| attract_set.contains(&v))
-            };
-
-            // Only add to the attraction set if we should
-            if should_add && attract_set.insert(predecessor) {
-                explore_queue.push_back(predecessor);
-            }
-        }
-    }
-
-    attract_set
-}
-
 #[cfg(test)]
 pub mod test {
-    use std::{collections::HashSet, time::Instant};
+    use std::time::Instant;
 
     use pg_parser::parse_pg;
 
     use crate::{
         Owner,
         ParityGame,
-        solvers::zielonka::ZielonkaSolver, tests::example_dir, VertexId,
+        solvers::zielonka::ZielonkaSolver, tests::example_dir,
     };
-
-    #[test]
-    pub fn test_attract_set_computation() -> eyre::Result<()> {
-        let mut pg = r#"parity 3;
-0 1 1 0,1 "0";
-1 1 0 2 "1";
-2 2 0 2 "2";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        let pg = ParityGame::new(pg)?;
-
-        let set = super::attractor_set(Owner::Even, [VertexId::new(2)], &pg);
-
-        assert_eq!(set, HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));
-
-        let mut solver = ZielonkaSolver::new(&pg);
-
-        println!("{:#?}", solver.run());
-
-        Ok(())
-    }
 
     #[test]
     pub fn test_solve_tue_example() {
