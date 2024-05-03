@@ -1082,10 +1082,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pg_bench"
-version = "0.1.0"
-
-[[package]]
 name = "pg_cli"
 version = "0.1.0"
 dependencies = [

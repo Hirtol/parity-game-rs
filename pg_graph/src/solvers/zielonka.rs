@@ -1,6 +1,6 @@
-use std::collections::{VecDeque};
+use std::collections::VecDeque;
 
-use crate::{solvers::SolverOutput, Owner, ParityGame, VertexId, ParityGraph};
+use crate::{Owner, ParityGame, ParityGraph, solvers::SolverOutput, SubGame, VertexId};
 
 pub struct ZielonkaSolver<'a> {
     game: &'a ParityGame,
@@ -9,13 +9,16 @@ pub struct ZielonkaSolver<'a> {
 
 impl<'a> ZielonkaSolver<'a> {
     pub fn new(game: &'a ParityGame) -> Self {
-        ZielonkaSolver { game, recursive_calls: 0 }
+        ZielonkaSolver {
+            game,
+            recursive_calls: 0,
+        }
     }
 
     #[tracing::instrument(name = "Run Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.zielonka(ahash::HashSet::default());
+        let (even, odd) = self.zielonka(&self.game.create_subgame(&ahash::HashSet::default()));
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
         for idx in odd {
             winners[idx.index()] = Owner::Odd;
@@ -27,41 +30,34 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka(&mut self, ignored: ahash::HashSet<VertexId>) -> (Vec<VertexId>, Vec<VertexId>) {
+    fn zielonka(&mut self, game: &SubGame<u32, ParityGame>) -> (Vec<VertexId>, Vec<VertexId>) {
         self.recursive_calls += 1;
         // If all the vertices are ignord
-        if ignored.len() == self.game.vertex_count() {
+        if game.vertex_count() == 0 {
             (Vec::new(), Vec::new())
         } else {
-            let d = self
-                .game
-                .vertices_index()
-                .filter(|v| !ignored.contains(v))
-                .flat_map(|v| self.game.get(v))
-                .map(|v| v.priority)
-                .max().unwrap_or_default();
+            let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
-            let starting_set = self.game.vertices_by_priority_idx(d).filter(|(idx, _)| !ignored.contains(idx)).map(|(idx, _)| idx);
-            let attraction_set = attractor_set(attraction_owner, starting_set, &ignored, self.game);
-            
-            let mut ignore_set = ignored.clone();
-            ignore_set.extend(&attraction_set);
-            
-            let (mut even, mut odd) = self.zielonka(ignore_set);
+            let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
+            let attraction_set = attractor_set(attraction_owner, starting_set, game);
+
+            let sub_game = game.create_subgame(&attraction_set);
+
+            let (mut even, mut odd) = self.zielonka(&sub_game);
             let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
                 (&mut even, &mut odd)
             } else {
                 (&mut odd, &mut even)
             };
-            
+
             if not_attraction_owner_set.is_empty() {
                 attraction_owner_set.extend(attraction_set);
                 (even, odd)
             } else {
-                let b_attr = attractor_set(attraction_owner.other(), not_attraction_owner_set.iter().copied(), &ignored, self.game);
-                let mut ignore_set = ignored.clone();
-                ignore_set.extend(&b_attr);
-                let (mut even, mut odd) = self.zielonka(ignore_set);
+                let b_attr = attractor_set(attraction_owner.other(), not_attraction_owner_set.iter().copied(), game);
+                let sub_game = game.create_subgame(&b_attr);
+
+                let (mut even, mut odd) = self.zielonka(&sub_game);
                 let not_attraction_owner_set = if attraction_owner.is_even() {
                     &mut odd
                 } else {
@@ -75,23 +71,22 @@ impl<'a> ZielonkaSolver<'a> {
     }
 }
 
-pub fn attractor_set(
+pub fn attractor_set<T: ParityGraph>(
     player: Owner,
     starting_set: impl IntoIterator<Item = VertexId>,
-    ignored: &ahash::HashSet<VertexId>,
-    game: &ParityGame,
+    game: &T,
 ) -> ahash::HashSet<VertexId> {
     let mut attract_set = ahash::HashSet::from_iter(starting_set);
     let mut explore_queue = VecDeque::from_iter(attract_set.iter().copied());
-
+    
     while let Some(next_item) = explore_queue.pop_back() {
-        for predecessor in game.predecessors(next_item).filter(|p| !ignored.contains(p)) {
-            let vertex = &game[predecessor];
+        for predecessor in game.predecessors(next_item) {
+            let vertex = game.get(predecessor).expect("Invalid predecessor");
             let should_add = if vertex.owner == player {
                 // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                 true
             } else {
-                game.edges(predecessor).filter(|p| !ignored.contains(p)).all(|v| attract_set.contains(&v))
+                game.edges(predecessor).all(|v| attract_set.contains(&v))
             };
 
             // Only add to the attraction set if we should
@@ -106,14 +101,15 @@ pub fn attractor_set(
 
 #[cfg(test)]
 pub mod test {
-    use std::collections::HashSet;
-    use std::time::Instant;
+    use std::{collections::HashSet, time::Instant};
+
     use pg_parser::parse_pg;
 
-    use crate::{Owner, ParityGame, VertexId};
-    use crate::solvers::small_progress::SmallProgressSolver;
-    use crate::solvers::zielonka::ZielonkaSolver;
-    use crate::tests::example_dir;
+    use crate::{
+        Owner,
+        ParityGame,
+        solvers::zielonka::ZielonkaSolver, tests::example_dir, VertexId,
+    };
 
     #[test]
     pub fn test_attract_set_computation() -> eyre::Result<()> {
@@ -124,14 +120,14 @@ pub mod test {
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         let pg = ParityGame::new(pg)?;
 
-        let set = super::attractor_set(Owner::Even, [VertexId::new(2)], &Default::default(), &pg);
+        let set = super::attractor_set(Owner::Even, [VertexId::new(2)], &pg);
 
         assert_eq!(set, HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));
 
         let mut solver = ZielonkaSolver::new(&pg);
-        
+
         println!("{:#?}", solver.run());
-        
+
         Ok(())
     }
 
@@ -161,16 +157,19 @@ pub mod test {
 
         println!("Solution: {:#?}", solution);
         println!("Took: {:?}", now.elapsed());
-        assert_eq!(solution, vec![
-            Owner::Even,
-            Owner::Odd,
-            Owner::Even,
-            Owner::Even,
-            Owner::Even,
-            Owner::Even,
-            Owner::Odd,
-            Owner::Odd,
-            Owner::Even,
-        ])
+        assert_eq!(
+            solution,
+            vec![
+                Owner::Even,
+                Owner::Odd,
+                Owner::Even,
+                Owner::Even,
+                Owner::Even,
+                Owner::Even,
+                Owner::Odd,
+                Owner::Odd,
+                Owner::Even,
+            ]
+        )
     }
 }
