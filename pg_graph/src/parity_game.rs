@@ -3,7 +3,8 @@ use std::fmt::Write;
 use std::ops::Index;
 use itertools::Itertools;
 use petgraph::adj::IndexType;
-use petgraph::graph::NodeIndex;
+use petgraph::Graph;
+use petgraph::graph::{NodeIndex};
 use petgraph::prelude::EdgeRef;
 use crate::{Vertex};
 use crate::visualize::VisualVertex;
@@ -94,6 +95,37 @@ impl<Ix: IndexType> ParityGame<Vertex, Ix> {
     pub fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item=NodeIndex<Ix>> + '_ {
         // self.graph.edges_directed(id, Direction::Incoming).map(|e| e.source())
         self.inverted_vertices.get(id.index()).map(|v| v.iter().copied()).into_iter().flatten()
+    }
+    
+    /// Create a subgame by excluding all vertices in `exclude`.
+    /// 
+    /// Note that `exclude` should be sorted!
+    pub fn subgame(&self, exclude: &[NodeIndex<Ix>]) -> ParityGame {
+        let mut sub_graph = Graph::with_capacity(0, 0);
+        // mapping from old node index to new node index, end represents removed.
+        let mut node_index_map = vec![NodeIndex::end(); self.vertex_count()];
+        let mut inverted_graph = vec![Vec::new(); self.vertex_count()];
+        
+        for (i, node) in self.graph.node_weights().enumerate() {
+            if exclude.binary_search(&NodeIndex::new(i)).is_err() {
+                node_index_map[i] = sub_graph.add_node(*node)
+            }
+        }
+        for edge in self.graph_edges() {
+            // skip edge if any endpoint was removed
+            let source = node_index_map[edge.source().index()];
+            let target = node_index_map[edge.target().index()];
+            if source != NodeIndex::end() && target != NodeIndex::end() {
+                sub_graph.add_edge(source, target, ());
+                inverted_graph[target.index()].push(source)
+            }
+        }
+
+        ParityGame {
+            graph: sub_graph,
+            inverted_vertices: inverted_graph,
+            labels: Vec::new(),
+        }
     }
 
     /// Return the maximal priority found in the given game.

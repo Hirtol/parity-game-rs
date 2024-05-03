@@ -59,7 +59,7 @@ impl TryFrom<u8> for Owner {
     }
 }
 
-#[derive(Debug, Clone, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Vertex {
     pub priority: Priority,
     pub owner: Owner,
