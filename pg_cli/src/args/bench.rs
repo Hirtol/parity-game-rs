@@ -56,7 +56,7 @@ impl BenchCommand {
     pub fn run(self) -> eyre::Result<()> {
         let games = std::fs::read_dir(&self.benchmark_games)?
             .flatten()
-            .filter(|f| f.file_name().to_string_lossy().ends_with("pg"))
+            .filter(|f| f.file_name().to_string_lossy().ends_with("pg") || f.file_name().to_string_lossy().ends_with("gm"))
             .collect_vec();
 
         let mut output = Vec::with_capacity(games.len());

@@ -285,12 +285,26 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     }
 
     #[inline(always)]
+    fn vertices_and_index(&self) -> impl Iterator<Item = (NodeIndex<Ix>, &Vertex)> + '_ {
+        self.parent
+            .vertices_and_index()
+            .filter(|v| !self.ignored.contains(&v.0))
+    }
+
+    #[inline(always)]
     fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
         if !self.ignored.contains(&vertex_id) {
             self.parent.label(vertex_id)
         } else {
             None
         }
+    }
+
+    #[inline(always)]
+    fn vertices_by_priority_idx(&self, priority: Priority) -> impl Iterator<Item = (NodeIndex<Ix>, &Vertex)> + '_ {
+        self.parent
+            .vertices_and_index()
+            .filter(move |(idx, v)| v.priority == priority && !self.ignored.contains(idx))
     }
 
     #[inline(always)]
