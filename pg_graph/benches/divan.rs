@@ -15,7 +15,7 @@ mod solver_benches {
     use oxidd_core::function::BooleanFunction;
     use oxidd_core::ManagerRef;
     use pg_graph::{ParityGame};
-    use pg_graph::symbolic::BddExtensions;
+    use pg_graph::symbolic::helpers::BddExtensions;
 
     #[divan::bench]
     fn bench_substitution(bencher: divan::Bencher) {

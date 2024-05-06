@@ -123,7 +123,7 @@ impl ConvertCommand {
                 tracing::info!(parity_node_count=parity_game.vertex_count(), symbolic_node_count=s_pg.vertex_count(), "Converted to symbolic parity game");
 
                 if let Some(path) = self.dot_path {
-                    std::fs::write(&path, s_pg.to_dot())?;
+                    std::fs::write(&path, DotWriter::write_dot_symbolic(&s_pg, [])?)?;
 
                     tracing::info!(?path, "Wrote GraphViz graph to path")
                 }

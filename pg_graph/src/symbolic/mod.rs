@@ -13,8 +13,11 @@ use oxidd_core::{
     util::AllocResult,
 };
 use petgraph::prelude::EdgeRef;
+use helpers::CachedSymbolicEncoder;
 
 use crate::{Owner, ParityGame, ParityGraph, Priority, VertexId};
+
+pub mod helpers;
 
 type BDD = BDDFunction;
 
@@ -148,130 +151,13 @@ impl SymbolicParityGame {
     pub fn vertex_count(&self) -> usize {
         self.manager.with_manager_shared(|man| man.num_inner_nodes())
     }
-    
+
     pub fn encode_vertex(&self, v_idx: VertexId) -> AllocResult<BDDFunction> {
         CachedSymbolicEncoder::encode_impl(&self.variables, v_idx.index())
     }
 
     pub fn encode_edge_vertex(&self, v_idx: VertexId) -> AllocResult<BDDFunction> {
         CachedSymbolicEncoder::encode_impl(&self.variables_edges, v_idx.index())
-    }
-
-    pub fn to_dot(&self) -> String {
-        self.to_dot_extra([])
-    }
-    
-    pub fn to_dot_extra<'a>(&'a self, additional_funcs: impl IntoIterator<Item=(&'a BDDFunction, String)>) -> String {
-        let mut out = Vec::new();
-
-        self.manager
-            .with_manager_exclusive(|man| {
-                let variables = self
-                    .variables
-                    .iter()
-                    .chain(self.variables_edges.iter())
-                    .enumerate()
-                    .map(|(i, v)| {
-                        (
-                            v,
-                            if i >= self.variables.len() {
-                                format!("x_{}", i - self.variables.len())
-                            } else {
-                                format!("x{i}")
-                            },
-                        )
-                    });
-                let functions = self
-                    .priorities
-                    .iter()
-                    .map(|(p, bdd)| (bdd, format!("Priority {p}")))
-                    .chain([
-                        (&self.vertices, "vertices".into()),
-                        (&self.vertices_even, "vertices_even".into()),
-                        (&self.vertices_odd, "vertices_odd".into()),
-                        (&self.edges, "edges".into()),
-                    ])
-                    .chain(additional_funcs);
-
-                oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
-            })
-            .expect("Failed to lock");
-
-        String::from_utf8(out).expect("Invalid UTF-8")
-    }
-}
-
-pub struct CachedSymbolicEncoder<T> {
-    cache: ahash::HashMap<T, BDDFunction>,
-    variables: Vec<BDDFunction>,
-}
-
-impl<T> CachedSymbolicEncoder<T>
-where
-    T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8>,
-    T: Eq + Hash,
-    <T as std::ops::BitAnd>::Output: PartialEq<T>,
-{
-    pub fn new(variables: Vec<BDDFunction>) -> Self {
-        Self {
-            cache: ahash::HashMap::default(),
-            variables,
-        }
-    }
-
-    /// Encode the given value as a [BDDFunction], caching it for future use.
-    ///
-    /// If `value` was already provided once the previously created [BDDFunction] will be returned.
-    pub fn encode(&mut self, value: T) -> AllocResult<&BDDFunction> {
-        let out = match self.cache.entry(value) {
-            Entry::Occupied(val) => val.into_mut(),
-            Entry::Vacant(val) => val.insert(Self::encode_impl(&self.variables, value)?),
-        };
-
-        Ok(out)
-    }
-
-    fn encode_impl(variables: &[BDDFunction], value: T) -> AllocResult<BDDFunction> {
-        let mut expr = if value & 1.into() != 0.into() {
-            variables[0].clone()
-        } else {
-            variables[0].not()?
-        };
-
-        for i in 1..variables.len() {
-            // Check if bit is set
-            if value & (T::from(1) << T::from(i as u8)) != 0.into() {
-                expr = expr.and(&variables[i])?;
-            } else {
-                expr = expr.and(&variables[i].not()?)?;
-            }
-        }
-
-        Ok(expr)
-    }
-}
-
-pub trait BddExtensions {
-    /// Conceptually substitute the given `vars` in `self` for `replace_with`.
-    ///
-    /// `vars` and `replace_with` can be conjunctions of variables (e.g., `x1 ^ x2 ^ x3 ^...`) to substitute multiple in one go.
-    ///
-    /// In practice this (inefficiently) creates a new BDD with: `exists vars. (replace_with <=> vars) && self`.
-    fn substitute(&self, vars: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction>;
-}
-
-impl BddExtensions for BDDFunction {
-    fn substitute(&self, vars: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction> {
-        vars.with_manager_shared(|manager, vars| {
-            let iff = Self::equiv_edge(manager, vars, replace_with.as_edge(manager))?;
-            let and = Self::and_edge(manager, self.as_edge(manager), &iff)?;
-            let exists = Self::exist_edge(manager, &and, vars)?;
-
-            manager.drop_edge(iff);
-            manager.drop_edge(and);
-
-            Ok(Self::from_edge(manager, exists))
-        })
     }
 }
 
@@ -281,8 +167,10 @@ mod tests {
     use oxidd::bdd::BDDFunction;
     use oxidd_core::{function::BooleanFunction, ManagerRef};
 
-    use crate::{ParityGame, ParityGraph, symbolic::BddExtensions, tests::example_dir};
+    use crate::{ParityGame, ParityGraph, tests::example_dir};
+    use crate::symbolic::helpers::BddExtensions;
     use crate::symbolic::SymbolicParityGame;
+    use crate::visualize::DotWriter;
 
     pub fn load_pg(game: &str) -> ParityGame {
         let path = example_dir().join(game);
@@ -291,7 +179,7 @@ mod tests {
         let parity_game = crate::ParityGame::new(graph).unwrap();
         parity_game
     }
-    
+
     fn small_pg() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 3;
 0 1 1 0,1 "0";
@@ -300,20 +188,20 @@ mod tests {
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }
-    
+
     fn symbolic_pg() -> eyre::Result<SymbolicTest> {
         let pg = small_pg()?;
         let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
         let nodes = pg.vertices_index().flat_map(|idx| s_pg.encode_vertex(idx)).collect_vec();
         let edge_nodes = pg.vertices_index().flat_map(|idx| s_pg.encode_edge_vertex(idx)).collect_vec();
-        
+
         Ok(SymbolicTest {
             s_pg,
             vertices: nodes,
             edge_vertices: edge_nodes,
         })
     }
-    
+
     struct SymbolicTest {
         s_pg: SymbolicParityGame,
         vertices: Vec<BDDFunction>,
@@ -323,18 +211,18 @@ mod tests {
     #[test]
     pub fn test_symbolic() -> eyre::Result<()> {
         let s = symbolic_pg()?;
-        
+
         // Ensure that non-existent vertices are not represented
         let v_3 = s.s_pg.encode_vertex(3.into()).unwrap();
         assert!(!s.s_pg.vertices.and(&v_3).unwrap().satisfiable());
-        
+
         // Ensure edges exist between nodes that we'd expect.
         let edge_relation = s.vertices[0].and(&s.edge_vertices[1]).unwrap();
         assert!(s.s_pg.edges.and(&edge_relation).unwrap().satisfiable());
         // And others don't exist
         let edge_relation = s.vertices[0].and(&s.edge_vertices[2]).unwrap();
         assert!(!s.s_pg.edges.and(&edge_relation).unwrap().satisfiable());
-        
+
         Ok(())
     }
 
@@ -353,15 +241,15 @@ mod tests {
             .iter()
             .fold(true_base, |acc, var| acc.and(var).unwrap());
         let final_subs_bdd = s_pg.vertices.substitute(&start_var, &other_vars).unwrap();
-        
+
         // Ensure that the variables were substituted correctly
         let edge_nodes_exist = &s.edge_vertices[0];
         for edge_vertex in s.edge_vertices {
             assert!(final_subs_bdd.and(&edge_vertex).unwrap().satisfiable());
         }
-        
-        std::fs::write("out_sym.dot", s_pg.to_dot_extra([(&final_subs_bdd, "substitution".into())]))?;
-        
+        let dot = DotWriter::write_dot_symbolic(&s_pg, [(&final_subs_bdd, "substitution".into())])?;
+        std::fs::write("out_sym.dot", dot)?;
+
         Ok(())
     }
 }
