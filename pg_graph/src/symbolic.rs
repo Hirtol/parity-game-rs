@@ -5,6 +5,8 @@ use oxidd::{
     bdd::{BDDFunction, BDDManagerRef},
     BooleanFunction, Manager, ManagerRef,
 };
+use oxidd_core::function::{BooleanFunctionQuant, Function};
+use oxidd_core::util::AllocResult;
 use petgraph::prelude::EdgeRef;
 
 use crate::{Owner, ParityGame, ParityGraph, Priority};
@@ -90,9 +92,9 @@ impl SymbolicParityGame {
         let mut s_vertices = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::t(man));
         // Declare Vertices, exclude ones which are not part of the statespace
         if ((explicit.vertex_count() as f64).log2() - n_variables as f64) < f64::EPSILON {
-            let items_to_exclude = 2_usize.pow(n_variables as u32) - explicit.vertex_count();
-            // We either exclude all items explicitly (in-efficient if we're really close to the next power of two),
+            // We either exclude all items explicitly (inefficient if we're really close to the next power of two),
             // or explicitly include all valid vertices with their last bit == 1, while blacklisting everything else
+            let items_to_exclude = 2_usize.pow(n_variables as u32) - explicit.vertex_count();
             let include_threshold = 2_usize.pow((n_variables - 1) as u32) / 2;
 
             if items_to_exclude > include_threshold {
@@ -135,7 +137,7 @@ impl SymbolicParityGame {
             .collect::<HashMap<_, _>>();
         let mut s_even = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
         let mut s_odd = manager.with_manager_exclusive(|man| oxidd::bdd::BDDFunction::f(man));
-
+        
         tracing::trace!("Starting priority/owner BDD construction");
         for v_idx in explicit.vertices_index() {
             let vertex = explicit.get(v_idx).expect("Impossible");
@@ -215,9 +217,36 @@ impl SymbolicParityGame {
     }
 }
 
+pub trait BddExtensions {
+    /// Conceptually substitute the given `var` in `self` for `replace_with`.
+    ///
+    /// In practice this (inefficiently) creates a new BDD with: `exists var. (replace_with <=> var) && self`.
+    fn substitute(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction>;
+}
+
+impl BddExtensions for BDDFunction {
+    fn substitute(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction> {
+        var.with_manager_shared(|manager, root| {
+            let iff = Self::equiv_edge(manager, root, replace_with.as_edge(manager))?;
+            let and = Self::and_edge(manager, self.as_edge(manager), &iff)?;
+            let exists = Self::exist_edge(manager, &and, root)?;
+            Ok(Self::from_edge(manager, exists))
+        })
+        // let iff = var.equiv(replace_with)?;
+        // let and = self.and(&iff)?;
+        // and.exist(var)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+    use oxidd::bdd::BDDFunction;
+    use oxidd_core::function::BooleanFunction;
+    use oxidd_core::ManagerRef;
     use crate::ParityGame;
+    use crate::symbolic::BddExtensions;
+    use crate::tests::example_dir;
 
     #[test]
     pub fn test_symbolic() -> eyre::Result<()> {
@@ -229,7 +258,116 @@ mod tests {
         let pg = ParityGame::new(pg)?;
         let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
         std::fs::write("out.dot", s_pg.to_dot())?;
+        // let mut final_subs_bdd = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
+        let mut true_base = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
+        let start_var = s_pg.variables.iter().fold(true_base.clone(), |acc, v_2| acc.and(v_2).unwrap());
+        let other_vars = s_pg.variables_edges.iter().fold(true_base, |acc, v_2| acc.and(v_2).unwrap());
 
+        let final_subs_bdd = s_pg.vertices.substitute(&start_var, &other_vars).unwrap();
+
+        // for (var, var_x) in s_pg.variables.iter().zip(&s_pg.variables_edges) {
+        //     final_subs_bdd = final_subs_bdd.and(&s_pg.vertices.substitute(var ,var_x).unwrap()).unwrap()
+        // }
+        s_pg.gc();
+
+        let mut out = Vec::new();
+
+        s_pg.manager
+            .with_manager_exclusive(|man| {
+                let variables = s_pg
+                    .variables
+                    .iter()
+                    .chain(s_pg.variables_edges.iter())
+                    .enumerate()
+                    .map(|(i, v)| {
+                        (
+                            v,
+                            if i >= s_pg.variables.len() {
+                                format!("x_{}", i - s_pg.variables.len())
+                            } else {
+                                format!("x{i}")
+                            },
+                        )
+                    });
+                let functions = s_pg
+                    .priorities
+                    .iter()
+                    .map(|(p, bdd)| (bdd, format!("Priority {p}")))
+                    .chain([
+                        (&s_pg.vertices, "vertices".into()),
+                        (&s_pg.vertices_even, "vertices_even".into()),
+                        (&s_pg.vertices_odd, "vertices_odd".into()),
+                        (&s_pg.edges, "edges".into()),
+                        (&final_subs_bdd, "substituted".into())
+                    ]);
+
+                oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
+            })
+            .expect("Failed to lock");
+
+
+        // let subs = s_pg.vertices.substitute(s_pg.)
+        std::fs::write("out_subs.dot", String::from_utf8(out).expect("Invalid UTF-8"))?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_symbolic_tue() -> eyre::Result<()> {
+        let pg = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
+        let pg = pg_parser::parse_pg(&mut pg.as_str()).unwrap();
+        let pg = ParityGame::new(pg)?;
+        let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
+        std::fs::write("out.dot", s_pg.to_dot())?;
+        // let mut final_subs_bdd = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
+        let mut true_base = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
+        let start_var = s_pg.variables.iter().fold(true_base.clone(), |acc, v_2| acc.and(v_2).unwrap());
+        let other_vars = s_pg.variables_edges.iter().fold(true_base, |acc, v_2| acc.and(v_2).unwrap());
+
+        let final_subs_bdd = s_pg.vertices.substitute(&start_var, &other_vars).unwrap();
+
+        // for (var, var_x) in s_pg.variables.iter().zip(&s_pg.variables_edges) {
+        //     final_subs_bdd = final_subs_bdd.and(&s_pg.vertices.substitute(var ,var_x).unwrap()).unwrap()
+        // }
+        s_pg.gc();
+
+        let mut out = Vec::new();
+
+        s_pg.manager
+            .with_manager_exclusive(|man| {
+                let variables = s_pg
+                    .variables
+                    .iter()
+                    .chain(s_pg.variables_edges.iter())
+                    .enumerate()
+                    .map(|(i, v)| {
+                        (
+                            v,
+                            if i >= s_pg.variables.len() {
+                                format!("x_{}", i - s_pg.variables.len())
+                            } else {
+                                format!("x{i}")
+                            },
+                        )
+                    });
+                let functions = s_pg
+                    .priorities
+                    .iter()
+                    .map(|(p, bdd)| (bdd, format!("Priority {p}")))
+                    .chain([
+                        (&s_pg.vertices, "vertices".into()),
+                        (&s_pg.vertices_even, "vertices_even".into()),
+                        (&s_pg.vertices_odd, "vertices_odd".into()),
+                        (&s_pg.edges, "edges".into()),
+                        (&final_subs_bdd, "substituted".into())
+                    ]);
+
+                oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
+            })
+            .expect("Failed to lock");
+
+
+        // let subs = s_pg.vertices.substitute(s_pg.)
+        std::fs::write("out_subs.dot", String::from_utf8(out).expect("Invalid UTF-8"))?;
         Ok(())
     }
 }
