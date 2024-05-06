@@ -9,8 +9,29 @@ static GAMES: [&str; 2] = ["ActionConverter.tlsf.ehoa.pg", "amba_decomposed_arbi
 
 #[divan::bench_group(max_time = 5)]
 mod solver_benches {
+    use oxidd::bdd::BDDFunction;
     use pg_graph::solvers;
     use pg_graph::symbolic::SymbolicParityGame;
+    use oxidd_core::function::BooleanFunction;
+    use oxidd_core::ManagerRef;
+    use pg_graph::{ParityGame};
+    use pg_graph::symbolic::BddExtensions;
+
+    #[divan::bench]
+    fn bench_substitution(bencher: divan::Bencher) {
+        let pg = super::load_pg("amba_decomposed_arbiter_6.tlsf.ehoa.pg");
+        let mut s_pg = SymbolicParityGame::from_explicit(&pg).unwrap();
+        let mut true_base = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
+        let start_var = s_pg.variables.iter().fold(true_base.clone(), |acc, v_2| acc.and(v_2).unwrap());
+        let other_vars = s_pg.variables_edges.iter().fold(true_base, |acc, v_2| acc.and(v_2).unwrap());
+
+        bencher.bench(|| {
+            let subs = s_pg.vertices.substitute(&start_var, &other_vars).unwrap();
+            drop(subs);
+            // Otherwise we're just benchmarking how quickly it can re-discover nodes.
+            s_pg.gc();
+        });
+    }
 
     #[divan::bench(args = super::GAMES)]
     fn bench_small_progress(bencher: divan::Bencher, game: &str) {
