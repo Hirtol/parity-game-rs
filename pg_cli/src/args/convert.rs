@@ -120,7 +120,7 @@ impl ConvertCommand {
                 let s_pg = pg_graph::symbolic::SymbolicParityGame::from_explicit(&parity_game)?;
                 s_pg.gc();
                 
-                tracing::info!(parity_node_count=parity_game.vertex_count(), symbolic_node_count=s_pg.vertex_count(), "Converted to symbolic parity game");
+                tracing::info!(parity_node_count=parity_game.vertex_count(), symbolic_node_count=s_pg.bdd_node_count(), "Converted to symbolic parity game");
 
                 if let Some(path) = self.dot_path {
                     std::fs::write(&path, DotWriter::write_dot_symbolic(&s_pg, [])?)?;

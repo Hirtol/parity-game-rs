@@ -12,14 +12,17 @@ use oxidd_core::{
     function::{BooleanFunctionQuant, Function},
     util::AllocResult,
 };
+use oxidd_core::util::OptBool;
 use petgraph::prelude::EdgeRef;
+
 use helpers::CachedSymbolicEncoder;
 
-use crate::{Owner, ParityGame, ParityGraph, Priority, VertexId};
+use crate::{symbolic::helpers::BddExtensions, Owner, ParityGame, ParityGraph, Priority, VertexId};
 
 pub mod helpers;
 
 type BDD = BDDFunction;
+type Result<T> = std::result::Result<T, helpers::BddError>;
 
 pub struct SymbolicParityGame {
     pub manager: BDDManagerRef,
@@ -39,7 +42,7 @@ impl SymbolicParityGame {
         Self::from_explicit_impl(explicit).map_err(|e| eyre::eyre!("Could not construct BDD due to: {e:?}"))
     }
 
-    fn from_explicit_impl(explicit: &ParityGame) -> oxidd::util::AllocResult<Self> {
+    fn from_explicit_impl(explicit: &ParityGame) -> Result<Self> {
         // Need: BDD for set V, BDDs for sets V_even and V_odd, BDD^p for every p in P of the PG.
         // Alternatively, for BDD^p we could use a multi-terminal BDD (according to https://arxiv.org/pdf/2009.10876.pdf), and oxidd provides it!
         // Lastly need a duplication of the variable set (which is distinct!) to then create a BDD representing the edge relation E.
@@ -148,16 +151,28 @@ impl SymbolicParityGame {
     }
 
     /// Get the amount of BDD nodes.
-    pub fn vertex_count(&self) -> usize {
+    pub fn bdd_node_count(&self) -> usize {
         self.manager.with_manager_shared(|man| man.num_inner_nodes())
     }
+    
+    /// Count of all variables used in the BDD.
+    pub fn bdd_variable_count(&self) -> usize {
+        self.variables.len() + self.variables_edges.len()
+    }
 
-    pub fn encode_vertex(&self, v_idx: VertexId) -> AllocResult<BDDFunction> {
+    pub fn encode_vertex(&self, v_idx: VertexId) -> Result<BDDFunction> {
         CachedSymbolicEncoder::encode_impl(&self.variables, v_idx.index())
     }
 
-    pub fn encode_edge_vertex(&self, v_idx: VertexId) -> AllocResult<BDDFunction> {
+    pub fn encode_edge_vertex(&self, v_idx: VertexId) -> Result<BDDFunction> {
         CachedSymbolicEncoder::encode_impl(&self.variables_edges, v_idx.index())
+    }
+
+    /// Calculate the predecessors of the set of vertices `of`.
+    pub fn predecessors(&self, of: &BDDFunction) -> Result<BDDFunction> {
+        let of_subs = of.bulk_substitute(&self.variables, &self.variables_edges)?;
+
+        Ok(self.edges.and(&of_subs)?)
     }
 }
 
@@ -165,20 +180,14 @@ impl SymbolicParityGame {
 mod tests {
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
-    use oxidd_core::{function::BooleanFunction, ManagerRef};
+    use oxidd_core::{function::BooleanFunction, util::SatCountCache};
+    use oxidd_core::util::OptBool;
 
-    use crate::{ParityGame, ParityGraph, tests::example_dir};
-    use crate::symbolic::helpers::BddExtensions;
-    use crate::symbolic::SymbolicParityGame;
-    use crate::visualize::DotWriter;
-
-    pub fn load_pg(game: &str) -> ParityGame {
-        let path = example_dir().join(game);
-        let data = std::fs::read_to_string(&path).unwrap();
-        let graph = pg_parser::parse_pg(&mut data.as_str()).unwrap();
-        let parity_game = crate::ParityGame::new(graph).unwrap();
-        parity_game
-    }
+    use crate::{
+        symbolic::{helpers::BddExtensions, SymbolicParityGame},
+        visualize::DotWriter,
+        ParityGame, ParityGraph,
+    };
 
     fn small_pg() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 3;
@@ -189,39 +198,39 @@ mod tests {
         ParityGame::new(pg)
     }
 
-    fn symbolic_pg() -> eyre::Result<SymbolicTest> {
-        let pg = small_pg()?;
-        let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
-        let nodes = pg.vertices_index().flat_map(|idx| s_pg.encode_vertex(idx)).collect_vec();
-        let edge_nodes = pg.vertices_index().flat_map(|idx| s_pg.encode_edge_vertex(idx)).collect_vec();
-
-        Ok(SymbolicTest {
-            s_pg,
-            vertices: nodes,
-            edge_vertices: edge_nodes,
-        })
-    }
-
-    struct SymbolicTest {
-        s_pg: SymbolicParityGame,
-        vertices: Vec<BDDFunction>,
-        edge_vertices: Vec<BDDFunction>,
-    }
-
     #[test]
     pub fn test_symbolic() -> eyre::Result<()> {
         let s = symbolic_pg()?;
 
         // Ensure that non-existent vertices are not represented
-        let v_3 = s.s_pg.encode_vertex(3.into()).unwrap();
-        assert!(!s.s_pg.vertices.and(&v_3).unwrap().satisfiable());
+        let v_3 = s.pg.encode_vertex(3.into()).unwrap();
+        assert!(!s.pg.vertices.and(&v_3).unwrap().satisfiable());
 
         // Ensure edges exist between nodes that we'd expect.
         let edge_relation = s.vertices[0].and(&s.edge_vertices[1]).unwrap();
-        assert!(s.s_pg.edges.and(&edge_relation).unwrap().satisfiable());
+        assert!(s.pg.edges.and(&edge_relation).unwrap().satisfiable());
         // And others don't exist
         let edge_relation = s.vertices[0].and(&s.edge_vertices[2]).unwrap();
-        assert!(!s.s_pg.edges.and(&edge_relation).unwrap().satisfiable());
+        assert!(!s.pg.edges.and(&edge_relation).unwrap().satisfiable());
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_predecessors() -> eyre::Result<()> {
+        let s = symbolic_pg()?;
+        
+        let predecessor = s.pg.predecessors(&s.vertices[2])?;
+
+        let count = predecessor.sat_quick_count(s.pg.bdd_variable_count() as u32);
+        assert_eq!(count, 2);
+        
+        let valuations = [true, false].into_iter().flat_map(|v| predecessor.pick_cube(None, |_, _| v)).collect_vec();
+        
+        assert_eq!(valuations, vec![
+            vec![OptBool::True, OptBool::False, OptBool::False, OptBool::True],
+            vec![OptBool::False, OptBool::True, OptBool::False, OptBool::True]
+        ]);
 
         Ok(())
     }
@@ -229,27 +238,50 @@ mod tests {
     #[test]
     pub fn test_symbolic_substitution() -> eyre::Result<()> {
         let s = symbolic_pg()?;
-        let s_pg = &s.s_pg;
+        let s_pg = &s.pg;
 
-        let mut true_base = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
-        let start_var = s_pg
-            .variables
-            .iter()
-            .fold(true_base.clone(), |acc, var| acc.and(var).unwrap());
-        let other_vars = s_pg
-            .variables_edges
-            .iter()
-            .fold(true_base, |acc, var| acc.and(var).unwrap());
-        let final_subs_bdd = s_pg.vertices.substitute(&start_var, &other_vars).unwrap();
+        let final_subs_bdd = s_pg.vertices.bulk_substitute(&s.pg.variables, &s.pg.variables_edges).unwrap();
 
         // Ensure that the variables were substituted correctly
         let edge_nodes_exist = &s.edge_vertices[0];
         for edge_vertex in s.edge_vertices {
             assert!(final_subs_bdd.and(&edge_vertex).unwrap().satisfiable());
         }
-        let dot = DotWriter::write_dot_symbolic(&s_pg, [(&final_subs_bdd, "substitution".into())])?;
+
+        s.pg.gc();
+        let dot = DotWriter::write_dot_symbolic(
+            &s_pg,
+            [
+                (&final_subs_bdd, "substitution".into()),
+            ],
+        )?;
         std::fs::write("out_sym.dot", dot)?;
 
         Ok(())
+    }
+
+    struct SymbolicTest {
+        pg: SymbolicParityGame,
+        vertices: Vec<BDDFunction>,
+        edge_vertices: Vec<BDDFunction>,
+    }
+
+    fn symbolic_pg() -> eyre::Result<SymbolicTest> {
+        let pg = small_pg()?;
+        let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
+        let nodes = pg
+            .vertices_index()
+            .flat_map(|idx| s_pg.encode_vertex(idx))
+            .collect_vec();
+        let edge_nodes = pg
+            .vertices_index()
+            .flat_map(|idx| s_pg.encode_edge_vertex(idx))
+            .collect_vec();
+
+        Ok(SymbolicTest {
+            pg: s_pg,
+            vertices: nodes,
+            edge_vertices: edge_nodes,
+        })
     }
 }

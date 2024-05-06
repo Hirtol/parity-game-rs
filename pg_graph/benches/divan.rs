@@ -21,12 +21,9 @@ mod solver_benches {
     fn bench_substitution(bencher: divan::Bencher) {
         let pg = super::load_pg("amba_decomposed_arbiter_6.tlsf.ehoa.pg");
         let mut s_pg = SymbolicParityGame::from_explicit(&pg).unwrap();
-        let mut true_base = s_pg.manager.with_manager_exclusive(|man| BDDFunction::t(man));
-        let start_var = s_pg.variables.iter().fold(true_base.clone(), |acc, v_2| acc.and(v_2).unwrap());
-        let other_vars = s_pg.variables_edges.iter().fold(true_base, |acc, v_2| acc.and(v_2).unwrap());
 
         bencher.bench(|| {
-            let subs = s_pg.vertices.substitute(&start_var, &other_vars).unwrap();
+            let mut subs = s_pg.vertices.bulk_substitute(&s_pg.variables, &s_pg.variables_edges).unwrap();
             drop(subs);
             // Otherwise we're just benchmarking how quickly it can re-discover nodes.
             s_pg.gc();
