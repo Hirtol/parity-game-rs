@@ -16,13 +16,10 @@ pub type Priority = u32;
 pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     type Parent: ParityGraph<Ix>;
 
-    #[inline(always)]
     fn vertex_count(&self) -> usize;
 
-    #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
-    #[inline(always)]
     fn vertices(&self) -> impl Iterator<Item = &Vertex> + '_;
 
     #[inline(always)]
@@ -43,11 +40,15 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
             .zip(self.vertices())
             .filter(move |v| v.1.priority == priority)
     }
-
-    #[inline(always)]
+    
     fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex>;
 
+    /// Index and unwrap
     #[inline(always)]
+    fn get_u(&self, id: NodeIndex<Ix>) -> &Vertex {
+        self.get(id).unwrap()
+    }
+
     /// Return all predecessors of the given vertex
     ///
     /// Efficiently pre-calculated.
@@ -56,22 +57,22 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     /// Create a sub-game by excluding all vertices in `exclude`.
     ///
     /// Note that `exclude` should be sorted!
-    fn create_subgame<'a>(&'a self, exclude: &'a ahash::HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
+    fn create_subgame(&self, exclude: impl IntoIterator<Item=NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
 
-    #[inline(always)]
     /// Return the maximal priority found in the given game.
+    #[inline(always)]
     fn priority_max(&self) -> Priority {
         self.vertices().map(|v| v.priority).max().expect("No node in graph")
     }
 
-    #[inline(always)]
     /// Calculate all the unique priorities present in the given game
+    #[inline(always)]
     fn priorities_unique(&self) -> impl Iterator<Item = Priority> + '_ {
         self.vertices().map(|v| v.priority).unique()
     }
 
-    #[inline(always)]
     /// Count the amount of vertices for each priority
+    #[inline(always)]
     fn priorities_class_count(&self) -> ahash::HashMap<Priority, u32> {
         self.vertices()
             .fold(HashMap::default(), |mut hash: ahash::HashMap<Priority, u32>, v| {
@@ -80,13 +81,10 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
             })
     }
 
-    #[inline(always)]
     fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool;
 
-    #[inline(always)]
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
-    #[inline(always)]
     fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>>;
 
     fn to_pg(&self) -> String {
@@ -201,10 +199,10 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
             .flatten()
     }
 
-    fn create_subgame<'a>(&'a self, exclude: &'a HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
+    fn create_subgame(&self, exclude: impl IntoIterator<Item=NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         SubGame {
             parent: &self,
-            ignored: exclude.clone(),
+            ignored: HashSet::from_iter(exclude),
         }
     }
 
@@ -265,6 +263,12 @@ pub struct SubGame<'a, Ix: IndexType, Parent: ParityGraph<Ix>> {
     ignored: ahash::HashSet<NodeIndex<Ix>>,
 }
 
+impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
+    pub fn parent(&self) -> &'a Parent {
+        self.parent
+    }
+}
+
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a, Ix, Parent> {
     type Parent = Parent;
 
@@ -309,7 +313,11 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
 
     #[inline(always)]
     fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex> {
-        self.parent.get(id)
+        if !self.ignored.contains(&id) {
+            self.parent.get(id)
+        } else {
+            None
+        }
     }
 
     #[inline(always)]
@@ -318,7 +326,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     }
 
     #[inline(always)]
-    fn create_subgame<'b>(&'b self, exclude: &'b HashSet<NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
+    fn create_subgame(&self, exclude: impl IntoIterator<Item=NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         let mut new_ignore = self.ignored.clone();
         new_ignore.extend(exclude);
         SubGame {

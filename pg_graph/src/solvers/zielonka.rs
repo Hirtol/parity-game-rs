@@ -21,7 +21,7 @@ impl<'a> ZielonkaSolver<'a> {
     #[tracing::instrument(name = "Run Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.zielonka(&self.game.create_subgame(&ahash::HashSet::default()));
+        let (even, odd) = self.zielonka(&self.game.create_subgame([]));
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
         for idx in odd {
             winners[idx.index()] = Owner::Odd;
@@ -44,7 +44,7 @@ impl<'a> ZielonkaSolver<'a> {
             let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
             let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
 
-            let sub_game = game.create_subgame(&attraction_set);
+            let sub_game = game.create_subgame(attraction_set.iter().copied());
 
             let (mut even, mut odd) = self.zielonka(&sub_game);
             let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
@@ -62,7 +62,7 @@ impl<'a> ZielonkaSolver<'a> {
                     attraction_owner.other(),
                     not_attraction_owner_set.iter().copied(),
                 );
-                let sub_game = game.create_subgame(&b_attr);
+                let sub_game = game.create_subgame(b_attr.iter().copied());
 
                 let (mut even, mut odd) = self.zielonka(&sub_game);
                 let not_attraction_owner_set = if attraction_owner.is_even() {

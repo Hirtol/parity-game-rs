@@ -15,14 +15,12 @@ pub struct SolverOutput {
 }
 
 pub struct AttractionComputer {
-    set_buffer: ahash::HashSet<VertexId>,
     queue: VecDeque<VertexId>
 }
 
 impl AttractionComputer {
     pub fn new() -> Self {
         Self {
-            set_buffer: Default::default(),
             queue: Default::default(),
         }
     }
