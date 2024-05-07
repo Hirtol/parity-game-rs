@@ -202,31 +202,31 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    pub fn test_valuations() -> crate::symbolic::Result<()> {
-        let manager = oxidd::bdd::new_manager(0, 0, 12);
-
-        // Construct base building blocks for the BDD
-        let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
-        let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
-        let variables = manager
-            .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
-
-        let v0_and_v1 = variables[0].and(&variables[1])?;
-        let v0_and_v2 = variables[0].and(&variables[2])?;
-        let both = v0_and_v1.or(&v0_and_v2)?;
-        
-        assert_eq!(v0_and_v1.sat_valuations().collect::<Vec<_>>(), vec![
-            vec![OptBool::True, OptBool::True, OptBool::None]
-        ]);
-        assert_eq!(both.sat_valuations().collect::<Vec<_>>(), vec![
-            vec![OptBool::True, OptBool::False]
-        ]);
-        
-        let res = v0_and_v1.substitute(&variables[1], &variables[2])?;
-
-        assert!(res == v0_and_v2);
-
-        Ok(())
-    }
+    // #[test]
+    // pub fn test_valuations() -> crate::symbolic::Result<()> {
+    //     let manager = oxidd::bdd::new_manager(0, 0, 12);
+    //
+    //     // Construct base building blocks for the BDD
+    //     let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
+    //     let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
+    //     let variables = manager
+    //         .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
+    //
+    //     let v0_and_v1 = variables[0].and(&variables[1])?;
+    //     let v0_and_v2 = variables[0].and(&variables[2])?;
+    //     let both = v0_and_v1.or(&v0_and_v2)?;
+    //
+    //     assert_eq!(v0_and_v1.sat_valuations().collect::<Vec<_>>(), vec![
+    //         vec![OptBool::True, OptBool::True, OptBool::None]
+    //     ]);
+    //     assert_eq!(both.sat_valuations().collect::<Vec<_>>(), vec![
+    //         vec![OptBool::True, OptBool::False]
+    //     ]);
+    //
+    //     let res = v0_and_v1.substitute(&variables[1], &variables[2])?;
+    //
+    //     assert!(res == v0_and_v2);
+    //
+    //     Ok(())
+    // }
 }

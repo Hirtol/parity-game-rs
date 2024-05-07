@@ -21,7 +21,7 @@ impl<'a> ZielonkaSolver<'a> {
     #[tracing::instrument(name = "Run Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.zielonka(&self.game.create_subgame([]));
+        let (even, odd) = self.zielonka(self.game);
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
         for idx in odd {
             winners[idx.index()] = Owner::Odd;
@@ -33,7 +33,7 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka(&mut self, game: &SubGame<u32, ParityGame>) -> (Vec<VertexId>, Vec<VertexId>) {
+    fn zielonka<T: ParityGraph>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>) {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {
