@@ -1,9 +1,13 @@
+use std::{collections::hash_map::Entry, hash::Hash};
+
 use oxidd::bdd::BDDFunction;
-use oxidd_core::util::{AllocResult, OptBool, OutOfMemory, SatCountCache};
-use std::hash::Hash;
-use std::collections::hash_map::Entry;
-use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant, Function};
-use oxidd_core::Manager;
+use oxidd_core::{
+    function::{BooleanFunction, BooleanFunctionQuant, Function},
+    Manager,
+    util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
+};
+
+use crate::symbolic::BDD;
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T> {
@@ -54,6 +58,19 @@ where
 
         Ok(expr)
     }
+
+    pub(crate) fn encode_eval<'a>(
+        variables: &'a [BDD],
+        value: T,
+    ) -> super::Result<impl Iterator<Item = (&'a BDD, bool)> + 'a>
+    where
+        T: 'a,
+    {
+        Ok(variables
+            .iter()
+            .enumerate()
+            .map(move |(bit_index, variable)| (variable, value & (T::from(1) << T::from(bit_index as u8)) != 0.into())))
+    }
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -61,7 +78,7 @@ pub enum BddError {
     #[error("Failed to allocate memory")]
     AllocError(OutOfMemory),
     #[error("No input was provided")]
-    NoInput
+    NoInput,
 }
 
 impl From<OutOfMemory> for BddError {
@@ -77,25 +94,29 @@ pub trait BddExtensions {
     ///
     /// In practice this (inefficiently) creates a new BDD with: `exists vars. (replace_with <=> vars) && self`.
     fn substitute(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction>;
-    
+
     /// TODO: Only partially complete... skips out every choice after the first
     fn sat_valuations(&self) -> ValuationsIterator;
-    
+
     fn sat_quick_count(&self, n_vars: u32) -> u64;
-    
+
     /// Does a sequential substitution (not simultaneous!)
-    /// 
+    ///
     /// See [Self::substitute]
-    fn bulk_substitute<'a>(&self, vars: impl IntoIterator<Item=&'a BDDFunction>, replace_vars: impl IntoIterator<Item=&'a BDDFunction>) -> crate::symbolic::Result<BDDFunction> {
+    fn bulk_substitute<'a>(
+        &self,
+        vars: impl IntoIterator<Item = &'a BDDFunction>,
+        replace_vars: impl IntoIterator<Item = &'a BDDFunction>,
+    ) -> crate::symbolic::Result<BDDFunction> {
         // This turns out to be more efficient than doing a bulk `exist` call on all conjugated `vars`, surprisingly.
         let mut iter = vars.into_iter().zip(replace_vars);
         if let Some((var, replace_with)) = iter.next() {
             let mut accumulator = self.substitute(var, replace_with)?;
-            
+
             for (var, replace_with) in iter {
                 accumulator = accumulator.substitute(var, replace_with)?;
             }
-            
+
             Ok(accumulator)
         } else {
             Err(BddError::NoInput)
@@ -109,10 +130,10 @@ impl BddExtensions for BDDFunction {
             let iff = Self::equiv_edge(manager, vars, replace_with.as_edge(manager))?;
             let and = Self::and_edge(manager, self.as_edge(manager), &iff)?;
             let exists = Self::exist_edge(manager, &and, vars)?;
-        
+
             manager.drop_edge(iff);
             manager.drop_edge(and);
-        
+
             Ok(Self::from_edge(manager, exists))
         })
     }
@@ -177,9 +198,8 @@ impl Iterator for ValuationsIterator {
 mod tests {
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
-    use oxidd_core::function::BooleanFunction;
-    use oxidd_core::ManagerRef;
-    use oxidd_core::util::OptBool;
+    use oxidd_core::{function::BooleanFunction, ManagerRef};
+
     use crate::symbolic::helpers::BddExtensions;
 
     #[test]
@@ -189,16 +209,16 @@ mod tests {
         // Construct base building blocks for the BDD
         let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
         let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
-        let variables = manager
-            .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
-        
+        let variables =
+            manager.with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
+
         let v0_and_v1 = variables[0].and(&variables[1])?;
         let v0_and_v2 = variables[0].and(&variables[2])?;
-        
+
         let res = v0_and_v1.substitute(&variables[1], &variables[2])?;
-        
+
         assert!(res == v0_and_v2);
-        
+
         Ok(())
     }
 

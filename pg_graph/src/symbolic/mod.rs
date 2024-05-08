@@ -24,6 +24,7 @@ pub type BDD = BDDFunction;
 pub type Result<T> = std::result::Result<T, helpers::BddError>;
 
 pub struct SymbolicParityGame {
+    pub pg_vertex_count: usize,
     pub manager: BDDManagerRef,
     pub variables: Vec<BDD>,
     pub variables_edges: Vec<BDD>,
@@ -147,6 +148,7 @@ impl SymbolicParityGame {
             .fold(base_true.clone(), |acc, next| acc.and(next).unwrap());
 
         Ok(Self {
+            pg_vertex_count: explicit.vertex_count(),
             manager,
             variables,
             variables_edges: edge_variables,
@@ -166,6 +168,11 @@ impl SymbolicParityGame {
     pub fn gc(&self) -> usize {
         self.manager.with_manager_exclusive(|man| man.gc())
     }
+    
+    /// The amount of vertices in the underlying parity game.
+    pub fn vertex_count(&self) -> usize {
+        self.pg_vertex_count
+    }
 
     /// Get the amount of BDD nodes.
     pub fn bdd_node_count(&self) -> usize {
@@ -173,8 +180,8 @@ impl SymbolicParityGame {
     }
 
     /// Count of all variables used in the BDD.
-    pub fn bdd_variable_count(&self) -> usize {
-        self.variables.len() + self.variables_edges.len()
+    pub fn bdd_variable_count(&self) -> u32 {
+        (self.variables.len() + self.variables_edges.len()) as u32
     }
 
     pub fn encode_vertex(&self, v_idx: VertexId) -> Result<BDDFunction> {
@@ -183,6 +190,20 @@ impl SymbolicParityGame {
 
     pub fn encode_edge_vertex(&self, v_idx: VertexId) -> Result<BDDFunction> {
         CachedSymbolicEncoder::encode_impl(&self.variables_edges, v_idx.index())
+    }
+
+    /// Calculate all vertex ids which belong to the set represented by the `bdd`.
+    ///
+    /// Inefficient, and should only be used for debugging.
+    pub fn vertices_of_bdd(&self, bdd: &BDD) -> Result<Vec<VertexId>> {
+        let mut out = vec![];
+        for i in 0..self.pg_vertex_count {
+            let v_id = VertexId::new(i);
+            if bdd.eval(CachedSymbolicEncoder::encode_eval(&self.variables, v_id.index())?) {
+                out.push(v_id);
+            }
+        }
+        Ok(out)
     }
 
     pub fn create_subgame(&self, ignored: &BDD) -> Result<Self> {
@@ -198,6 +219,7 @@ impl SymbolicParityGame {
             .collect();
 
         Ok(Self {
+            pg_vertex_count: self.pg_vertex_count,
             manager: self.manager.clone(),
             variables: self.variables.clone(),
             variables_edges: self.variables_edges.clone(),
@@ -243,7 +265,7 @@ impl SymbolicParityGame {
         let edge_player_set = self.edges.and(player_set)?;
 
         loop {
-            let edge_starting_set = self.edge_substitute(starting_set)?;
+            let edge_starting_set = self.edge_substitute(&output)?;
             // Set of elements which have _any_ edge leading to our `starting_set` and are owned by `player`.
             let any_edge_set = edge_player_set
                 .and(&edge_starting_set)?
@@ -293,7 +315,9 @@ mod tests {
     use crate::{
         Owner,
         ParityGame,
-        ParityGraph, symbolic::{helpers::BddExtensions, SymbolicParityGame}, visualize::DotWriter,
+        ParityGraph,
+        solvers::AttractionComputer,
+        symbolic::{helpers::BddExtensions, SymbolicParityGame}, tests::load_example, visualize::DotWriter,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -313,6 +337,12 @@ mod tests {
 3 1 1 2 "3";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
+    }
+
+    macro_rules! id_vec {
+        ($($x:expr),+ $(,)?) => (
+            vec![$($x.into()),+]
+        );
     }
 
     #[test]
@@ -363,25 +393,27 @@ mod tests {
         let s = symbolic_pg(other_pg()?)?;
 
         let attr_set = s.pg.attractor_set(Owner::Even, &s.vertices[2])?;
+        
+        let vertices = s.pg.vertices_of_bdd(&attr_set)?;
+        assert_eq!(vertices, id_vec![1, 2, 3]);
 
-        s.pg.gc();
-        let dot = DotWriter::write_dot_symbolic(&s.pg, [(&attr_set, "attractor_set".into())])?;
-        std::fs::write("out_sym.dot", dot)?;
+        let s_tue = symbolic_pg(load_example("tue_example.pg"))?;
 
-        let other_vertices = s.pg.vertices.and(&attr_set.not().unwrap()).unwrap();
+        let start_set = &s_tue.pg.priorities.get(&s_tue.pg.priority_max()).unwrap();
+        println!("Starting set: {:#?}", s_tue.pg.vertices_of_bdd(start_set)?);
 
-        s.pg.gc();
-        let dot = DotWriter::write_dot_symbolic(
-            &s.pg,
-            [
-                (&attr_set, "attractor_set".into()),
-                (&other_vertices, "next_vertices".into()),
-            ],
-        )?;
-        std::fs::write("out_sym.dot", dot)?;
+        let attr_set = s_tue.pg.attractor_set(Owner::Odd, start_set)?;
+        let attr_set_vertices = s_tue.pg.vertices_of_bdd(&attr_set)?;
 
-        let count = attr_set.sat_quick_count(s.pg.bdd_variable_count() as u32);
-        assert_eq!(count, 2);
+        println!("Attraction set: {:#?}", s_tue.pg.vertices_of_bdd(&attr_set)?);
+        let mut real_attraction = AttractionComputer::new();
+        let underlying_attr_set = real_attraction.attractor_set(
+            &s_tue.original,
+            Owner::Odd,
+            s_tue.original.vertices_by_priority_idx(s_tue.pg.priority_max()).map(|(a, b)| a),
+        );
+
+        assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
 
         Ok(())
     }
@@ -411,6 +443,7 @@ mod tests {
 
     struct SymbolicTest {
         pg: SymbolicParityGame,
+        original: ParityGame,
         vertices: Vec<BDDFunction>,
         edge_vertices: Vec<BDDFunction>,
     }
@@ -428,6 +461,7 @@ mod tests {
 
         Ok(SymbolicTest {
             pg: s_pg,
+            original: pg,
             vertices: nodes,
             edge_vertices: edge_nodes,
         })

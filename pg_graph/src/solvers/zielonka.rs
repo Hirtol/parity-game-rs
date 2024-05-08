@@ -89,12 +89,11 @@ pub mod test {
         ParityGame,
         solvers::zielonka::ZielonkaSolver, tests::example_dir,
     };
+    use crate::tests::load_example;
 
     #[test]
     pub fn test_solve_tue_example() {
-        let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
+        let game = load_example("tue_example.pg");
         let mut solver = ZielonkaSolver::new(&game);
 
         let solution = solver.run().winners;
