@@ -21,50 +21,32 @@ impl<'a> SymbolicZielonkaSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game).expect("Failed to compute solution");
         
-        self.game.gc();
-        std::fs::write("out_sym_zielonka.dot", DotWriter::write_dot_symbolic(self.game, [
-            (&even, "W_even".into()),
-            (&odd, "W_odd".into())
-        ]).unwrap());
-        // let mut winners = vec![Owner::Even; self.game.vertex_count()];
-        // for idx in odd {
-        //     winners[idx.index()] = Owner::Odd;
-        // }
-        // 
-        // SolverOutput {
-        //     winners,
-        //     strategy: None,
-        // }
+        let even = self.game.vertices_of_bdd(&even).expect("Allocation error");
+        let mut winners = vec![Owner::Odd; self.game.vertex_count()];
+        for idx in even {
+            winners[idx.index()] = Owner::Even;
+        }
+
         SolverOutput {
-            winners: vec![],
+            winners,
             strategy: None,
         }
     }
 
     fn zielonka(&mut self, game: &SymbolicParityGame) -> symbolic::Result<(BDD, BDD)> {
         self.recursive_calls += 1;
-        // std::fs::write(format!("out_sym_zielonka_{}.dot", self.recursive_calls), DotWriter::write_dot_symbolic(self.game, []).unwrap());
-        println!("COUNT: {:?}", game.vertices.node_count());
-        
-        if self.recursive_calls > 5 {
-            panic!();
-        }
-        
+
         // If all the vertices are ignord
         if game.vertices == game.base_false {
             Ok((game.base_false.clone(), game.base_false.clone()))
         } else {
             let d = game.priority_max();
-            println!("Max priority: {d}");
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.priorities.get(&d).expect("Impossible");
             let attraction_set = game.attractor_set(attraction_owner, starting_set)?;
-            game.gc();
-            std::fs::write(format!("out_sym_zielonka_{}.dot", self.recursive_calls), DotWriter::write_dot_symbolic(game, [
-                (&attraction_set, "attraction".into())
-            ]).unwrap());
+
             let sub_game = game.create_subgame(&attraction_set)?;
-            
+
             let (mut even, mut odd) = self.zielonka(&sub_game)?;
             let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
                 (&mut even, &mut odd)
@@ -127,7 +109,8 @@ pub mod test {
         let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
-        let mut solver = ZielonkaSolver::new(&game);
+        let s_pg = SymbolicParityGame::from_explicit(&game).unwrap();
+        let mut solver = SymbolicZielonkaSolver::new(&s_pg);
 
         let now = Instant::now();
         let solution = solver.run().winners;

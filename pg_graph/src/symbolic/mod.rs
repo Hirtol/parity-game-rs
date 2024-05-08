@@ -270,15 +270,18 @@ impl SymbolicParityGame {
             let any_edge_set = edge_player_set
                 .and(&edge_starting_set)?
                 .exist(&self.conjugated_v_edges)?;
+            
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let edges_to_outside = edge_starting_set.not_owned()?.and(&self.edges)?;
             let all_edge_set = opponent_set.and(&edges_to_outside.exist(&self.conjugated_v_edges)?.not_owned()?)?;
 
             let tmp = any_edge_set.or(&all_edge_set)?;
-            if tmp == output {
+            let new_output = output.or(&tmp)?;
+            
+            if new_output == output {
                 break;
             } else {
-                output = tmp;
+                output = new_output;
             }
         }
 
@@ -415,6 +418,28 @@ mod tests {
 
         assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
 
+        Ok(())
+    }
+    
+    #[test]
+    fn test_attraction_set_large() -> eyre::Result<()> {
+        let s = symbolic_pg(load_example("amba_decomposed_arbiter_2.tlsf.ehoa.pg"))?;
+
+        let start_set = &s.pg.priorities.get(&s.pg.priority_max()).unwrap();
+        println!("Starting set: {:#?}", s.pg.vertices_of_bdd(start_set)?);
+
+        let attr_set = s.pg.attractor_set(Owner::Even, start_set)?;
+        let attr_set_vertices = s.pg.vertices_of_bdd(&attr_set)?;
+
+        println!("Attraction set: {:#?}", s.pg.vertices_of_bdd(&attr_set)?);
+        let mut real_attraction = AttractionComputer::new();
+        let underlying_attr_set = real_attraction.attractor_set(
+            &s.original,
+            Owner::Even,
+            s.original.vertices_by_priority_idx(s.pg.priority_max()).map(|(a, b)| a),
+        );
+
+        assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
         Ok(())
     }
 
