@@ -168,7 +168,7 @@ impl SymbolicParityGame {
     pub fn gc(&self) -> usize {
         self.manager.with_manager_exclusive(|man| man.gc())
     }
-    
+
     /// The amount of vertices in the underlying parity game.
     pub fn vertex_count(&self) -> usize {
         self.pg_vertex_count
@@ -259,6 +259,7 @@ impl SymbolicParityGame {
     /// This resulting set will contain all vertices which:
     /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
     /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
+    #[tracing::instrument(level="trace", skip_all, fields(player))]
     pub fn attractor_set(&self, player: Owner, starting_set: &BDD) -> Result<BDD> {
         let (player_set, opponent_set) = self.get_player_sets(player);
         let mut output = starting_set.clone();
@@ -270,14 +271,14 @@ impl SymbolicParityGame {
             let any_edge_set = edge_player_set
                 .and(&edge_starting_set)?
                 .exist(&self.conjugated_v_edges)?;
-            
+
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let edges_to_outside = edge_starting_set.not_owned()?.and(&self.edges)?;
             let all_edge_set = opponent_set.and(&edges_to_outside.exist(&self.conjugated_v_edges)?.not_owned()?)?;
 
             let tmp = any_edge_set.or(&all_edge_set)?;
             let new_output = output.or(&tmp)?;
-            
+
             if new_output == output {
                 break;
             } else {
@@ -289,22 +290,17 @@ impl SymbolicParityGame {
     }
 
     /// Substitute all vertex variables `x0..xn` with the edge variable `x0'..xn'`.
+    #[inline]
     fn edge_substitute(&self, bdd: &BDD) -> Result<BDD> {
         bdd.bulk_substitute(&self.variables, &self.variables_edges)
     }
 
     /// Return both sets of vertices, with the first element of the returned tuple matching the `player`.
+    #[inline(always)]
     fn get_player_sets(&self, player: Owner) -> (&BDD, &BDD) {
         match player {
             Owner::Even => (&self.vertices_even, &self.vertices_odd),
             Owner::Odd => (&self.vertices_odd, &self.vertices_even),
-        }
-    }
-
-    fn get_player_set(&self, player: Owner) -> &BDD {
-        match player {
-            Owner::Even => &self.vertices_even,
-            Owner::Odd => &self.vertices_odd,
         }
     }
 }
@@ -396,7 +392,7 @@ mod tests {
         let s = symbolic_pg(other_pg()?)?;
 
         let attr_set = s.pg.attractor_set(Owner::Even, &s.vertices[2])?;
-        
+
         let vertices = s.pg.vertices_of_bdd(&attr_set)?;
         assert_eq!(vertices, id_vec![1, 2, 3]);
 
@@ -420,7 +416,7 @@ mod tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn test_attraction_set_large() -> eyre::Result<()> {
         let s = symbolic_pg(load_example("amba_decomposed_arbiter_2.tlsf.ehoa.pg"))?;
