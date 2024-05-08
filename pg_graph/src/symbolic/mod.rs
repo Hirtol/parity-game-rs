@@ -10,29 +10,35 @@ use oxidd::{
 };
 use oxidd_core::{
     function::{BooleanFunctionQuant, Function},
-    util::AllocResult,
+    util::{AllocResult, OptBool},
 };
-use oxidd_core::util::OptBool;
 use petgraph::prelude::EdgeRef;
 
 use helpers::CachedSymbolicEncoder;
 
-use crate::{symbolic::helpers::BddExtensions, Owner, ParityGame, ParityGraph, Priority, VertexId};
+use crate::{Owner, ParityGame, ParityGraph, Priority, symbolic::helpers::BddExtensions, VertexId};
 
 pub mod helpers;
 
-type BDD = BDDFunction;
-type Result<T> = std::result::Result<T, helpers::BddError>;
+pub type BDD = BDDFunction;
+pub type Result<T> = std::result::Result<T, helpers::BddError>;
 
 pub struct SymbolicParityGame {
     pub manager: BDDManagerRef,
     pub variables: Vec<BDD>,
     pub variables_edges: Vec<BDD>,
+    pub conjugated_variables: BDD,
+    pub conjugated_v_edges: BDD,
+
     pub vertices: BDD,
     pub vertices_even: BDD,
     pub vertices_odd: BDD,
-    pub edges: BDD,
     pub priorities: HashMap<Priority, BDD>,
+
+    pub edges: BDD,
+
+    pub base_true: BDD,
+    pub base_false: BDD,
 }
 
 impl SymbolicParityGame {
@@ -113,7 +119,7 @@ impl SymbolicParityGame {
             .map(|p| (p, base_false.clone()))
             .collect::<HashMap<_, _>>();
         let mut s_even = base_false.clone();
-        let mut s_odd = base_false;
+        let mut s_odd = base_false.clone();
 
         tracing::trace!("Starting priority/owner BDD construction");
         for v_idx in explicit.vertices_index() {
@@ -133,15 +139,26 @@ impl SymbolicParityGame {
             }
         }
 
+        let conj_v = variables
+            .iter()
+            .fold(base_true.clone(), |acc, next| acc.and(next).unwrap());
+        let conj_e = edge_variables
+            .iter()
+            .fold(base_true.clone(), |acc, next| acc.and(next).unwrap());
+
         Ok(Self {
             manager,
             variables,
             variables_edges: edge_variables,
+            conjugated_variables: conj_v,
+            conjugated_v_edges: conj_e,
             vertices: s_vertices,
             vertices_even: s_even,
             vertices_odd: s_odd,
             edges: s_edges,
+            base_true,
             priorities: s_priorities,
+            base_false,
         })
     }
 
@@ -154,7 +171,7 @@ impl SymbolicParityGame {
     pub fn bdd_node_count(&self) -> usize {
         self.manager.with_manager_shared(|man| man.num_inner_nodes())
     }
-    
+
     /// Count of all variables used in the BDD.
     pub fn bdd_variable_count(&self) -> usize {
         self.variables.len() + self.variables_edges.len()
@@ -168,11 +185,102 @@ impl SymbolicParityGame {
         CachedSymbolicEncoder::encode_impl(&self.variables_edges, v_idx.index())
     }
 
+    pub fn create_subgame(&self, ignored: &BDD) -> Result<Self> {
+        let negated_vertices = ignored.not()?;
+        let negated_vertices_edges = ignored
+            .bulk_substitute(&self.variables, &self.variables_edges)?
+            .not_owned()?;
+
+        let priorities = self
+            .priorities
+            .iter()
+            .flat_map(|(priority, bdd)| Ok::<_, helpers::BddError>((*priority, bdd.and(&negated_vertices)?)))
+            .collect();
+
+        Ok(Self {
+            manager: self.manager.clone(),
+            variables: self.variables.clone(),
+            variables_edges: self.variables_edges.clone(),
+            conjugated_variables: self.conjugated_variables.clone(),
+            conjugated_v_edges: self.conjugated_v_edges.clone(),
+            vertices: self.vertices.and(&negated_vertices)?,
+            vertices_even: self.vertices_even.and(&negated_vertices)?,
+            vertices_odd: self.vertices_odd.and(&negated_vertices)?,
+            edges: self.edges.and(&negated_vertices)?.and(&negated_vertices_edges)?,
+            base_true: self.base_true.clone(),
+            priorities,
+            base_false: self.base_false.clone(),
+        })
+    }
+
+    /// Return the maximal priority found in the given game.
+    #[inline(always)]
+    pub fn priority_max(&self) -> Priority {
+        *self
+            .priorities
+            .iter()
+            .filter(|(p, bdd)| self.base_false != **bdd)
+            .map(|(p, _)| p)
+            .max()
+            .expect("No priority in game")
+    }
+
     /// Calculate the predecessors of the set of vertices `of`.
-    pub fn predecessors(&self, of: &BDDFunction) -> Result<BDDFunction> {
+    pub fn predecessors(&self, of: &BDD) -> Result<BDD> {
         let of_subs = of.bulk_substitute(&self.variables, &self.variables_edges)?;
 
         Ok(self.edges.and(&of_subs)?)
+    }
+
+    /// Calculate the attraction set for the given starting set.
+    ///
+    /// This resulting set will contain all vertices which:
+    /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
+    /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
+    pub fn attractor_set(&self, player: Owner, starting_set: &BDD) -> Result<BDD> {
+        let (player_set, opponent_set) = self.get_player_sets(player);
+        let mut output = starting_set.clone();
+        let edge_player_set = self.edges.and(player_set)?;
+
+        loop {
+            let edge_starting_set = self.edge_substitute(starting_set)?;
+            // Set of elements which have _any_ edge leading to our `starting_set` and are owned by `player`.
+            let any_edge_set = edge_player_set
+                .and(&edge_starting_set)?
+                .exist(&self.conjugated_v_edges)?;
+            // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
+            let edges_to_outside = edge_starting_set.not_owned()?.and(&self.edges)?;
+            let all_edge_set = opponent_set.and(&edges_to_outside.exist(&self.conjugated_v_edges)?.not_owned()?)?;
+
+            let tmp = any_edge_set.or(&all_edge_set)?;
+            if tmp == output {
+                break;
+            } else {
+                output = tmp;
+            }
+        }
+
+        Ok(output)
+    }
+
+    /// Substitute all vertex variables `x0..xn` with the edge variable `x0'..xn'`.
+    fn edge_substitute(&self, bdd: &BDD) -> Result<BDD> {
+        bdd.bulk_substitute(&self.variables, &self.variables_edges)
+    }
+
+    /// Return both sets of vertices, with the first element of the returned tuple matching the `player`.
+    fn get_player_sets(&self, player: Owner) -> (&BDD, &BDD) {
+        match player {
+            Owner::Even => (&self.vertices_even, &self.vertices_odd),
+            Owner::Odd => (&self.vertices_odd, &self.vertices_even),
+        }
+    }
+
+    fn get_player_set(&self, player: Owner) -> &BDD {
+        match player {
+            Owner::Even => &self.vertices_even,
+            Owner::Odd => &self.vertices_odd,
+        }
     }
 }
 
@@ -180,13 +288,12 @@ impl SymbolicParityGame {
 mod tests {
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
-    use oxidd_core::{function::BooleanFunction, util::SatCountCache};
-    use oxidd_core::util::OptBool;
+    use oxidd_core::{function::BooleanFunction, util::OptBool};
 
     use crate::{
-        symbolic::{helpers::BddExtensions, SymbolicParityGame},
-        visualize::DotWriter,
-        ParityGame, ParityGraph,
+        Owner,
+        ParityGame,
+        ParityGraph, symbolic::{helpers::BddExtensions, SymbolicParityGame}, visualize::DotWriter,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -198,9 +305,19 @@ mod tests {
         ParityGame::new(pg)
     }
 
+    fn other_pg() -> eyre::Result<ParityGame> {
+        let mut pg = r#"parity 4;
+0 1 1 0,1 "0";
+1 1 0 2 "1";
+2 2 0 2 "2";
+3 1 1 2 "3";"#;
+        let pg = pg_parser::parse_pg(&mut pg).unwrap();
+        ParityGame::new(pg)
+    }
+
     #[test]
     pub fn test_symbolic() -> eyre::Result<()> {
-        let s = symbolic_pg()?;
+        let s = symbolic_pg(small_pg()?)?;
 
         // Ensure that non-existent vertices are not represented
         let v_3 = s.pg.encode_vertex(3.into()).unwrap();
@@ -218,29 +335,66 @@ mod tests {
 
     #[test]
     pub fn test_predecessors() -> eyre::Result<()> {
-        let s = symbolic_pg()?;
-        
+        let s = symbolic_pg(small_pg()?)?;
+
         let predecessor = s.pg.predecessors(&s.vertices[2])?;
 
         let count = predecessor.sat_quick_count(s.pg.bdd_variable_count() as u32);
         assert_eq!(count, 2);
-        
-        let valuations = [true, false].into_iter().flat_map(|v| predecessor.pick_cube(None, |_, _| v)).collect_vec();
-        
-        assert_eq!(valuations, vec![
-            vec![OptBool::True, OptBool::False, OptBool::False, OptBool::True],
-            vec![OptBool::False, OptBool::True, OptBool::False, OptBool::True]
-        ]);
+
+        let valuations = [true, false]
+            .into_iter()
+            .flat_map(|v| predecessor.pick_cube(None, |_, _| v))
+            .collect_vec();
+
+        assert_eq!(
+            valuations,
+            vec![
+                vec![OptBool::True, OptBool::False, OptBool::False, OptBool::True],
+                vec![OptBool::False, OptBool::True, OptBool::False, OptBool::True]
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_attraction_set() -> eyre::Result<()> {
+        let s = symbolic_pg(other_pg()?)?;
+
+        let attr_set = s.pg.attractor_set(Owner::Even, &s.vertices[2])?;
+
+        s.pg.gc();
+        let dot = DotWriter::write_dot_symbolic(&s.pg, [(&attr_set, "attractor_set".into())])?;
+        std::fs::write("out_sym.dot", dot)?;
+
+        let other_vertices = s.pg.vertices.and(&attr_set.not().unwrap()).unwrap();
+
+        s.pg.gc();
+        let dot = DotWriter::write_dot_symbolic(
+            &s.pg,
+            [
+                (&attr_set, "attractor_set".into()),
+                (&other_vertices, "next_vertices".into()),
+            ],
+        )?;
+        std::fs::write("out_sym.dot", dot)?;
+
+        let count = attr_set.sat_quick_count(s.pg.bdd_variable_count() as u32);
+        assert_eq!(count, 2);
 
         Ok(())
     }
 
     #[test]
     pub fn test_symbolic_substitution() -> eyre::Result<()> {
-        let s = symbolic_pg()?;
+        let s = symbolic_pg(small_pg()?)?;
         let s_pg = &s.pg;
 
-        let final_subs_bdd = s_pg.vertices.bulk_substitute(&s.pg.variables, &s.pg.variables_edges).unwrap();
+        let final_subs_bdd = s_pg
+            .vertices
+            .bulk_substitute(&s.pg.variables, &s.pg.variables_edges)
+            .unwrap();
 
         // Ensure that the variables were substituted correctly
         let edge_nodes_exist = &s.edge_vertices[0];
@@ -249,12 +403,7 @@ mod tests {
         }
 
         s.pg.gc();
-        let dot = DotWriter::write_dot_symbolic(
-            &s_pg,
-            [
-                (&final_subs_bdd, "substitution".into()),
-            ],
-        )?;
+        let dot = DotWriter::write_dot_symbolic(&s_pg, [(&final_subs_bdd, "substitution".into())])?;
         std::fs::write("out_sym.dot", dot)?;
 
         Ok(())
@@ -266,8 +415,7 @@ mod tests {
         edge_vertices: Vec<BDDFunction>,
     }
 
-    fn symbolic_pg() -> eyre::Result<SymbolicTest> {
-        let pg = small_pg()?;
+    fn symbolic_pg(pg: ParityGame) -> eyre::Result<SymbolicTest> {
         let s_pg = super::SymbolicParityGame::from_explicit(&pg)?;
         let nodes = pg
             .vertices_index()

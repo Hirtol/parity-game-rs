@@ -246,7 +246,7 @@ impl<T: ParityGraph<u32>> crate::visualize::VisualGraph for T {
     }
 
     fn edge_text(&self, _edge: (VertexId, VertexId), _sink: &mut dyn Write) -> std::fmt::Result {
-        Ok(())
+        write!(_sink, " ")
     }
 }
 
