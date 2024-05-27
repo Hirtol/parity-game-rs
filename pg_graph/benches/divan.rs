@@ -31,6 +31,18 @@ mod solver_benches {
     }
 
     #[divan::bench(args = super::GAMES)]
+    fn bench_symbolic_zielonka(bencher: divan::Bencher, game: &str) {
+        bencher.with_inputs(|| {
+            let pg = super::load_pg(game);
+            SymbolicParityGame::from_explicit(&pg).unwrap()
+        }).bench_values(|s_pg| {
+            let mut game = solvers::symbolic_zielonka::SymbolicZielonkaSolver::new(&s_pg);
+
+            game.run();
+        });
+    }
+
+    #[divan::bench(args = super::GAMES)]
     fn bench_small_progress(bencher: divan::Bencher, game: &str) {
         bencher.with_inputs(|| super::load_pg(game)).bench_values(|parity_game| {
             let mut game = solvers::small_progress::SmallProgressSolver::new(&parity_game);

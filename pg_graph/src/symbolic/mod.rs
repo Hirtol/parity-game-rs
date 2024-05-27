@@ -12,6 +12,8 @@ use oxidd_core::{
     function::{BooleanFunctionQuant, Function},
     util::{AllocResult, OptBool},
 };
+use oxidd_core::function::FunctionSubst;
+use oxidd_core::util::Subst;
 use petgraph::prelude::EdgeRef;
 
 use helpers::CachedSymbolicEncoder;
@@ -98,7 +100,7 @@ impl SymbolicParityGame {
             } else {
                 tracing::trace!(n_excluded = items_to_exclude, "Explicitly excluding vertices");
                 for v_idx in explicit.vertex_count()..2_usize.pow(n_variables as u32) {
-                    s_vertices = s_vertices.and(&var_encoder.encode(v_idx)?.not()?)?;
+                    s_vertices = s_vertices.diff(var_encoder.encode(v_idx)?)?;
                 }
             }
         }
@@ -249,14 +251,14 @@ impl SymbolicParityGame {
 
     /// Calculate the predecessors of the set of vertices `of`.
     pub fn predecessors(&self, of: &BDD) -> Result<BDD> {
-        let of_subs = of.bulk_substitute(&self.variables, &self.variables_edges)?;
+        let of_subs = self.edge_substitute(of)?;
 
         Ok(self.edges.and(&of_subs)?)
     }
 
     /// Calculate the attraction set for the given starting set.
     ///
-    /// This resulting set will contain all vertices which:
+    /// This resulting set will contain all vertices which, after a fixed-point iteration:
     /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
     /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
     #[tracing::instrument(level="trace", skip_all, fields(player))]
@@ -272,12 +274,12 @@ impl SymbolicParityGame {
                 .and(&edge_starting_set)?
                 .exist(&self.conjugated_v_edges)?;
 
+            // !edge_starting_set & self.edges
+            let edges_to_outside = self.edges.diff(&edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
-            let edges_to_outside = edge_starting_set.not_owned()?.and(&self.edges)?;
-            let all_edge_set = opponent_set.and(&edges_to_outside.exist(&self.conjugated_v_edges)?.not_owned()?)?;
-
-            let tmp = any_edge_set.or(&all_edge_set)?;
-            let new_output = output.or(&tmp)?;
+            let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            
+            let new_output = output.or(&any_edge_set)?.or(&all_edge_set)?;
 
             if new_output == output {
                 break;
@@ -292,7 +294,8 @@ impl SymbolicParityGame {
     /// Substitute all vertex variables `x0..xn` with the edge variable `x0'..xn'`.
     #[inline]
     fn edge_substitute(&self, bdd: &BDD) -> Result<BDD> {
-        bdd.bulk_substitute(&self.variables, &self.variables_edges)
+        let subs = Subst::new(&self.variables, &self.variables_edges);
+        Ok(bdd.substitute(subs)?)
     }
 
     /// Return both sets of vertices, with the first element of the returned tuple matching the `player`.
@@ -402,6 +405,11 @@ mod tests {
         println!("Starting set: {:#?}", s_tue.pg.vertices_of_bdd(start_set)?);
 
         let attr_set = s_tue.pg.attractor_set(Owner::Odd, start_set)?;
+
+        s_tue.pg.gc();
+        let out = DotWriter::write_dot_symbolic(&s_tue.pg, [(&attr_set, "Attr Set".to_string())])?;
+        std::fs::write("out.dot", &out)?;
+        
         let attr_set_vertices = s_tue.pg.vertices_of_bdd(&attr_set)?;
 
         println!("Attraction set: {:#?}", s_tue.pg.vertices_of_bdd(&attr_set)?);

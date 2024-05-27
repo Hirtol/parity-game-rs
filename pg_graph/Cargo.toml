@@ -30,9 +30,9 @@ profiling = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
 divan = "0.1.14"
 
-[[bench]]
-name = "solvers"
-harness = false
+#[[bench]]
+#name = "solvers"
+#harness = false
 
 [[bench]]
 name = "divan"

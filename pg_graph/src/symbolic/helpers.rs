@@ -6,6 +6,8 @@ use oxidd_core::{
     Manager,
     util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
 };
+use oxidd_core::function::FunctionSubst;
+use oxidd_core::util::Subst;
 
 use crate::symbolic::BDD;
 
@@ -52,7 +54,7 @@ where
             if value & (T::from(1) << T::from(i as u8)) != 0.into() {
                 expr = expr.and(&variables[i])?;
             } else {
-                expr = expr.and(&variables[i].not()?)?;
+                expr = expr.diff(&variables[i])?;
             }
         }
 
@@ -93,7 +95,7 @@ pub trait BddExtensions {
     /// `vars` and `replace_with` should, ideally, be individual variables. `replace_with` can't rely on the provided `vars`.
     ///
     /// In practice this (inefficiently) creates a new BDD with: `exists vars. (replace_with <=> vars) && self`.
-    fn substitute(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction>;
+    fn substitute_own(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction>;
 
     /// TODO: Only partially complete... skips out every choice after the first
     fn sat_valuations(&self) -> ValuationsIterator;
@@ -102,30 +104,19 @@ pub trait BddExtensions {
 
     /// Does a sequential substitution (not simultaneous!)
     ///
-    /// See [Self::substitute]
+    /// See [Self::substitute_own]
     fn bulk_substitute<'a>(
         &self,
         vars: impl IntoIterator<Item = &'a BDDFunction>,
         replace_vars: impl IntoIterator<Item = &'a BDDFunction>,
-    ) -> crate::symbolic::Result<BDDFunction> {
-        // This turns out to be more efficient than doing a bulk `exist` call on all conjugated `vars`, surprisingly.
-        let mut iter = vars.into_iter().zip(replace_vars);
-        if let Some((var, replace_with)) = iter.next() {
-            let mut accumulator = self.substitute(var, replace_with)?;
-
-            for (var, replace_with) in iter {
-                accumulator = accumulator.substitute(var, replace_with)?;
-            }
-
-            Ok(accumulator)
-        } else {
-            Err(BddError::NoInput)
-        }
-    }
+    ) -> crate::symbolic::Result<BDDFunction>;
+    
+    /// Efficiently compute `self & !rhs`.
+    fn diff(&self, rhs: &Self) -> AllocResult<BDDFunction>;
 }
 
 impl BddExtensions for BDDFunction {
-    fn substitute(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction> {
+    fn substitute_own(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction> {
         var.with_manager_shared(|manager, vars| {
             let iff = Self::equiv_edge(manager, vars, replace_with.as_edge(manager))?;
             let and = Self::and_edge(manager, self.as_edge(manager), &iff)?;
@@ -145,6 +136,27 @@ impl BddExtensions for BDDFunction {
     fn sat_quick_count(&self, n_vars: u32) -> u64 {
         let mut cache: SatCountCache<u64, ahash::RandomState> = SatCountCache::default();
         self.sat_count(n_vars, &mut cache)
+    }
+
+    /// Does a sequential substitution (not simultaneous!)
+    ///
+    /// See [Self::substitute_own]
+    fn bulk_substitute<'a>(
+        &self,
+        vars: impl IntoIterator<Item = &'a BDDFunction>,
+        replace_vars: impl IntoIterator<Item = &'a BDDFunction>,
+    ) -> crate::symbolic::Result<BDDFunction> {
+        let var_coll = vars.into_iter().cloned().collect::<Vec<_>>();
+        let replace_coll = replace_vars.into_iter().cloned().collect::<Vec<_>>();
+        let subs = Subst::new(&var_coll, &replace_coll);
+        
+        Ok(self.substitute(subs)?)
+    }
+
+    #[inline(always)]
+    fn diff(&self, rhs: &Self) -> AllocResult<BDDFunction> {
+        // `imp_strict` <=> !rhs & self <=> self & !rhs
+        rhs.imp_strict(self)
     }
 }
 
@@ -215,7 +227,7 @@ mod tests {
         let v0_and_v1 = variables[0].and(&variables[1])?;
         let v0_and_v2 = variables[0].and(&variables[2])?;
 
-        let res = v0_and_v1.substitute(&variables[1], &variables[2])?;
+        let res = v0_and_v1.substitute_own(&variables[1], &variables[2])?;
 
         assert!(res == v0_and_v2);
 
