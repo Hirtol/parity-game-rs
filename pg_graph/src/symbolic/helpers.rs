@@ -1,11 +1,7 @@
 use std::{collections::hash_map::Entry, hash::Hash};
 
-use oxidd::bdd::BDDFunction;
-use oxidd_core::{
-    function::{BooleanFunction, BooleanFunctionQuant, Function},
-    Manager,
-    util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
-};
+use oxidd::bdd::{BDDFunction, BDDManagerRef};
+use oxidd_core::{function::{BooleanFunction, BooleanFunctionQuant, Function}, Manager, ManagerRef, util::{AllocResult, OptBool, OutOfMemory, SatCountCache}};
 use oxidd_core::function::FunctionSubst;
 use oxidd_core::util::Subst;
 
@@ -15,18 +11,32 @@ use crate::symbolic::BDD;
 pub struct CachedSymbolicEncoder<T> {
     cache: ahash::HashMap<T, BDDFunction>,
     variables: Vec<BDDFunction>,
+    leading_zeros: Vec<BDDFunction>,
 }
 
 impl<T> CachedSymbolicEncoder<T>
 where
-    T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8>,
+    T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
     T: Eq + Hash,
     <T as std::ops::BitAnd>::Output: PartialEq<T>,
 {
-    pub fn new(variables: Vec<BDDFunction>) -> Self {
+    pub fn new(manager: &BDDManagerRef, variables: Vec<BDDFunction>) -> Self {
+        // First cache a few BDDs for leading zeros, which allows much faster vertex encoding in 50% of cases.
+        let base_true = manager.with_manager_shared(|f| BDDFunction::t(f));
+        let mut leading_zeros_bdds = Vec::new();
+
+        for trailing_zeros in 0..(variables.len() + 1) {
+            let conjugated = variables.iter().rev().take(trailing_zeros).fold(base_true.clone(), |acc, b| {
+                acc.diff(b).unwrap()
+            });
+
+            leading_zeros_bdds.push(conjugated);
+        }
+
         Self {
             cache: ahash::HashMap::default(),
             variables,
+            leading_zeros: leading_zeros_bdds,
         }
     }
 
@@ -36,12 +46,34 @@ where
     pub fn encode(&mut self, value: T) -> super::Result<&BDDFunction> {
         let out = match self.cache.entry(value) {
             Entry::Occupied(val) => val.into_mut(),
-            Entry::Vacant(val) => val.insert(Self::encode_impl(&self.variables, value)?),
+            Entry::Vacant(val) => val.insert(Self::efficient_encode_impl(&self.leading_zeros, &self.variables, value)?),
         };
 
         Ok(out)
     }
 
+    /// Perform a binary encoding of the given value.
+    /// 
+    /// Uses a cached `trailing_zeros_fns` to skip a lot of conjugations in 50% of cases.
+    pub(crate) fn efficient_encode_impl(leading_zero_fns: &[BDDFunction], variables: &[BDDFunction], value: T) -> super::Result<BDDFunction> {
+        let leading_zeros = value.leading_zeros_help();
+        let base_subtraction = value.num_bits() - variables.len() as u32;
+        let actual_trailing_zeros = (leading_zeros - base_subtraction) as usize;
+
+        let mut expr = leading_zero_fns[actual_trailing_zeros].clone();
+        for i in 0..(variables.len() - actual_trailing_zeros) {
+            // Check if bit is set
+            if value & (T::from(1) << T::from(i as u8)) != 0.into() {
+                expr = expr.and(&variables[i])?;
+            } else {
+                expr = expr.diff(&variables[i])?;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    /// Perform a binary encoding of the given value.
     pub(crate) fn encode_impl(variables: &[BDDFunction], value: T) -> super::Result<BDDFunction> {
         let mut expr = if value & 1.into() != 0.into() {
             variables[0].clone()
@@ -74,6 +106,31 @@ where
             .map(move |(bit_index, variable)| (variable, value & (T::from(1) << T::from(bit_index as u8)) != 0.into())))
     }
 }
+
+pub trait BitHelper {
+    fn leading_zeros_help(&self) -> u32;
+    fn num_bits(&self) -> u32;
+}
+
+macro_rules! impl_bithelpers {
+    ($($value:ty),*) => {
+        $(
+            impl BitHelper for $value {
+                #[inline(always)]
+                fn leading_zeros_help(&self) -> u32 {
+                    self.leading_zeros()
+                }
+
+                #[inline(always)]
+                fn num_bits(&self) -> u32 {
+                    Self::BITS
+                }
+            }
+        )*
+    };
+}
+
+impl_bithelpers!(u8, u16, u32, u64, usize);
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum BddError {
@@ -110,7 +167,7 @@ pub trait BddExtensions {
         vars: impl IntoIterator<Item = &'a BDDFunction>,
         replace_vars: impl IntoIterator<Item = &'a BDDFunction>,
     ) -> crate::symbolic::Result<BDDFunction>;
-    
+
     /// Efficiently compute `self & !rhs`.
     fn diff(&self, rhs: &Self) -> AllocResult<BDDFunction>;
 }
@@ -149,7 +206,7 @@ impl BddExtensions for BDDFunction {
         let var_coll = vars.into_iter().cloned().collect::<Vec<_>>();
         let replace_coll = replace_vars.into_iter().cloned().collect::<Vec<_>>();
         let subs = Subst::new(&var_coll, &replace_coll);
-        
+
         Ok(self.substitute(subs)?)
     }
 

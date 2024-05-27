@@ -67,8 +67,8 @@ impl SymbolicParityGame {
         let edge_variables = manager
             .with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
 
-        let mut var_encoder = CachedSymbolicEncoder::new(variables.clone());
-        let mut e_var_encoder = CachedSymbolicEncoder::new(edge_variables.clone());
+        let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.clone());
+        let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
 
         tracing::trace!("Starting vertex BDD construction");
         // Contains all vertices in the graph
