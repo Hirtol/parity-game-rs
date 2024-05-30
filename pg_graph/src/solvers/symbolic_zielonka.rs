@@ -21,7 +21,8 @@ impl<'a> SymbolicZielonkaSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game).expect("Failed to compute solution");
         
-        let even = self.game.vertices_of_bdd(&even).expect("Allocation error");
+        let even = self.game.vertices_of_bdd(&even);
+        
         let mut winners = vec![Owner::Odd; self.game.vertex_count()];
         for idx in even {
             winners[idx.index()] = Owner::Even;

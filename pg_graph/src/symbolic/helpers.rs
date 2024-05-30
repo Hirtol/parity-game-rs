@@ -3,9 +3,10 @@ use std::{collections::hash_map::Entry, hash::Hash};
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
 use oxidd_core::{function::{BooleanFunction, BooleanFunctionQuant, Function}, Manager, ManagerRef, util::{AllocResult, OptBool, OutOfMemory, SatCountCache}};
 use oxidd_core::function::FunctionSubst;
-use oxidd_core::util::Subst;
 
 use crate::symbolic::BDD;
+use crate::symbolic::helpers::new_valuations::TruthAssignmentsIterator;
+use crate::VertexId;
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T> {
@@ -146,68 +147,25 @@ impl From<OutOfMemory> for BddError {
     }
 }
 
-pub trait BddExtensions {
-    /// Conceptually substitute the given `vars` in `self` with `replace_with`.
-    ///
-    /// `vars` and `replace_with` should, ideally, be individual variables. `replace_with` can't rely on the provided `vars`.
-    ///
-    /// In practice this (inefficiently) creates a new BDD with: `exists vars. (replace_with <=> vars) && self`.
-    fn substitute_own(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction>;
-
-    /// TODO: Only partially complete... skips out every choice after the first
-    fn sat_valuations(&self) -> ValuationsIterator;
+pub trait BddExtensions: Function {
+    /// Returns an [Iterator] which results in all possible satisfying assignments of the variables.
+    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDD>;
 
     fn sat_quick_count(&self, n_vars: u32) -> u64;
-
-    /// Does a sequential substitution (not simultaneous!)
-    ///
-    /// See [Self::substitute_own]
-    fn bulk_substitute<'a>(
-        &self,
-        vars: impl IntoIterator<Item = &'a BDDFunction>,
-        replace_vars: impl IntoIterator<Item = &'a BDDFunction>,
-    ) -> crate::symbolic::Result<BDDFunction>;
 
     /// Efficiently compute `self & !rhs`.
     fn diff(&self, rhs: &Self) -> AllocResult<BDDFunction>;
 }
 
 impl BddExtensions for BDDFunction {
-    fn substitute_own(&self, var: &BDDFunction, replace_with: &BDDFunction) -> AllocResult<BDDFunction> {
-        var.with_manager_shared(|manager, vars| {
-            let iff = Self::equiv_edge(manager, vars, replace_with.as_edge(manager))?;
-            let and = Self::and_edge(manager, self.as_edge(manager), &iff)?;
-            let exists = Self::exist_edge(manager, &and, vars)?;
 
-            manager.drop_edge(iff);
-            manager.drop_edge(and);
-
-            Ok(Self::from_edge(manager, exists))
-        })
-    }
-
-    fn sat_valuations(&self) -> ValuationsIterator {
-        ValuationsIterator::new(self)
+    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDD> {
+        TruthAssignmentsIterator::new(manager, self)
     }
 
     fn sat_quick_count(&self, n_vars: u32) -> u64 {
         let mut cache: SatCountCache<u64, ahash::RandomState> = SatCountCache::default();
         self.sat_count(n_vars, &mut cache)
-    }
-
-    /// Does a sequential substitution (not simultaneous!)
-    ///
-    /// See [Self::substitute_own]
-    fn bulk_substitute<'a>(
-        &self,
-        vars: impl IntoIterator<Item = &'a BDDFunction>,
-        replace_vars: impl IntoIterator<Item = &'a BDDFunction>,
-    ) -> crate::symbolic::Result<BDDFunction> {
-        let var_coll = vars.into_iter().cloned().collect::<Vec<_>>();
-        let replace_coll = replace_vars.into_iter().cloned().collect::<Vec<_>>();
-        let subs = Subst::new(&var_coll, &replace_coll);
-
-        Ok(self.substitute(subs)?)
     }
 
     #[inline(always)]
@@ -217,50 +175,137 @@ impl BddExtensions for BDDFunction {
     }
 }
 
-pub struct ValuationsIterator {
-    bit_vec: Option<Vec<OptBool>>,
-    choices: Vec<usize>,
-    counter: usize,
-    total_size: usize,
-}
+mod new_valuations {
+    use std::collections::VecDeque;
+    use oxidd::bdd::{BDDFunction};
+    use oxidd_core::{Edge, HasLevel, InnerNode, Manager, Node};
+    use oxidd_core::function::{EdgeOfFunc, Function};
+    use oxidd_core::util::{Borrowed, OptBool};
+    use oxidd_rules_bdd::simple::BDDTerminal;
 
-impl ValuationsIterator {
-    pub fn new(bdd: &BDDFunction) -> Self {
-        let mut choices = vec![];
-
-        let cube = bdd.pick_cube(None, |man, edge| {
-            choices.push(man.get_node(edge).level() as usize);
-            false
-        });
-
-        Self {
-            bit_vec: cube,
-            total_size: 2_usize.pow(choices.len() as u32),
-            choices,
-            counter: 0,
-        }
+    #[inline]
+    #[must_use]
+    fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<E>, Borrowed<E>) {
+        let mut it = node.children();
+        let f_then = it.next().unwrap();
+        let f_else = it.next().unwrap();
+        (f_then, f_else)
     }
-}
 
-impl Iterator for ValuationsIterator {
-    type Item = Vec<OptBool>;
+    pub struct MidAssignment<'a, F: Function> {
+        next_edge: EdgeOfFunc<'a, F>,
+        valuation_progress: Vec<OptBool>
+    }
+    
+    pub struct TruthAssignmentsIterator<'b, 'a, F: Function> {
+        manager: &'b F::Manager<'a>,
+        queue: VecDeque<MidAssignment<'a, F>>,
+        counter: usize,
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let Some(bit_vec) = &self.bit_vec else {
-            return None;
-        };
-
-        if self.counter < self.total_size {
-            let mut permutation = bit_vec.clone();
-            for (i, &idx) in self.choices.iter().enumerate() {
-                permutation[idx] = OptBool::from((self.counter & (1 << i)) != 0);
+    impl<'b, 'a> TruthAssignmentsIterator<'b, 'a, BDDFunction> {
+        pub fn new(manager: &'b <BDDFunction as Function>::Manager<'a>, bdd: &BDDFunction) -> Self {
+            let base_edge = bdd.as_edge(manager);
+            let begin = match manager.get_node(base_edge) {
+                Node::Inner(_) => Some(vec![OptBool::None; manager.num_levels() as usize]),
+                Node::Terminal(t) => {
+                    match t {
+                        BDDTerminal::False => None,
+                        BDDTerminal::True => Some(vec![OptBool::None; manager.num_levels() as usize]),
+                    }
+                }
+            }.map(|start_valuation| MidAssignment {
+                next_edge: manager.clone_edge(base_edge),
+                valuation_progress: start_valuation,
+            });
+            
+            Self {
+                manager,
+                queue: begin.into_iter().collect(),
+                counter: 0,
             }
-            self.counter += 1;
-            Some(permutation)
-        } else {
-            None
         }
     }
+
+    impl<'b, 'a> Iterator for TruthAssignmentsIterator<'b, 'a, BDDFunction> {
+        type Item = Vec<OptBool>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let mut next_evaluate = self.queue.pop_back()?;
+            
+            let mut next_cube = Some(next_evaluate.next_edge.borrowed()); 
+            
+            while let Some(next) = &next_cube {
+                let Node::Inner(node) = self.manager.get_node(next) else {
+                    break;
+                };
+
+                let (true_edge, false_edge) = collect_children(node);
+                let next_edge = if self.manager.get_node(&true_edge).is_terminal(&BDDTerminal::False) {
+                    false
+                } else if self.manager.get_node(&false_edge).is_terminal(&BDDTerminal::False) {
+                    true
+                } else {
+                    // First queue up the next item (`true`)
+                    let mut queued_val = MidAssignment {
+                        next_edge: self.manager.clone_edge(&true_edge),
+                        valuation_progress: next_evaluate.valuation_progress.clone(),
+                    };
+                    queued_val.valuation_progress[node.level() as usize] = OptBool::True;
+                    self.queue.push_back(queued_val);
+
+                    // Always take the `false` edge first
+                    false
+                };
+
+                next_evaluate.valuation_progress[node.level() as usize] = OptBool::from(next_edge);
+                next_cube = Some(if next_edge { true_edge } else { false_edge })
+            }
+            
+            self.manager.drop_edge(next_evaluate.next_edge);
+            
+            Some(next_evaluate.valuation_progress)
+        }
+    }
+}
+
+/// Turn a sequence of booleans into a sequence of `VertexId`s based on a binary encoding.
+/// 
+/// # Arguments
+/// * `values` - The binary encoding
+/// * `first` - The amount of `bools` to take from each individual `value in values`, this assumes that all vertex
+/// variables are first.
+pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBool]>>, first: usize) -> Vec<VertexId> {
+    let mut output = Vec::new();
+
+    fn inner(current_value: u32, idx: usize, assignments: &[OptBool], out: &mut Vec<VertexId>) {
+        let Some(next) = assignments.get(idx) else {
+            out.push(current_value.into());
+            return;
+        };
+        
+        match next {
+            OptBool::None => {
+                // True
+                inner(current_value | (1 << idx), idx + 1, assignments, out);
+                // False
+                inner(current_value, idx + 1, assignments, out);
+            }
+            OptBool::False => {
+                inner(current_value, idx + 1, assignments, out);
+            }
+            OptBool::True => {
+                inner(current_value | (1 << idx), idx + 1, assignments, out);
+            }
+        }
+    }
+    
+    
+    for vertex_assigment in values {
+        inner(0, 0, &vertex_assigment.as_ref()[0..first], &mut output)
+    }
+    
+    output
 }
 
 #[cfg(test)]
@@ -268,54 +313,38 @@ mod tests {
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
     use oxidd_core::{function::BooleanFunction, ManagerRef};
+    use oxidd_core::util::OptBool;
 
     use crate::symbolic::helpers::BddExtensions;
+    use crate::symbolic::helpers::new_valuations::TruthAssignmentsIterator;
 
     #[test]
-    pub fn test_substitute() -> crate::symbolic::Result<()> {
+    pub fn test_valuations() -> crate::symbolic::Result<()> {
         let manager = oxidd::bdd::new_manager(0, 0, 12);
-
+    
         // Construct base building blocks for the BDD
         let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
         let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
-        let variables =
-            manager.with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
-
+        let variables = manager
+            .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
+    
         let v0_and_v1 = variables[0].and(&variables[1])?;
         let v0_and_v2 = variables[0].and(&variables[2])?;
-
-        let res = v0_and_v1.substitute_own(&variables[1], &variables[2])?;
-
-        assert!(res == v0_and_v2);
-
+        let both = v0_and_v1.or(&v0_and_v2)?;
+        let multi = variables[2].and(&variables[1].or(&variables[0])?)?;
+        
+        manager.with_manager_shared(|man| {
+            let mut iter = TruthAssignmentsIterator::new(man, &v0_and_v1);
+            assert_eq!(iter.collect::<Vec<_>>(), vec![
+                vec![OptBool::True, OptBool::True, OptBool::None]
+            ]);
+            
+            println!("{:#?}", multi.sat_assignments(man).collect_vec());
+            // assert_eq!(both.sat_valuations(man).collect::<Vec<_>>(), vec![
+            //     vec![OptBool::True, OptBool::False]
+            // ]);
+        });
+        
         Ok(())
     }
-
-    // #[test]
-    // pub fn test_valuations() -> crate::symbolic::Result<()> {
-    //     let manager = oxidd::bdd::new_manager(0, 0, 12);
-    //
-    //     // Construct base building blocks for the BDD
-    //     let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
-    //     let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
-    //     let variables = manager
-    //         .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
-    //
-    //     let v0_and_v1 = variables[0].and(&variables[1])?;
-    //     let v0_and_v2 = variables[0].and(&variables[2])?;
-    //     let both = v0_and_v1.or(&v0_and_v2)?;
-    //
-    //     assert_eq!(v0_and_v1.sat_valuations().collect::<Vec<_>>(), vec![
-    //         vec![OptBool::True, OptBool::True, OptBool::None]
-    //     ]);
-    //     assert_eq!(both.sat_valuations().collect::<Vec<_>>(), vec![
-    //         vec![OptBool::True, OptBool::False]
-    //     ]);
-    //
-    //     let res = v0_and_v1.substitute(&variables[1], &variables[2])?;
-    //
-    //     assert!(res == v0_and_v2);
-    //
-    //     Ok(())
-    // }
 }

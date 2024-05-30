@@ -1107,6 +1107,7 @@ dependencies = [
  "oxidd-core",
  "oxidd-dump",
  "oxidd-reorder",
+ "oxidd-rules-bdd",
  "petgraph",
  "pg_parser",
  "profiling",

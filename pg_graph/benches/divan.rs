@@ -12,23 +12,10 @@ mod solver_benches {
     use oxidd::bdd::BDDFunction;
     use pg_graph::solvers;
     use pg_graph::symbolic::SymbolicParityGame;
-    use oxidd_core::function::BooleanFunction;
+    use oxidd_core::function::{BooleanFunction, FunctionSubst};
     use oxidd_core::ManagerRef;
     use pg_graph::{ParityGame};
     use pg_graph::symbolic::helpers::BddExtensions;
-
-    #[divan::bench]
-    fn bench_substitution(bencher: divan::Bencher) {
-        let pg = super::load_pg("amba_decomposed_arbiter_6.tlsf.ehoa.pg");
-        let mut s_pg = SymbolicParityGame::from_explicit(&pg).unwrap();
-
-        bencher.bench(|| {
-            let mut subs = s_pg.vertices.bulk_substitute(&s_pg.variables, &s_pg.variables_edges).unwrap();
-            drop(subs);
-            // Otherwise we're just benchmarking how quickly it can re-discover nodes.
-            s_pg.gc();
-        });
-    }
 
     #[divan::bench(args = super::GAMES)]
     fn bench_symbolic_zielonka(bencher: divan::Bencher, game: &str) {

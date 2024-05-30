@@ -9,11 +9,9 @@ use oxidd::{
     BooleanFunction, Manager, ManagerRef,
 };
 use oxidd_core::{
-    function::{BooleanFunctionQuant, Function},
-    util::{AllocResult, OptBool},
+    function::{BooleanFunctionQuant, Function, FunctionSubst},
+    util::{AllocResult, OptBool, Subst},
 };
-use oxidd_core::function::FunctionSubst;
-use oxidd_core::util::Subst;
 use petgraph::prelude::EdgeRef;
 
 use helpers::CachedSymbolicEncoder;
@@ -197,21 +195,16 @@ impl SymbolicParityGame {
     /// Calculate all vertex ids which belong to the set represented by the `bdd`.
     ///
     /// Inefficient, and should only be used for debugging.
-    pub fn vertices_of_bdd(&self, bdd: &BDD) -> Result<Vec<VertexId>> {
-        let mut out = vec![];
-        for i in 0..self.pg_vertex_count {
-            let v_id = VertexId::new(i);
-            if bdd.eval(CachedSymbolicEncoder::encode_eval(&self.variables, v_id.index())?) {
-                out.push(v_id);
-            }
-        }
-        Ok(out)
+    pub fn vertices_of_bdd(&self, bdd: &BDD) -> Vec<VertexId> {
+        self.manager.with_manager_shared(|man| {
+            let valuations = bdd.sat_assignments(man);
+            crate::symbolic::helpers::decode_assignments(valuations, self.variables.len())
+        })
     }
 
     pub fn create_subgame(&self, ignored: &BDD) -> Result<Self> {
         let negated_vertices = ignored.not()?;
-        let negated_vertices_edges = ignored
-            .bulk_substitute(&self.variables, &self.variables_edges)?
+        let negated_vertices_edges = self.edge_substitute(ignored)?
             .not_owned()?;
 
         let priorities = self
@@ -261,7 +254,7 @@ impl SymbolicParityGame {
     /// This resulting set will contain all vertices which, after a fixed-point iteration:
     /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
     /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
-    #[tracing::instrument(level="trace", skip_all, fields(player))]
+    #[tracing::instrument(level = "trace", skip_all, fields(player))]
     pub fn attractor_set(&self, player: Owner, starting_set: &BDD) -> Result<BDD> {
         let (player_set, opponent_set) = self.get_player_sets(player);
         let mut output = starting_set.clone();
@@ -278,7 +271,7 @@ impl SymbolicParityGame {
             let edges_to_outside = self.edges.diff(&edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
-            
+
             let new_output = output.or(&any_edge_set)?.or(&all_edge_set)?;
 
             if new_output == output {
@@ -396,23 +389,21 @@ mod tests {
 
         let attr_set = s.pg.attractor_set(Owner::Even, &s.vertices[2])?;
 
-        let vertices = s.pg.vertices_of_bdd(&attr_set)?;
-        assert_eq!(vertices, id_vec![1, 2, 3]);
+        let vertices = s.pg.vertices_of_bdd(&attr_set);
+        assert_eq!(vertices, id_vec![2, 3, 1]);
 
         let s_tue = symbolic_pg(load_example("tue_example.pg"))?;
 
         let start_set = &s_tue.pg.priorities.get(&s_tue.pg.priority_max()).unwrap();
-        println!("Starting set: {:#?}", s_tue.pg.vertices_of_bdd(start_set)?);
+        println!("Starting set: {:#?}", s_tue.pg.vertices_of_bdd(start_set));
 
         let attr_set = s_tue.pg.attractor_set(Owner::Odd, start_set)?;
 
         s_tue.pg.gc();
-        let out = DotWriter::write_dot_symbolic(&s_tue.pg, [(&attr_set, "Attr Set".to_string())])?;
-        std::fs::write("out.dot", &out)?;
-        
-        let attr_set_vertices = s_tue.pg.vertices_of_bdd(&attr_set)?;
 
-        println!("Attraction set: {:#?}", s_tue.pg.vertices_of_bdd(&attr_set)?);
+        let attr_set_vertices = s_tue.pg.vertices_of_bdd(&attr_set);
+
+        println!("Attraction set: {:#?}", s_tue.pg.vertices_of_bdd(&attr_set));
         let mut real_attraction = AttractionComputer::new();
         let underlying_attr_set = real_attraction.attractor_set(
             &s_tue.original,
@@ -430,12 +421,12 @@ mod tests {
         let s = symbolic_pg(load_example("amba_decomposed_arbiter_2.tlsf.ehoa.pg"))?;
 
         let start_set = &s.pg.priorities.get(&s.pg.priority_max()).unwrap();
-        println!("Starting set: {:#?}", s.pg.vertices_of_bdd(start_set)?);
+        println!("Starting set: {:#?}", s.pg.vertices_of_bdd(start_set));
 
         let attr_set = s.pg.attractor_set(Owner::Even, start_set)?;
-        let attr_set_vertices = s.pg.vertices_of_bdd(&attr_set)?;
+        let attr_set_vertices = s.pg.vertices_of_bdd(&attr_set);
 
-        println!("Attraction set: {:#?}", s.pg.vertices_of_bdd(&attr_set)?);
+        println!("Attraction set: {:#?}", s.pg.vertices_of_bdd(&attr_set));
         let mut real_attraction = AttractionComputer::new();
         let underlying_attr_set = real_attraction.attractor_set(
             &s.original,
@@ -452,9 +443,7 @@ mod tests {
         let s = symbolic_pg(small_pg()?)?;
         let s_pg = &s.pg;
 
-        let final_subs_bdd = s_pg
-            .vertices
-            .bulk_substitute(&s.pg.variables, &s.pg.variables_edges)
+        let final_subs_bdd = s_pg.edge_substitute(&s_pg.vertices)
             .unwrap();
 
         // Ensure that the variables were substituted correctly
