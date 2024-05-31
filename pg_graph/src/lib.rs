@@ -3,12 +3,12 @@
 pub use datatypes::*;
 pub use parity_game::*;
 
-pub mod solvers;
 pub mod parity_game;
 pub mod symbolic;
 mod datatypes;
 pub mod register_game;
 pub mod visualize;
+pub mod explicit;
 
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::{
-    solvers::{AttractionComputer, SolverOutput},
+    explicit::solvers::{AttractionComputer, SolverOutput},
     Owner, ParityGame, ParityGraph, SubGame, VertexId,
 };
 
@@ -87,7 +87,7 @@ pub mod test {
     use crate::{
         Owner,
         ParityGame,
-        solvers::zielonka::ZielonkaSolver, tests::example_dir,
+        explicit::solvers::zielonka::ZielonkaSolver, tests::example_dir,
     };
     use crate::tests::load_example;
 

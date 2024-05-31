@@ -19,6 +19,7 @@ use helpers::CachedSymbolicEncoder;
 use crate::{Owner, ParityGame, ParityGraph, Priority, symbolic::helpers::BddExtensions, VertexId};
 
 pub mod helpers;
+pub mod solvers;
 
 pub type BDD = BDDFunction;
 pub type Result<T> = std::result::Result<T, helpers::BddError>;
@@ -204,8 +205,7 @@ impl SymbolicParityGame {
 
     pub fn create_subgame(&self, ignored: &BDD) -> Result<Self> {
         let negated_vertices = ignored.not()?;
-        let negated_vertices_edges = self.edge_substitute(ignored)?
-            .not_owned()?;
+        let negated_vertices_edges = self.edge_substitute(ignored)?.not_owned()?;
 
         let priorities = self
             .priorities
@@ -308,10 +308,10 @@ mod tests {
     use oxidd_core::{function::BooleanFunction, util::OptBool};
 
     use crate::{
+        explicit::solvers::AttractionComputer,
         Owner,
         ParityGame,
         ParityGraph,
-        solvers::AttractionComputer,
         symbolic::{helpers::BddExtensions, SymbolicParityGame}, tests::load_example, visualize::DotWriter,
     };
 
@@ -408,7 +408,10 @@ mod tests {
         let underlying_attr_set = real_attraction.attractor_set(
             &s_tue.original,
             Owner::Odd,
-            s_tue.original.vertices_by_priority_idx(s_tue.pg.priority_max()).map(|(a, b)| a),
+            s_tue
+                .original
+                .vertices_by_priority_idx(s_tue.pg.priority_max())
+                .map(|(a, b)| a),
         );
 
         assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
@@ -443,8 +446,7 @@ mod tests {
         let s = symbolic_pg(small_pg()?)?;
         let s_pg = &s.pg;
 
-        let final_subs_bdd = s_pg.edge_substitute(&s_pg.vertices)
-            .unwrap();
+        let final_subs_bdd = s_pg.edge_substitute(&s_pg.vertices).unwrap();
 
         // Ensure that the variables were substituted correctly
         let edge_nodes_exist = &s.edge_vertices[0];

@@ -5,7 +5,7 @@ use itertools::Itertools;
 use serde_with::{serde_as, DurationSecondsWithFrac};
 use pg_graph::{Owner, ParityGame, ParityGraph};
 use pg_graph::register_game::{Rank, RegisterGame};
-use pg_graph::solvers::zielonka::ZielonkaSolver;
+use pg_graph::explicit::solvers::zielonka::ZielonkaSolver;
 
 #[derive(clap::Args, Debug)]
 pub struct BenchCommand {

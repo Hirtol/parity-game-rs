@@ -196,7 +196,7 @@ mod new_valuations {
         next_edge: EdgeOfFunc<'a, F>,
         valuation_progress: Vec<OptBool>
     }
-    
+
     pub struct TruthAssignmentsIterator<'b, 'a, F: Function> {
         manager: &'b F::Manager<'a>,
         queue: VecDeque<MidAssignment<'a, F>>,
@@ -218,7 +218,7 @@ mod new_valuations {
                 next_edge: manager.clone_edge(base_edge),
                 valuation_progress: start_valuation,
             });
-            
+
             Self {
                 manager,
                 queue: begin.into_iter().collect(),
@@ -232,9 +232,9 @@ mod new_valuations {
 
         fn next(&mut self) -> Option<Self::Item> {
             let mut next_evaluate = self.queue.pop_back()?;
-            
-            let mut next_cube = Some(next_evaluate.next_edge.borrowed()); 
-            
+
+            let mut next_cube = Some(next_evaluate.next_edge.borrowed());
+
             while let Some(next) = &next_cube {
                 let Node::Inner(node) = self.manager.get_node(next) else {
                     break;
@@ -261,16 +261,16 @@ mod new_valuations {
                 next_evaluate.valuation_progress[node.level() as usize] = OptBool::from(next_edge);
                 next_cube = Some(if next_edge { true_edge } else { false_edge })
             }
-            
+
             self.manager.drop_edge(next_evaluate.next_edge);
-            
+
             Some(next_evaluate.valuation_progress)
         }
     }
 }
 
 /// Turn a sequence of booleans into a sequence of `VertexId`s based on a binary encoding.
-/// 
+///
 /// # Arguments
 /// * `values` - The binary encoding
 /// * `first` - The amount of `bools` to take from each individual `value in values`, this assumes that all vertex
@@ -283,7 +283,7 @@ pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBo
             out.push(current_value.into());
             return;
         };
-        
+
         match next {
             OptBool::None => {
                 // True
@@ -299,12 +299,12 @@ pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBo
             }
         }
     }
-    
-    
+
+
     for vertex_assigment in values {
         inner(0, 0, &vertex_assigment.as_ref()[0..first], &mut output)
     }
-    
+
     output
 }
 
@@ -321,30 +321,30 @@ mod tests {
     #[test]
     pub fn test_valuations() -> crate::symbolic::Result<()> {
         let manager = oxidd::bdd::new_manager(0, 0, 12);
-    
+
         // Construct base building blocks for the BDD
         let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
         let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
         let variables = manager
             .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
-    
+
         let v0_and_v1 = variables[0].and(&variables[1])?;
         let v0_and_v2 = variables[0].and(&variables[2])?;
         let both = v0_and_v1.or(&v0_and_v2)?;
         let multi = variables[2].and(&variables[1].or(&variables[0])?)?;
-        
+
         manager.with_manager_shared(|man| {
             let mut iter = TruthAssignmentsIterator::new(man, &v0_and_v1);
             assert_eq!(iter.collect::<Vec<_>>(), vec![
                 vec![OptBool::True, OptBool::True, OptBool::None]
             ]);
-            
+
             println!("{:#?}", multi.sat_assignments(man).collect_vec());
             // assert_eq!(both.sat_valuations(man).collect::<Vec<_>>(), vec![
             //     vec![OptBool::True, OptBool::False]
             // ]);
         });
-        
+
         Ok(())
     }
 }

@@ -79,12 +79,12 @@ impl SolveCommand {
 
         let solution = match solver {
             Solver::Spm => {
-                let mut solver = pg_graph::solvers::small_progress::SmallProgressSolver::new(game_to_solve);
+                let mut solver = pg_graph::explicit::solvers::small_progress::SmallProgressSolver::new(game_to_solve);
 
                 timed_solve!(solver.run())
             }
             Solver::Zielonka => {
-                let mut solver = pg_graph::solvers::zielonka::ZielonkaSolver::new(game_to_solve);
+                let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(game_to_solve);
 
                 let out = timed_solve!(solver.run());
                 tracing::info!(n=solver.recursive_calls, "Solved with recursive calls");
@@ -92,7 +92,7 @@ impl SolveCommand {
             }
             Solver::SymbolicZielonka => {
                 let symbolic_game = timed_solve!(pg_graph::symbolic::SymbolicParityGame::from_explicit(game_to_solve), "Constructed Symbolic PG")?;
-                let mut solver = pg_graph::solvers::symbolic_zielonka::SymbolicZielonkaSolver::new(&symbolic_game);
+                let mut solver = pg_graph::symbolic::solvers::symbolic_zielonka::SymbolicZielonkaSolver::new(&symbolic_game);
 
                 let out = timed_solve!(solver.run());
                 tracing::info!(n=solver.recursive_calls, "Solved with recursive calls");

@@ -5,7 +5,7 @@ use crate::{Owner, ParityGraph};
 
 
 use crate::parity_game::{ParityGame, Priority, VertexId};
-use crate::solvers::SolverOutput;
+use crate::explicit::solvers::SolverOutput;
 
 type Progress = u32;
 type ProgressMeasureData<'a> = &'a [Progress];
@@ -255,7 +255,7 @@ mod tests {
 
     use pg_parser::{parse_pg};
     use crate::{Owner, ParityGame};
-    use crate::solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver};
+    use crate::explicit::solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver};
     use crate::tests::example_dir;
 
     #[test]

@@ -1,7 +1,8 @@
 use oxidd_core::function::{BooleanFunction, Function};
-use crate::{solvers::{SolverOutput}, Owner, symbolic};
+
+use crate::{Owner, symbolic};
+use crate::explicit::solvers::SolverOutput;
 use crate::symbolic::{BDD, SymbolicParityGame};
-use crate::visualize::DotWriter;
 
 pub struct SymbolicZielonkaSolver<'a> {
     pub recursive_calls: usize,
@@ -84,10 +85,10 @@ pub mod test {
 
     use crate::{
         Owner,
-        ParityGame,
-        solvers::zielonka::ZielonkaSolver, tests::example_dir,
+        ParityGame
+        , tests::example_dir,
     };
-    use crate::solvers::symbolic_zielonka::SymbolicZielonkaSolver;
+    use super::SymbolicZielonkaSolver;
     use crate::symbolic::SymbolicParityGame;
 
     #[test]

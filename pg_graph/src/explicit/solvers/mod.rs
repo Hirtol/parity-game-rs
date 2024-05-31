@@ -4,7 +4,6 @@ use crate::{Owner, ParityGraph, VertexId};
 pub mod small_progress;
 pub mod zielonka;
 pub mod tangle_learning;
-pub mod symbolic_zielonka;
 
 #[derive(Debug, Clone, Default)]
 pub struct SolverOutput {
