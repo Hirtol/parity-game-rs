@@ -1,22 +1,23 @@
 use std::{collections::hash_map::Entry, hash::Hash};
 
+use ecow::EcoVec;
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
 use oxidd_core::{
     function::{BooleanFunction, Function},
-    util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
     ManagerRef,
+    util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
 };
 
 use crate::{
-    symbolic::{helpers::new_valuations::TruthAssignmentsIterator, BDD},
+    symbolic::{BDD, helpers::new_valuations::TruthAssignmentsIterator},
     VertexId,
 };
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T> {
     cache: ahash::HashMap<T, BDDFunction>,
-    variables: Vec<BDDFunction>,
-    leading_zeros: Vec<BDDFunction>,
+    variables: EcoVec<BDDFunction>,
+    leading_zeros: EcoVec<BDDFunction>,
 }
 
 impl<T> CachedSymbolicEncoder<T>
@@ -25,10 +26,10 @@ where
     T: Eq + Hash,
     <T as std::ops::BitAnd>::Output: PartialEq<T>,
 {
-    pub fn new(manager: &BDDManagerRef, variables: Vec<BDDFunction>) -> Self {
+    pub fn new(manager: &BDDManagerRef, variables: EcoVec<BDDFunction>) -> Self {
         // First cache a few BDDs for leading zeros, which allows much faster vertex encoding in 50% of cases.
         let base_true = manager.with_manager_shared(|f| BDDFunction::t(f));
-        let mut leading_zeros_bdds = Vec::new();
+        let mut leading_zeros_bdds = EcoVec::new();
 
         for trailing_zeros in 0..(variables.len() + 1) {
             let conjugated = variables
@@ -189,14 +190,15 @@ impl BddExtensions for BDDFunction {
 }
 
 mod new_valuations {
+    use std::collections::VecDeque;
+
     use oxidd::bdd::BDDFunction;
     use oxidd_core::{
+        Edge,
         function::{EdgeOfFunc, Function},
-        util::{Borrowed, OptBool},
-        Edge, HasLevel, InnerNode, Manager, Node,
+        HasLevel, InnerNode, Manager, Node, util::{Borrowed, OptBool},
     };
     use oxidd_rules_bdd::simple::BDDTerminal;
-    use std::collections::VecDeque;
 
     #[inline]
     #[must_use]
@@ -325,9 +327,9 @@ pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBo
 mod tests {
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
-    use oxidd_core::{function::BooleanFunction, util::OptBool, ManagerRef};
+    use oxidd_core::{function::BooleanFunction, ManagerRef, util::OptBool};
 
-    use crate::symbolic::helpers::{new_valuations::TruthAssignmentsIterator, BddExtensions};
+    use crate::symbolic::helpers::{BddExtensions, new_valuations::TruthAssignmentsIterator};
 
     #[test]
     pub fn test_valuations() -> crate::symbolic::Result<()> {

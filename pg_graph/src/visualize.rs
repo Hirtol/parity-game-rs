@@ -1,8 +1,9 @@
-use crate::{
-    register_game::{ChosenAction, RegisterGame},
-    Owner, VertexId,
-};
 use std::fmt::Write;
+
+use crate::{
+    Owner,
+    register_game::{ChosenAction, RegisterGame}, VertexId,
+};
 
 /// An abstraction to allow for generic writing of the underlying graphs.
 ///

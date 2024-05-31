@@ -1,5 +1,6 @@
-use pg_graph::ParityGame;
 use std::path::PathBuf;
+
+use pg_graph::ParityGame;
 
 fn main() {
     divan::main();
@@ -9,24 +10,20 @@ static GAMES: [&str; 2] = ["ActionConverter.tlsf.ehoa.pg", "amba_decomposed_arbi
 
 #[divan::bench_group(max_time = 5)]
 mod solver_benches {
-
     use pg_graph::{
         explicit::solvers::{small_progress::SmallProgressSolver, zielonka::ZielonkaSolver},
-        symbolic::{solvers::symbolic_zielonka::SymbolicZielonkaSolver, SymbolicParityGame},
+        symbolic::{parity_game::SymbolicParityGame, solvers::symbolic_zielonka::SymbolicZielonkaSolver},
     };
 
     #[divan::bench(args = super::GAMES)]
     fn bench_symbolic_zielonka(bencher: divan::Bencher, game: &str) {
-        bencher
-            .with_inputs(|| {
-                let pg = super::load_pg(game);
-                SymbolicParityGame::from_explicit(&pg).unwrap()
-            })
-            .bench_values(|s_pg| {
-                let mut game = SymbolicZielonkaSolver::new(&s_pg);
+        let pg = super::load_pg(game);
+        let s_pg = SymbolicParityGame::from_explicit(&pg).unwrap();
+        bencher.bench(|| {
+            let mut game = SymbolicZielonkaSolver::new(&s_pg);
 
-                game.run();
-            });
+            game.run();
+        });
     }
 
     #[divan::bench(args = super::GAMES)]

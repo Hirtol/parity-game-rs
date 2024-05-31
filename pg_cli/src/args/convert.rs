@@ -1,9 +1,11 @@
-use pg_graph::{
-    register_game::RegisterGame,
-    visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
-    Owner, ParityGraph,
-};
 use std::path::PathBuf;
+
+use pg_graph::{
+    Owner,
+    ParityGraph,
+    register_game::RegisterGame, visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
+};
+use pg_graph::symbolic::SymbolicParityGame;
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {
@@ -124,7 +126,7 @@ impl ConvertCommand {
                 }
             }
             ConversionGoal::SymbolicParityGame => {
-                let s_pg = pg_graph::symbolic::SymbolicParityGame::from_explicit(&parity_game)?;
+                let s_pg = SymbolicParityGame::from_explicit(&parity_game)?;
                 s_pg.gc();
 
                 tracing::info!(

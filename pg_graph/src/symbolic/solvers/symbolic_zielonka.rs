@@ -2,9 +2,9 @@ use oxidd_core::function::BooleanFunction;
 
 use crate::{
     explicit::solvers::SolverOutput,
-    symbolic,
-    symbolic::{SymbolicParityGame, BDD},
     Owner,
+    symbolic,
+    symbolic::{BDD, parity_game::SymbolicParityGame},
 };
 
 pub struct SymbolicZielonkaSolver<'a> {
@@ -86,8 +86,9 @@ pub mod test {
 
     use pg_parser::parse_pg;
 
+    use crate::{Owner, ParityGame, symbolic::parity_game::SymbolicParityGame, tests::example_dir};
+
     use super::SymbolicZielonkaSolver;
-    use crate::{symbolic::SymbolicParityGame, tests::example_dir, Owner, ParityGame};
 
     #[test]
     pub fn test_solve_tue_example() {
