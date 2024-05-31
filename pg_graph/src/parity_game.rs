@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Write, ops::Index};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Write},
+    ops::Index,
+};
 
 use ahash::HashSet;
 use itertools::Itertools;
@@ -8,7 +12,7 @@ use petgraph::{
     prelude::EdgeRef,
 };
 
-use crate::{visualize::VisualVertex, Vertex};
+use crate::{Vertex, visualize::VisualVertex};
 
 pub type VertexId<Ix = u32> = NodeIndex<Ix>;
 pub type Priority = u32;
@@ -222,19 +226,19 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
     }
 }
 
-impl<T: ParityGraph<u32>> crate::visualize::VisualGraph for T {
-    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex> + '_> {
+impl<Ix: IndexType, T: ParityGraph<Ix>> crate::visualize::VisualGraph<Ix> for T {
+    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex<Ix>> + '_> {
         Box::new(
             self.vertices_and_index()
                 .map(|(i, v)| VisualVertex { id: i, owner: v.owner }),
         )
     }
 
-    fn edges(&self) -> Box<dyn Iterator<Item = (VertexId, VertexId)> + '_> {
+    fn edges(&self) -> Box<dyn Iterator<Item = (VertexId<Ix>, VertexId<Ix>)> + '_> {
         Box::new(self.graph_edges().map(|e| (e.source(), e.target())))
     }
 
-    fn node_text(&self, node: VertexId, sink: &mut dyn Write) -> std::fmt::Result {
+    fn node_text(&self, node: VertexId<Ix>, sink: &mut dyn Write) -> std::fmt::Result {
         let v = self.get(node).expect("Invalid vertex id");
         write!(
             sink,
@@ -245,7 +249,7 @@ impl<T: ParityGraph<u32>> crate::visualize::VisualGraph for T {
         )
     }
 
-    fn edge_text(&self, _edge: (VertexId, VertexId), _sink: &mut dyn Write) -> std::fmt::Result {
+    fn edge_text(&self, _edge: (VertexId<Ix>, VertexId<Ix>), _sink: &mut dyn Write) -> std::fmt::Result {
         write!(_sink, " ")
     }
 }

@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+use petgraph::graph::IndexType;
+
 use crate::{
     Owner,
     register_game::{ChosenAction, RegisterGame}, VertexId,
@@ -8,24 +10,24 @@ use crate::{
 /// An abstraction to allow for generic writing of the underlying graphs.
 ///
 /// See [DotWriter] and [MermaidWriter]
-pub trait VisualGraph {
-    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex> + '_>;
-    fn edges(&self) -> Box<dyn Iterator<Item = (VertexId, VertexId)> + '_>;
+pub trait VisualGraph<Ix = u32> {
+    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex<Ix>> + '_>;
+    fn edges(&self) -> Box<dyn Iterator<Item = (VertexId<Ix>, VertexId<Ix>)> + '_>;
 
-    fn node_text(&self, node: VertexId, sink: &mut dyn Write) -> std::fmt::Result;
+    fn node_text(&self, node: VertexId<Ix>, sink: &mut dyn Write) -> std::fmt::Result;
 
-    fn edge_text(&self, edge: (VertexId, VertexId), sink: &mut dyn Write) -> std::fmt::Result;
+    fn edge_text(&self, edge: (VertexId<Ix>, VertexId<Ix>), sink: &mut dyn Write) -> std::fmt::Result;
 }
 
-pub struct VisualVertex {
-    pub id: VertexId,
+pub struct VisualVertex<T = u32> {
+    pub id: VertexId<T>,
     pub owner: Owner,
 }
 
 pub struct DotWriter;
 
 impl DotWriter {
-    pub fn write_dot(graph: &dyn VisualGraph) -> eyre::Result<String> {
+    pub fn write_dot<T: Copy + IndexType>(graph: &dyn VisualGraph<T>) -> eyre::Result<String> {
         let mut output = String::from("digraph DD {\n");
         // Write defaults
         writeln!(
@@ -106,7 +108,7 @@ impl DotWriter {
 pub struct MermaidWriter;
 
 impl MermaidWriter {
-    pub fn write_mermaid(graph: &dyn VisualGraph) -> eyre::Result<String> {
+    pub fn write_mermaid<T: Copy + IndexType>(graph: &dyn VisualGraph<T>) -> eyre::Result<String> {
         let mut output = String::from("flowchart TD\n");
 
         for v in graph.vertices() {
@@ -133,7 +135,7 @@ impl MermaidWriter {
 pub struct VisualRegisterGame<'a, 'b>(pub &'a RegisterGame<'b>);
 
 impl<'a, 'b> VisualGraph for VisualRegisterGame<'a, 'b> {
-    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex> + '_> {
+    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex<u32>> + '_> {
         self.0.vertices()
     }
 
