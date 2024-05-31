@@ -12,10 +12,9 @@ use petgraph::{
     prelude::EdgeRef,
 };
 
-use crate::{Vertex, visualize::VisualVertex};
+use crate::{datatypes::Priority, Vertex, visualize::VisualVertex};
 
 pub type VertexId<Ix = u32> = NodeIndex<Ix>;
-pub type Priority = u32;
 
 pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     type Parent: ParityGraph<Ix>;

@@ -3,8 +3,11 @@ use std::fmt::Write;
 use petgraph::graph::IndexType;
 
 use crate::{
+    explicit::{
+        register_game::{ChosenAction, RegisterGame},
+        VertexId,
+    },
     Owner,
-    register_game::{ChosenAction, RegisterGame}, VertexId,
 };
 
 /// An abstraction to allow for generic writing of the underlying graphs.

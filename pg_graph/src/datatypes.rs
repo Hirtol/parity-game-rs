@@ -1,4 +1,4 @@
-use crate::Priority;
+pub type Priority = u32;
 
 /// Represents a particular player in the parity game.
 #[repr(u8)]

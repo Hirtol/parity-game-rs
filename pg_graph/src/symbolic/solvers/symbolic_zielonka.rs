@@ -86,7 +86,7 @@ pub mod test {
 
     use pg_parser::parse_pg;
 
-    use crate::{Owner, ParityGame, symbolic::parity_game::SymbolicParityGame, tests::example_dir};
+    use crate::{explicit::ParityGame, Owner, symbolic::parity_game::SymbolicParityGame, tests::example_dir};
 
     use super::SymbolicZielonkaSolver;
 

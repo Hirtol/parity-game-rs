@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
-use pg_graph::{register_game::RegisterGame, visualize::MermaidWriter, Owner, ParityGraph};
+use pg_graph::{
+    explicit::{ParityGraph, register_game::RegisterGame},
+    Owner,
+    visualize::MermaidWriter,
+};
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {

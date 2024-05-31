@@ -3,10 +3,10 @@ use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
 
 use ecow::{eco_vec, EcoVec};
 
-use crate::{Owner, ParityGame, ParityGraph};
-
 use crate::{
-    parity_game::{Priority, VertexId},
+    datatypes::Priority,
+    explicit::{ParityGame, ParityGraph, VertexId},
+    Owner,
     visualize::VisualVertex,
 };
 
@@ -27,7 +27,7 @@ pub type Rank = u8;
 /// Note that in the above example, whilst the original parity game has [Owner::Even] as the winner, the Register Game
 /// has [Owner::Odd]. You need at least a 2-Register Game (`1 + log_2(n=2) = 2`) to ensure the correct result.
 pub struct RegisterGame<'a> {
-    pub original_game: &'a crate::parity_game::ParityGame,
+    pub original_game: &'a crate::explicit::ParityGame,
     pub vertices: Vec<RegisterVertex>,
     pub edges: ahash::HashMap<VertexId, Vec<VertexId>>,
 }
@@ -45,7 +45,7 @@ impl<'a> RegisterGame<'a> {
     ///
     /// TODO: Consider making `k` a const-generic
     #[tracing::instrument(name = "Construct Register Game", skip(game))]
-    pub fn construct(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
+    pub fn construct(game: &'a crate::explicit::ParityGame, k: Rank, controller: Owner) -> Self {
         let base_registers = game
             .priorities_unique()
             .chain([0])
@@ -169,7 +169,7 @@ impl<'a> RegisterGame<'a> {
     }
 
     #[tracing::instrument(name = "Construct Register Game 2021", skip(game))]
-    pub fn construct_2021(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
+    pub fn construct_2021(game: &'a crate::explicit::ParityGame, k: Rank, controller: Owner) -> Self {
         let reg_quantity = k as usize + 1;
         let base_registers = game
             .priorities_unique()
@@ -329,7 +329,7 @@ impl<'a> RegisterGame<'a> {
     }
 
     #[tracing::instrument(name = "Convert to Parity Game", skip(self))]
-    pub fn to_game(&self) -> eyre::Result<crate::parity_game::ParityGame> {
+    pub fn to_game(&self) -> eyre::Result<crate::explicit::ParityGame> {
         let mut parsed_game = vec![];
 
         for (v_id, v, edges) in self
@@ -347,7 +347,7 @@ impl<'a> RegisterGame<'a> {
             });
         }
 
-        crate::parity_game::ParityGame::new(parsed_game)
+        crate::explicit::ParityGame::new(parsed_game)
     }
 }
 

@@ -1,10 +1,11 @@
-use crate::{Owner, ParityGraph};
-use itertools::Itertools;
 use std::{cmp::Ordering, collections::VecDeque};
 
+use itertools::Itertools;
+
 use crate::{
-    explicit::solvers::SolverOutput,
-    parity_game::{ParityGame, Priority, VertexId},
+    datatypes::Priority,
+    explicit::{ParityGame, ParityGraph, solvers::SolverOutput, VertexId},
+    Owner,
 };
 
 type Progress = u32;
@@ -60,7 +61,7 @@ impl<'a> SmallProgressSolver<'a> {
         }
     }
 
-    /// Run the solver and return a Vec corresponding to each [crate::parity_game::Vertex] indicating who wins.
+    /// Run the solver and return a Vec corresponding to each [crate::explicit::Vertex] indicating who wins.
     #[tracing::instrument(name = "Run SPM", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
@@ -298,12 +299,16 @@ impl ProgressMeasure {
 mod tests {
     use std::{cmp::Ordering, time::Instant};
 
-    use crate::{
-        explicit::solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver},
-        tests::example_dir,
-        Owner, ParityGame,
-    };
     use pg_parser::parse_pg;
+
+    use crate::{
+        explicit::{
+            ParityGame,
+            solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver},
+        },
+        Owner,
+        tests::example_dir,
+    };
 
     #[test]
     pub fn test_solve_tue_example() {

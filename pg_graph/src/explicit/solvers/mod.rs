@@ -1,5 +1,9 @@
-use crate::{Owner, ParityGraph, VertexId};
 use std::collections::VecDeque;
+
+use crate::{
+    explicit::{ParityGraph, VertexId},
+    Owner,
+};
 
 pub mod small_progress;
 pub mod tangle_learning;
@@ -62,8 +66,12 @@ impl AttractionComputer {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Owner, ParityGame, VertexId};
     use std::collections::HashSet;
+
+    use crate::{
+        explicit::{ParityGame, VertexId},
+        Owner,
+    };
 
     #[test]
     pub fn test_attract_set_computation() -> eyre::Result<()> {

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use pg_graph::explicit::solvers::small_progress::SmallProgressSolver;
 
@@ -12,7 +12,7 @@ fn bench_solvers(c: &mut Criterion) -> eyre::Result<()> {
         let example = get_example_dir().join(i);
         let data = std::fs::read_to_string(&example).unwrap();
         let graph = pg_parser::parse_pg(&mut data.as_str()).unwrap();
-        let parity_game = pg_graph::ParityGame::new(graph)?;
+        let parity_game = pg_graph::explicit::ParityGame::new(graph)?;
         if i == "amba_decomposed_arbiter_6.tlsf.ehoa.pg" {
             group.sample_size(30);
         }

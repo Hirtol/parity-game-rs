@@ -3,7 +3,11 @@ use std::collections::VecDeque;
 use ahash::HashMap;
 use itertools::Itertools;
 
-use crate::{explicit::solvers::SolverOutput, Owner, ParityGame, ParityGraph, Priority, SubGame, VertexId};
+use crate::{
+    datatypes::Priority,
+    explicit::{ParityGame, ParityGraph, solvers::SolverOutput, SubGame, VertexId},
+    Owner,
+};
 
 pub struct TangleSolver<'a> {
     pub recursive_calls: usize,
@@ -227,7 +231,11 @@ pub mod test {
 
     use pg_parser::parse_pg;
 
-    use crate::{explicit::solvers::zielonka::ZielonkaSolver, Owner, ParityGame, tests::example_dir};
+    use crate::{
+        explicit::{ParityGame, solvers::zielonka::ZielonkaSolver},
+        Owner,
+        tests::example_dir,
+    };
 
     #[test]
     pub fn test_solve_tue_example() {

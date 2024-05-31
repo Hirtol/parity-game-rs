@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use pg_graph::ParityGame;
+use pg_graph::explicit::ParityGame;
 
 fn main() {
     divan::main();
@@ -62,7 +62,7 @@ pub fn load_pg(game: &str) -> ParityGame {
     let path = crate::example_dir().join(game);
     let data = std::fs::read_to_string(&path).unwrap();
     let graph = pg_parser::parse_pg(&mut data.as_str()).unwrap();
-    let parity_game = pg_graph::ParityGame::new(graph).unwrap();
+    let parity_game = pg_graph::explicit::ParityGame::new(graph).unwrap();
     parity_game
 }
 

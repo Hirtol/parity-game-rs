@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use pg_graph::{
+    explicit::{ParityGraph, register_game::RegisterGame},
     Owner,
-    ParityGraph,
-    register_game::RegisterGame,
-    symbolic::SymbolicParityGame, visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
+    symbolic::SymbolicParityGame,
+    visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
 };
 
 #[derive(clap::Args, Debug)]

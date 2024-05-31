@@ -3,7 +3,7 @@ use std::{collections::hash_map::Entry, hash::Hash};
 use ecow::EcoVec;
 use oxidd_core::{function::Function, ManagerRef, util::OptBool};
 
-use crate::{symbolic::oxidd_extensions::BooleanFunctionExtensions, VertexId};
+use crate::{explicit::VertexId, symbolic::oxidd_extensions::BooleanFunctionExtensions};
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T, F> {

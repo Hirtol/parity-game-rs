@@ -9,10 +9,10 @@ use oxidd_core::{
 use petgraph::prelude::EdgeRef;
 
 use crate::{
+    explicit::{ParityGame, ParityGraph, register_game::Rank},
     Owner,
-    ParityGame,
-    ParityGraph,
-    register_game::Rank, symbolic, symbolic::{
+    symbolic,
+    symbolic::{
         BDD,
         helpers::CachedSymbolicEncoder,
         oxidd_extensions::{BooleanFunctionExtensions, FunctionManagerExtension},

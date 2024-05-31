@@ -14,14 +14,16 @@ use oxidd_core::{
 use petgraph::prelude::EdgeRef;
 
 use crate::{
+    datatypes::Priority,
+    explicit::{ParityGame, ParityGraph, VertexId},
     Owner,
-    ParityGame,
-    ParityGraph, Priority, symbolic, symbolic::{
+    symbolic,
+    symbolic::{
         BDD,
         helpers,
         helpers::CachedSymbolicEncoder,
         oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
-    }, VertexId,
+    },
 };
 
 pub struct SymbolicParityGame {
@@ -273,11 +275,11 @@ mod tests {
     use oxidd_core::{function::BooleanFunction, util::OptBool};
 
     use crate::{
-        explicit::solvers::AttractionComputer,
+        explicit::{ParityGame, ParityGraph, solvers::AttractionComputer},
         Owner,
-        ParityGame,
-        ParityGraph,
-        symbolic::{oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame}, tests::load_example, visualize::DotWriter,
+        symbolic::{oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame},
+        tests::load_example,
+        visualize::DotWriter,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {

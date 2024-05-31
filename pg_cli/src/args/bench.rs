@@ -1,14 +1,19 @@
-use eyre::eyre;
-use itertools::Itertools;
-use pg_graph::{
-    explicit::solvers::zielonka::ZielonkaSolver,
-    register_game::{Rank, RegisterGame},
-    Owner, ParityGame, ParityGraph,
-};
-use serde_with::{serde_as, DurationSecondsWithFrac};
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
+};
+
+use eyre::eyre;
+use itertools::Itertools;
+use serde_with::{DurationSecondsWithFrac, serde_as};
+
+use pg_graph::{
+    explicit::{
+        ParityGame,
+        ParityGraph,
+        register_game::{Rank, RegisterGame}, solvers::zielonka::ZielonkaSolver,
+    },
+    Owner,
 };
 
 #[derive(clap::Args, Debug)]
