@@ -1,14 +1,14 @@
 //! See [RegisterGame]
-use std::cmp::Ordering;
-use std::collections::{VecDeque};
-use std::fmt::Write;
+use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
 
 use ecow::{eco_vec, EcoVec};
 
 use crate::{Owner, ParityGame, ParityGraph};
 
-use crate::parity_game::{Priority, VertexId};
-use crate::visualize::VisualVertex;
+use crate::{
+    parity_game::{Priority, VertexId},
+    visualize::VisualVertex,
+};
 
 /// The value type for `k` in a register game.
 ///
@@ -44,11 +44,16 @@ impl<'a> RegisterGame<'a> {
     /// The registers will be controlled by `controller`.
     ///
     /// TODO: Consider making `k` a const-generic
-    #[tracing::instrument(name="Construct Register Game", skip(game))]
+    #[tracing::instrument(name = "Construct Register Game", skip(game))]
     pub fn construct(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
-        let base_registers = game.priorities_unique().chain([0]).map(|pr| (pr, eco_vec!(pr; k as usize))).collect::<ahash::HashMap<_, _>>();
-        
-        let mut to_expand = game.vertices_index()
+        let base_registers = game
+            .priorities_unique()
+            .chain([0])
+            .map(|pr| (pr, eco_vec!(pr; k as usize)))
+            .collect::<ahash::HashMap<_, _>>();
+
+        let mut to_expand = game
+            .vertices_index()
             .map(ToExpand::OriginalVertex)
             .collect::<VecDeque<_>>();
 
@@ -163,12 +168,17 @@ impl<'a> RegisterGame<'a> {
         }
     }
 
-    #[tracing::instrument(name="Construct Register Game 2021", skip(game))]
+    #[tracing::instrument(name = "Construct Register Game 2021", skip(game))]
     pub fn construct_2021(game: &'a crate::parity_game::ParityGame, k: Rank, controller: Owner) -> Self {
         let reg_quantity = k as usize + 1;
-        let base_registers = game.priorities_unique().chain([0]).map(|pr| (pr, eco_vec!(pr; reg_quantity))).collect::<ahash::HashMap<_, _>>();
+        let base_registers = game
+            .priorities_unique()
+            .chain([0])
+            .map(|pr| (pr, eco_vec!(pr; reg_quantity)))
+            .collect::<ahash::HashMap<_, _>>();
 
-        let mut to_expand = game.vertices_index()
+        let mut to_expand = game
+            .vertices_index()
             .map(ToExpand::OriginalVertex)
             .collect::<VecDeque<_>>();
 
@@ -223,15 +233,20 @@ impl<'a> RegisterGame<'a> {
                             // Now create its edges to expand (E_r)
                             for r in 0..reg_quantity {
                                 let reg_v = &final_graph[reg_id.index()];
-                                let new_priority = reset_to_priority_2021(r as Rank, reg_v.register_state[r], original_vertex.priority, controller);
+                                let new_priority = reset_to_priority_2021(
+                                    r as Rank,
+                                    reg_v.register_state[r],
+                                    original_vertex.priority,
+                                    controller,
+                                );
                                 let mut new_registers = reg_v.register_state.clone();
-                                
+
                                 let new_r = new_registers.make_mut();
                                 for i in 0..reg_quantity {
                                     match i.cmp(&r) {
                                         Ordering::Less => new_r[i] = 0,
                                         Ordering::Equal => new_r[i] = original_vertex.priority,
-                                        Ordering::Greater => new_r[i] = new_r[i].max(original_vertex.priority)
+                                        Ordering::Greater => new_r[i] = new_r[i].max(original_vertex.priority),
                                     }
                                 }
 
@@ -272,15 +287,15 @@ impl<'a> RegisterGame<'a> {
             edges: final_edges,
         }
     }
-    
+
     /// Calculate the max `k` which assures the validity of calculated results on a `k`-register game.
-    /// 
+    ///
     /// Note that register games of `j < k` might also be valid, but it's not guaranteed.
     /// This only assures that the register-index of the particular given `pg` is not _more_ than the result.
     pub fn max_register_index(pg: &ParityGame) -> Rank {
         // Ideally we'd use the result of https://faculty.runi.ac.il/udiboker/files/ToWeak.pdf
         // Where the max register-index would be 1 + log(z), where z is the maximal number of vertex-disjoint cycles.
-        // Calculating that seems(?) to be an NP-hard problem though. 
+        // Calculating that seems(?) to be an NP-hard problem though.
         // Just calculating the strongly connected components isn't enough, as everyone uses the (maximal) SCC definition,
         // but we don't want the maximal SCCs!
         (1 + pg.vertex_count().ilog2()) as Rank
@@ -289,17 +304,17 @@ impl<'a> RegisterGame<'a> {
     /// Project the given register game winners back to the original game's vertices.
     pub fn project_winners_original(&self, game_winners: &[Owner]) -> Vec<Owner> {
         let mut output = vec![None; self.original_game.vertex_count()];
-        
+
         for (reg_id, &winner) in game_winners.iter().enumerate() {
             // Only persist the result of the 0-initialised registers, as they're the starting registers
             let reg_v = &self.vertices[reg_id];
             if reg_v.register_state.iter().any(|r| *r != 0) {
                 continue;
             }
-            
+
             let original_id = reg_v.original_graph_id;
             let current_winner = &mut output[original_id.index()];
-            
+
             if let Some(curr_win) = current_winner {
                 if *curr_win != winner {
                     panic!("Game winner ({curr_win:?}) for Reg Idx `{reg_id}` did not equal existing winner ({winner:?}) for original Idx `{original_id:?}`");
@@ -309,11 +324,11 @@ impl<'a> RegisterGame<'a> {
                 *current_winner = Some(winner);
             }
         }
-        
+
         output.into_iter().flatten().collect()
     }
 
-    #[tracing::instrument(name="Convert to Parity Game", skip(self))]
+    #[tracing::instrument(name = "Convert to Parity Game", skip(self))]
     pub fn to_game(&self) -> eyre::Result<crate::parity_game::ParityGame> {
         let mut parsed_game = vec![];
 
@@ -331,39 +346,45 @@ impl<'a> RegisterGame<'a> {
                 label: self.original_game.label(VertexId::from(v.original_graph_id)),
             });
         }
-        
+
         crate::parity_game::ParityGame::new(parsed_game)
     }
 }
 
 impl<'a> crate::visualize::VisualGraph for RegisterGame<'a> {
-    fn vertices(&self) -> Box<dyn Iterator<Item=VisualVertex> + '_> {
-        Box::new(self.vertices.iter().enumerate()
-            .map(|(i, v)| VisualVertex {
+    fn vertices(&self) -> Box<dyn Iterator<Item = VisualVertex> + '_> {
+        Box::new(self.vertices.iter().enumerate().map(|(i, v)| VisualVertex {
             id: VertexId::new(i),
             owner: v.owner,
         }))
     }
 
-    fn edges(&self) -> Box<dyn Iterator<Item=(VertexId, VertexId)> + '_> {
-        Box::new(self.edges.iter().flat_map(|(v, targets)| targets.iter().map(|u| (*v, *u))))
+    fn edges(&self) -> Box<dyn Iterator<Item = (VertexId, VertexId)> + '_> {
+        Box::new(
+            self.edges
+                .iter()
+                .flat_map(|(v, targets)| targets.iter().map(|u| (*v, *u))),
+        )
     }
 
     fn node_text(&self, node: VertexId, sink: &mut dyn Write) -> std::fmt::Result {
         let v = &self.vertices[node.index()];
-        write!(sink, "{priority},{orig}({orig_label},{orig_priority}),{regs:?},{next_move:?}",
-               priority = v.priority,
-               orig = v.original_graph_id.index(),
-               orig_label = self.original_game.label(v.original_graph_id).unwrap_or_default(),
-               orig_priority = self.original_game[v.original_graph_id].priority,
-               regs = v.register_state,
-               next_move = v.next_action,)
+        write!(
+            sink,
+            "{priority},{orig}({orig_label},{orig_priority}),{regs:?},{next_move:?}",
+            priority = v.priority,
+            orig = v.original_graph_id.index(),
+            orig_label = self.original_game.label(v.original_graph_id).unwrap_or_default(),
+            orig_priority = self.original_game[v.original_graph_id].priority,
+            regs = v.register_state,
+            next_move = v.next_action,
+        )
     }
 
     fn edge_text(&self, edge: (VertexId, VertexId), sink: &mut dyn Write) -> std::fmt::Result {
         match self.vertices[edge.0.index()].next_action {
             ChosenAction::RegisterChange => write!(sink, "E_i"),
-            ChosenAction::Move => write!(sink, "E_move")
+            ChosenAction::Move => write!(sink, "E_move"),
         }
     }
 }
@@ -384,7 +405,7 @@ fn neutral_priority_2021(_owner: Owner) -> Priority {
 fn rank_to_priority(rank: Rank, saved_priority: Priority, controller: Owner) -> Priority {
     // Rank is 0-indexed for us, but 1-indexed in the original paper
     let out = 2 * (rank + 1) as Priority;
-    
+
     match controller {
         Owner::Even => {
             if controller.priority_aligned(saved_priority) {
@@ -403,7 +424,12 @@ fn rank_to_priority(rank: Rank, saved_priority: Priority, controller: Owner) -> 
     }
 }
 
-fn reset_to_priority_2021(rank: Rank, saved_priority: Priority, vertex_priority: Priority, controller: Owner) -> Priority {
+fn reset_to_priority_2021(
+    rank: Rank,
+    saved_priority: Priority,
+    vertex_priority: Priority,
+    controller: Owner,
+) -> Priority {
     let is_aligned = controller.priority_aligned(saved_priority.max(vertex_priority));
     let out = 2 * rank as Priority;
     match controller {

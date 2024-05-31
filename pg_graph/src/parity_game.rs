@@ -8,7 +8,7 @@ use petgraph::{
     prelude::EdgeRef,
 };
 
-use crate::{Vertex, visualize::VisualVertex};
+use crate::{visualize::VisualVertex, Vertex};
 
 pub type VertexId<Ix = u32> = NodeIndex<Ix>;
 pub type Priority = u32;
@@ -40,7 +40,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
             .zip(self.vertices())
             .filter(move |v| v.1.priority == priority)
     }
-    
+
     fn get(&self, id: NodeIndex<Ix>) -> Option<&Vertex>;
 
     /// Index and unwrap
@@ -57,7 +57,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     /// Create a sub-game by excluding all vertices in `exclude`.
     ///
     /// Note that `exclude` should be sorted!
-    fn create_subgame(&self, exclude: impl IntoIterator<Item=NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
+    fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
 
     /// Return the maximal priority found in the given game.
     #[inline(always)]
@@ -199,7 +199,7 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
             .flatten()
     }
 
-    fn create_subgame(&self, exclude: impl IntoIterator<Item=NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
+    fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         SubGame {
             parent: &self,
             ignored: HashSet::from_iter(exclude),
@@ -326,7 +326,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     }
 
     #[inline(always)]
-    fn create_subgame(&self, exclude: impl IntoIterator<Item=NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
+    fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         let mut new_ignore = self.ignored.clone();
         new_ignore.extend(exclude);
         SubGame {

@@ -8,17 +8,17 @@ use crate::args::SubCommands;
 static PEAK_ALLOC: PeakAlloc = PeakAlloc;
 
 mod args;
-mod utils;
 mod trace;
+mod utils;
 
 #[profiling::function]
 fn main() -> eyre::Result<()> {
     let args = args::ClapArgs::parse();
-    
+
     trace::create_subscriber("DEBUG,pg_graph=DEBUG").init();
-    
+
     let now = std::time::Instant::now();
-    
+
     match args.commands {
         SubCommands::Solve(solv) => {
             solv.run()?;
@@ -30,8 +30,12 @@ fn main() -> eyre::Result<()> {
             bench.run()?;
         }
     }
-    
-    tracing::info!("Runtime: {:.2?} - Peak Memory Usage: {} MB", now.elapsed(), PEAK_ALLOC.peak_usage_as_mb());
+
+    tracing::info!(
+        "Runtime: {:.2?} - Peak Memory Usage: {} MB",
+        now.elapsed(),
+        PEAK_ALLOC.peak_usage_as_mb()
+    );
 
     Ok(())
 }

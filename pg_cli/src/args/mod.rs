@@ -1,10 +1,10 @@
+use crate::args::bench::BenchCommand;
 use convert::ConvertCommand;
 use solve::SolveCommand;
-use crate::args::bench::BenchCommand;
 
-pub mod solve;
-pub mod convert;
 pub mod bench;
+pub mod convert;
+pub mod solve;
 
 #[derive(clap::Parser, Debug)]
 #[clap(version, about)]
@@ -16,7 +16,7 @@ pub struct ClapArgs {
 #[derive(clap::Subcommand, Debug)]
 pub enum SubCommands {
     /// Solve a given parity game
-    /// 
+    ///
     /// Will use the SPM algorithm by default.
     #[clap(arg_required_else_help(true))]
     #[clap(alias = "s")]

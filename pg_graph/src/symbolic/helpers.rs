@@ -1,12 +1,16 @@
 use std::{collections::hash_map::Entry, hash::Hash};
 
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
-use oxidd_core::{function::{BooleanFunction, BooleanFunctionQuant, Function}, Manager, ManagerRef, util::{AllocResult, OptBool, OutOfMemory, SatCountCache}};
-use oxidd_core::function::FunctionSubst;
+use oxidd_core::{
+    function::{BooleanFunction, Function},
+    util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
+    ManagerRef,
+};
 
-use crate::symbolic::BDD;
-use crate::symbolic::helpers::new_valuations::TruthAssignmentsIterator;
-use crate::VertexId;
+use crate::{
+    symbolic::{helpers::new_valuations::TruthAssignmentsIterator, BDD},
+    VertexId,
+};
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T> {
@@ -27,9 +31,11 @@ where
         let mut leading_zeros_bdds = Vec::new();
 
         for trailing_zeros in 0..(variables.len() + 1) {
-            let conjugated = variables.iter().rev().take(trailing_zeros).fold(base_true.clone(), |acc, b| {
-                acc.diff(b).unwrap()
-            });
+            let conjugated = variables
+                .iter()
+                .rev()
+                .take(trailing_zeros)
+                .fold(base_true.clone(), |acc, b| acc.diff(b).unwrap());
 
             leading_zeros_bdds.push(conjugated);
         }
@@ -47,16 +53,24 @@ where
     pub fn encode(&mut self, value: T) -> super::Result<&BDDFunction> {
         let out = match self.cache.entry(value) {
             Entry::Occupied(val) => val.into_mut(),
-            Entry::Vacant(val) => val.insert(Self::efficient_encode_impl(&self.leading_zeros, &self.variables, value)?),
+            Entry::Vacant(val) => val.insert(Self::efficient_encode_impl(
+                &self.leading_zeros,
+                &self.variables,
+                value,
+            )?),
         };
 
         Ok(out)
     }
 
     /// Perform a binary encoding of the given value.
-    /// 
+    ///
     /// Uses a cached `trailing_zeros_fns` to skip a lot of conjugations in 50% of cases.
-    pub(crate) fn efficient_encode_impl(leading_zero_fns: &[BDDFunction], variables: &[BDDFunction], value: T) -> super::Result<BDDFunction> {
+    pub(crate) fn efficient_encode_impl(
+        leading_zero_fns: &[BDDFunction],
+        variables: &[BDDFunction],
+        value: T,
+    ) -> super::Result<BDDFunction> {
         let leading_zeros = value.leading_zeros_help();
         let base_subtraction = value.num_bits() - variables.len() as u32;
         let actual_trailing_zeros = (leading_zeros - base_subtraction) as usize;
@@ -158,7 +172,6 @@ pub trait BddExtensions: Function {
 }
 
 impl BddExtensions for BDDFunction {
-
     fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDD> {
         TruthAssignmentsIterator::new(manager, self)
     }
@@ -176,12 +189,14 @@ impl BddExtensions for BDDFunction {
 }
 
 mod new_valuations {
-    use std::collections::VecDeque;
-    use oxidd::bdd::{BDDFunction};
-    use oxidd_core::{Edge, HasLevel, InnerNode, Manager, Node};
-    use oxidd_core::function::{EdgeOfFunc, Function};
-    use oxidd_core::util::{Borrowed, OptBool};
+    use oxidd::bdd::BDDFunction;
+    use oxidd_core::{
+        function::{EdgeOfFunc, Function},
+        util::{Borrowed, OptBool},
+        Edge, HasLevel, InnerNode, Manager, Node,
+    };
     use oxidd_rules_bdd::simple::BDDTerminal;
+    use std::collections::VecDeque;
 
     #[inline]
     #[must_use]
@@ -194,7 +209,7 @@ mod new_valuations {
 
     pub struct MidAssignment<'a, F: Function> {
         next_edge: EdgeOfFunc<'a, F>,
-        valuation_progress: Vec<OptBool>
+        valuation_progress: Vec<OptBool>,
     }
 
     pub struct TruthAssignmentsIterator<'b, 'a, F: Function> {
@@ -208,13 +223,12 @@ mod new_valuations {
             let base_edge = bdd.as_edge(manager);
             let begin = match manager.get_node(base_edge) {
                 Node::Inner(_) => Some(vec![OptBool::None; manager.num_levels() as usize]),
-                Node::Terminal(t) => {
-                    match t {
-                        BDDTerminal::False => None,
-                        BDDTerminal::True => Some(vec![OptBool::None; manager.num_levels() as usize]),
-                    }
-                }
-            }.map(|start_valuation| MidAssignment {
+                Node::Terminal(t) => match t {
+                    BDDTerminal::False => None,
+                    BDDTerminal::True => Some(vec![OptBool::None; manager.num_levels() as usize]),
+                },
+            }
+            .map(|start_valuation| MidAssignment {
                 next_edge: manager.clone_edge(base_edge),
                 valuation_progress: start_valuation,
             });
@@ -300,7 +314,6 @@ pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBo
         }
     }
 
-
     for vertex_assigment in values {
         inner(0, 0, &vertex_assigment.as_ref()[0..first], &mut output)
     }
@@ -312,11 +325,9 @@ pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBo
 mod tests {
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
-    use oxidd_core::{function::BooleanFunction, ManagerRef};
-    use oxidd_core::util::OptBool;
+    use oxidd_core::{function::BooleanFunction, util::OptBool, ManagerRef};
 
-    use crate::symbolic::helpers::BddExtensions;
-    use crate::symbolic::helpers::new_valuations::TruthAssignmentsIterator;
+    use crate::symbolic::helpers::{new_valuations::TruthAssignmentsIterator, BddExtensions};
 
     #[test]
     pub fn test_valuations() -> crate::symbolic::Result<()> {
@@ -325,8 +336,8 @@ mod tests {
         // Construct base building blocks for the BDD
         let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
         let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
-        let variables = manager
-            .with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
+        let variables =
+            manager.with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
 
         let v0_and_v1 = variables[0].and(&variables[1])?;
         let v0_and_v2 = variables[0].and(&variables[2])?;
@@ -334,10 +345,11 @@ mod tests {
         let multi = variables[2].and(&variables[1].or(&variables[0])?)?;
 
         manager.with_manager_shared(|man| {
-            let mut iter = TruthAssignmentsIterator::new(man, &v0_and_v1);
-            assert_eq!(iter.collect::<Vec<_>>(), vec![
-                vec![OptBool::True, OptBool::True, OptBool::None]
-            ]);
+            let iter = TruthAssignmentsIterator::new(man, &v0_and_v1);
+            assert_eq!(
+                iter.collect::<Vec<_>>(),
+                vec![vec![OptBool::True, OptBool::True, OptBool::None]]
+            );
 
             println!("{:#?}", multi.sat_assignments(man).collect_vec());
             // assert_eq!(both.sat_valuations(man).collect::<Vec<_>>(), vec![

@@ -1,8 +1,11 @@
-use oxidd_core::function::{BooleanFunction, Function};
+use oxidd_core::function::BooleanFunction;
 
-use crate::{Owner, symbolic};
-use crate::explicit::solvers::SolverOutput;
-use crate::symbolic::{BDD, SymbolicParityGame};
+use crate::{
+    explicit::solvers::SolverOutput,
+    symbolic,
+    symbolic::{SymbolicParityGame, BDD},
+    Owner,
+};
 
 pub struct SymbolicZielonkaSolver<'a> {
     pub recursive_calls: usize,
@@ -21,9 +24,9 @@ impl<'a> SymbolicZielonkaSolver<'a> {
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game).expect("Failed to compute solution");
-        
+
         let even = self.game.vertices_of_bdd(&even);
-        
+
         let mut winners = vec![Owner::Odd; self.game.vertex_count()];
         for idx in even {
             winners[idx.index()] = Owner::Even;
@@ -83,13 +86,8 @@ pub mod test {
 
     use pg_parser::parse_pg;
 
-    use crate::{
-        Owner,
-        ParityGame
-        , tests::example_dir,
-    };
     use super::SymbolicZielonkaSolver;
-    use crate::symbolic::SymbolicParityGame;
+    use crate::{symbolic::SymbolicParityGame, tests::example_dir, Owner, ParityGame};
 
     #[test]
     pub fn test_solve_tue_example() {

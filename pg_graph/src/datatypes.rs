@@ -1,4 +1,4 @@
-use crate::{Priority};
+use crate::Priority;
 
 /// Represents a particular player in the parity game.
 #[repr(u8)]
@@ -17,15 +17,15 @@ impl Owner {
             Owner::Odd
         }
     }
-    
+
     /// Return the opposite player
     pub fn other(&self) -> Owner {
         match self {
             Owner::Even => Owner::Odd,
-            Owner::Odd => Owner::Even
+            Owner::Odd => Owner::Even,
         }
     }
-    
+
     #[inline]
     pub fn is_even(&self) -> bool {
         matches!(self, Owner::Even)

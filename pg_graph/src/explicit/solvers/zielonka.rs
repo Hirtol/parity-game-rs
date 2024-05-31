@@ -1,6 +1,6 @@
 use crate::{
     explicit::solvers::{AttractionComputer, SolverOutput},
-    Owner, ParityGame, ParityGraph, SubGame, VertexId,
+    Owner, ParityGame, ParityGraph, VertexId,
 };
 
 pub struct ZielonkaSolver<'a> {
@@ -85,11 +85,10 @@ pub mod test {
     use pg_parser::parse_pg;
 
     use crate::{
-        Owner,
-        ParityGame,
-        explicit::solvers::zielonka::ZielonkaSolver, tests::example_dir,
+        explicit::solvers::zielonka::ZielonkaSolver,
+        tests::{example_dir, load_example},
+        Owner, ParityGame,
     };
-    use crate::tests::load_example;
 
     #[test]
     pub fn test_solve_tue_example() {

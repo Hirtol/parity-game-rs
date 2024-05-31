@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use pg_graph::{Owner, ParityGraph};
-use pg_graph::register_game::RegisterGame;
-use pg_graph::visualize::MermaidWriter;
+use pg_graph::{register_game::RegisterGame, visualize::MermaidWriter, Owner, ParityGraph};
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {
@@ -19,12 +17,12 @@ pub struct SolveCommand {
     #[clap(short = 'm')]
     solution_mermaid: Option<PathBuf>,
     /// Whether to first convert the given game into an explicit expanded `k`-register game.
-    /// 
+    ///
     /// Creates a `k`-register-index game, upper bound for valid results is `1 + log(n)`
     /// Provide `k = 0` to use the upper-bound k for correct results.
     /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
     #[clap(short)]
-    register_game_k: Option<u32>
+    register_game_k: Option<u32>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -56,22 +54,36 @@ impl SolveCommand {
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
         let register_game = if let Some(k) = self.register_game_k {
-            let k = if k == 0 { RegisterGame::max_register_index(&parity_game) } else {k as u8};
+            let k = if k == 0 {
+                RegisterGame::max_register_index(&parity_game)
+            } else {
+                k as u8
+            };
 
             tracing::debug!(k, "Constructing with register index");
-            let register_game = timed_solve!(RegisterGame::construct_2021(&parity_game, k, Owner::Even), "Constructed Register Game");
+            let register_game = timed_solve!(
+                RegisterGame::construct_2021(&parity_game, k, Owner::Even),
+                "Constructed Register Game"
+            );
 
             Some((register_game.to_game()?, register_game))
         } else {
             None
         };
 
-        let mermaid_output = self.solution_mermaid.map(|out| (out, MermaidWriter::write_mermaid(&parity_game).unwrap()));
+        let mermaid_output = self
+            .solution_mermaid
+            .map(|out| (out, MermaidWriter::write_mermaid(&parity_game).unwrap()));
         let solver = self.solver.unwrap_or(Solver::Spm);
         tracing::info!(?solver, "Using solver");
 
         let game_to_solve = if let Some((rg_pg, rg)) = &register_game {
-            tracing::debug!(from_vertex=rg.original_game.vertex_count(), to_vertex=rg_pg.vertex_count(), ratio=rg_pg.vertex_count() / rg.original_game.vertex_count(), "Converted from PG to RG PG");
+            tracing::debug!(
+                from_vertex = rg.original_game.vertex_count(),
+                to_vertex = rg_pg.vertex_count(),
+                ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                "Converted from PG to RG PG"
+            );
             rg_pg
         } else {
             &parity_game
@@ -87,30 +99,32 @@ impl SolveCommand {
                 let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(game_to_solve);
 
                 let out = timed_solve!(solver.run());
-                tracing::info!(n=solver.recursive_calls, "Solved with recursive calls");
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                 out
             }
             Solver::SymbolicZielonka => {
-                let symbolic_game = timed_solve!(pg_graph::symbolic::SymbolicParityGame::from_explicit(game_to_solve), "Constructed Symbolic PG")?;
-                let mut solver = pg_graph::symbolic::solvers::symbolic_zielonka::SymbolicZielonkaSolver::new(&symbolic_game);
+                let symbolic_game = timed_solve!(
+                    pg_graph::symbolic::SymbolicParityGame::from_explicit(game_to_solve),
+                    "Constructed Symbolic PG"
+                )?;
+                let mut solver =
+                    pg_graph::symbolic::solvers::symbolic_zielonka::SymbolicZielonkaSolver::new(&symbolic_game);
 
                 let out = timed_solve!(solver.run());
-                tracing::info!(n=solver.recursive_calls, "Solved with recursive calls");
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                 out
             }
         };
-        
+
         let solution = if let Some((_, rg)) = register_game {
             rg.project_winners_original(&solution.winners)
         } else {
             solution.winners
         };
 
-        let (even_wins, odd_wins) = solution.iter().fold((0, 0), |acc, win| {
-            match win {
-                Owner::Even => (acc.0 + 1, acc.1),
-                Owner::Odd => (acc.0, acc.1 + 1)
-            }
+        let (even_wins, odd_wins) = solution.iter().fold((0, 0), |acc, win| match win {
+            Owner::Even => (acc.0 + 1, acc.1),
+            Owner::Odd => (acc.0, acc.1 + 1),
         });
         tracing::info!(even_wins, odd_wins, "Results");
 
@@ -123,7 +137,7 @@ impl SolveCommand {
             for (v_id, winner) in solution.iter().enumerate() {
                 let fill = match winner {
                     Owner::Even => "#013220",
-                    Owner::Odd => "#b10000"
+                    Owner::Odd => "#b10000",
                 };
                 writeln!(&mut mermaid, "style {v_id} fill:{fill}")?;
             }

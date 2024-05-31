@@ -1,7 +1,9 @@
+use pg_graph::{
+    register_game::RegisterGame,
+    visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
+    Owner, ParityGraph,
+};
 use std::path::PathBuf;
-use pg_graph::{Owner, ParityGraph};
-use pg_graph::register_game::RegisterGame;
-use pg_graph::visualize::{DotWriter, MermaidWriter, VisualRegisterGame};
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {
@@ -42,20 +44,20 @@ pub enum ConversionGoal {
         /// Whether this should use the paper renderer.
         #[clap(short)]
         p: bool,
-    }
+    },
 }
 
 #[derive(Debug, clap::ValueEnum, Copy, Clone)]
 pub enum RgVersion {
     Old,
-    New
+    New,
 }
 
 impl ConvertCommand {
     #[tracing::instrument(name="Convert Parity Game", skip(self), fields(path=?self.game_path, goal=?self.goal))]
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
-        
+
         match self.goal {
             ConversionGoal::ParityGame => {
                 if let Some(path) = self.mermaid_path {
@@ -81,9 +83,9 @@ impl ConvertCommand {
                 let had_nodes = parity_game.vertex_count();
                 let register_game = match v {
                     RgVersion::Old => RegisterGame::construct(&parity_game, k, Owner::Even),
-                    RgVersion::New => RegisterGame::construct_2021(&parity_game, k, Owner::Even)
+                    RgVersion::New => RegisterGame::construct_2021(&parity_game, k, Owner::Even),
                 };
-                
+
                 if let Some(path) = self.mermaid_path {
                     let out_str = if p {
                         MermaidWriter::write_mermaid(&VisualRegisterGame(&register_game))?
@@ -91,10 +93,10 @@ impl ConvertCommand {
                         MermaidWriter::write_mermaid(&register_game)?
                     };
                     std::fs::write(&path, out_str)?;
-                    
+
                     tracing::info!(?path, "Wrote Mermaid graph to path")
                 }
-                
+
                 if let Some(path) = self.dot_path {
                     let out_str = if p {
                         DotWriter::write_dot(&VisualRegisterGame(&register_game))?
@@ -105,22 +107,31 @@ impl ConvertCommand {
 
                     tracing::info!(?path, "Wrote GraphViz graph to path")
                 }
-                
+
                 if let Some(path) = self.pg_path {
                     let game = register_game.to_game()?;
 
-                    tracing::debug!(from_vertex=had_nodes, to_vertex=game.vertex_count(), ratio=game.vertex_count() / had_nodes, "Converted from PG to RG PG");
-                    
+                    tracing::debug!(
+                        from_vertex = had_nodes,
+                        to_vertex = game.vertex_count(),
+                        ratio = game.vertex_count() / had_nodes,
+                        "Converted from PG to RG PG"
+                    );
+
                     std::fs::write(&path, game.to_pg())?;
-                    
+
                     tracing::info!(?path, "Wrote PG graph to path")
                 }
             }
             ConversionGoal::SymbolicParityGame => {
                 let s_pg = pg_graph::symbolic::SymbolicParityGame::from_explicit(&parity_game)?;
                 s_pg.gc();
-                
-                tracing::info!(parity_node_count=parity_game.vertex_count(), symbolic_node_count=s_pg.bdd_node_count(), "Converted to symbolic parity game");
+
+                tracing::info!(
+                    parity_node_count = parity_game.vertex_count(),
+                    symbolic_node_count = s_pg.bdd_node_count(),
+                    "Converted to symbolic parity game"
+                );
 
                 if let Some(path) = self.dot_path {
                     std::fs::write(&path, DotWriter::write_dot_symbolic(&s_pg, [])?)?;
@@ -129,7 +140,7 @@ impl ConvertCommand {
                 }
             }
         }
-        
+
         Ok(())
     }
 }

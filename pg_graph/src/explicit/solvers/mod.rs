@@ -1,9 +1,9 @@
-use std::collections::VecDeque;
 use crate::{Owner, ParityGraph, VertexId};
+use std::collections::VecDeque;
 
 pub mod small_progress;
-pub mod zielonka;
 pub mod tangle_learning;
+pub mod zielonka;
 
 #[derive(Debug, Clone, Default)]
 pub struct SolverOutput {
@@ -11,11 +11,11 @@ pub struct SolverOutput {
     pub winners: Vec<Owner>,
     /// Optionally can contain the strategy for the entire game, mapping each implicit VertexId (index in vector) to one
     /// of the possible edges (value at index).
-    pub strategy: Option<Vec<VertexId>>
+    pub strategy: Option<Vec<VertexId>>,
 }
 
 pub struct AttractionComputer {
-    queue: VecDeque<VertexId>
+    queue: VecDeque<VertexId>,
 }
 
 impl AttractionComputer {
@@ -26,11 +26,16 @@ impl AttractionComputer {
     }
 
     /// Calculate the attraction set for the given starting set.
-    /// 
+    ///
     /// This resulting set will contain all vertices which:
     /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
     /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
-    pub fn attractor_set<T: ParityGraph>(&mut self, game: &T, player: Owner, starting_set: impl IntoIterator<Item = VertexId>) -> ahash::HashSet<VertexId> {
+    pub fn attractor_set<T: ParityGraph>(
+        &mut self,
+        game: &T,
+        player: Owner,
+        starting_set: impl IntoIterator<Item = VertexId>,
+    ) -> ahash::HashSet<VertexId> {
         let mut attract_set = ahash::HashSet::from_iter(starting_set);
         self.queue.extend(&attract_set);
 
@@ -57,8 +62,8 @@ impl AttractionComputer {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
     use crate::{Owner, ParityGame, VertexId};
+    use std::collections::HashSet;
 
     #[test]
     pub fn test_attract_set_computation() -> eyre::Result<()> {

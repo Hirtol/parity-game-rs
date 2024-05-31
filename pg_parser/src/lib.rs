@@ -1,7 +1,9 @@
-use winnow::ascii::{dec_uint, space0};
-use winnow::combinator::{alt, opt, preceded, separated, terminated};
-use winnow::error::ParserError;
-use winnow::Parser;
+use winnow::{
+    ascii::{dec_uint, space0},
+    combinator::{alt, opt, preceded, separated, terminated},
+    error::ParserError,
+    Parser,
+};
 
 pub fn parse_pg<'a>(input: &mut &'a str) -> winnow::PResult<Vec<Vertex<'a>>> {
     let header_cnt = opt(parse_header).parse_next(input)?;
@@ -9,8 +11,7 @@ pub fn parse_pg<'a>(input: &mut &'a str) -> winnow::PResult<Vec<Vertex<'a>>> {
         let _ = winnow::ascii::line_ending.parse_next(input)?;
     }
 
-    let vertices: Vec<Vertex> =
-        separated(0.., parse_node, winnow::ascii::line_ending).parse_next(input)?;
+    let vertices: Vec<Vertex> = separated(0.., parse_node, winnow::ascii::line_ending).parse_next(input)?;
 
     Ok(vertices)
 }
@@ -52,8 +53,8 @@ fn eol(input: &mut &str) -> winnow::PResult<()> {
 }
 
 fn ws<'i, O, E>(parser: impl Parser<&'i str, O, E>) -> impl Parser<&'i str, O, E>
-    where
-        E: ParserError<&'i str>,
+where
+    E: ParserError<&'i str>,
 {
     winnow::combinator::delimited(space0, parser, space0)
 }
@@ -69,8 +70,7 @@ pub struct Vertex<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::time::Instant;
+    use std::{path::PathBuf, time::Instant};
 
     use crate::parse_pg;
 
@@ -91,8 +91,7 @@ mod tests {
 
     #[test]
     pub fn test_with_label() {
-        let input =
-            std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
+        let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
 
         assert_eq!(pg.len(), 9);
@@ -103,22 +102,19 @@ mod tests {
 
     #[test]
     pub fn test_no_fail_all_examples() {
-        std::fs::read_dir(example_dir())
-            .unwrap()
-            .flatten()
-            .for_each(|f| {
-                let input = std::fs::read_to_string(f.path()).unwrap();
+        std::fs::read_dir(example_dir()).unwrap().flatten().for_each(|f| {
+            let input = std::fs::read_to_string(f.path()).unwrap();
 
-                let now = Instant::now();
-                let pg = parse_pg(&mut input.as_str()).unwrap();
+            let now = Instant::now();
+            let pg = parse_pg(&mut input.as_str()).unwrap();
 
-                println!(
-                    "Took: `{:?}` to parse parity game of size: `{}` ({:?})",
-                    now.elapsed(),
-                    pg.len(),
-                    f.path().file_name().unwrap()
-                );
-            });
+            println!(
+                "Took: `{:?}` to parse parity game of size: `{}` ({:?})",
+                now.elapsed(),
+                pg.len(),
+                f.path().file_name().unwrap()
+            );
+        });
     }
 
     fn example_dir() -> PathBuf {

@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    hash::Hash,
-};
+use std::collections::HashMap;
 
 use itertools::Itertools;
 use oxidd::{
@@ -10,13 +7,13 @@ use oxidd::{
 };
 use oxidd_core::{
     function::{BooleanFunctionQuant, Function, FunctionSubst},
-    util::{AllocResult, OptBool, Subst},
+    util::Subst,
 };
 use petgraph::prelude::EdgeRef;
 
 use helpers::CachedSymbolicEncoder;
 
-use crate::{Owner, ParityGame, ParityGraph, Priority, symbolic::helpers::BddExtensions, VertexId};
+use crate::{symbolic::helpers::BddExtensions, Owner, ParityGame, ParityGraph, Priority, VertexId};
 
 pub mod helpers;
 pub mod solvers;
@@ -309,10 +306,10 @@ mod tests {
 
     use crate::{
         explicit::solvers::AttractionComputer,
-        Owner,
-        ParityGame,
-        ParityGraph,
-        symbolic::{helpers::BddExtensions, SymbolicParityGame}, tests::load_example, visualize::DotWriter,
+        symbolic::{helpers::BddExtensions, SymbolicParityGame},
+        tests::load_example,
+        visualize::DotWriter,
+        Owner, ParityGame, ParityGraph,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {

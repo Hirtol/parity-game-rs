@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use ahash::HashMap;
 use itertools::Itertools;
 
-use crate::{Owner, ParityGame, ParityGraph, Priority, explicit::solvers::SolverOutput, SubGame, VertexId};
+use crate::{explicit::solvers::SolverOutput, Owner, ParityGame, ParityGraph, Priority, SubGame, VertexId};
 
 pub struct TangleSolver<'a> {
     pub recursive_calls: usize,
@@ -15,7 +15,7 @@ struct Tangle {
     owner: Owner,
     priority: Priority,
     vertices: Vec<VertexId>,
-    strategy: HashMap<VertexId, VertexId>
+    strategy: HashMap<VertexId, VertexId>,
 }
 
 impl Tangle {
@@ -31,7 +31,10 @@ impl Tangle {
     }
 }
 
-fn intersect_tangle_game<'a>(tangles: &'a [Tangle], game: &'a SubGame<'a, u32, ParityGame>) -> impl Iterator<Item = &'a Tangle> + 'a {
+fn intersect_tangle_game<'a>(
+    tangles: &'a [Tangle],
+    game: &'a SubGame<'a, u32, ParityGame>,
+) -> impl Iterator<Item = &'a Tangle> + 'a {
     tangles
         .iter()
         .filter(|t| t.vertices.iter().all(|v| game.get(*v).is_some()))
@@ -57,7 +60,7 @@ impl<'a> TangleSolver<'a> {
         // for idx in odd {
         //     winners[idx.index()] = Owner::Odd;
         // }
-        // 
+        //
         // SolverOutput {
         //     winners,
         //     strategy: None,
@@ -75,11 +78,11 @@ impl<'a> TangleSolver<'a> {
         //     let mut current_sub = game.create_subgame([]);
         //     let mut region_func = HashMap::default();
         //     let mut new_tangles = Vec::new();
-        // 
+        //
         //     while current_sub.vertex_count() != 0 {
         //         current_sub = game.create_subgame(region_func.keys());
         //         let new_tangles = intersect_tangle_game(&tangles, &current_sub);
-        // 
+        //
         //         let d = current_sub.priority_max();
         //         let owner = Owner::from_priority(d);
         //         let starting_set = current_sub.vertices_by_priority_idx(d).map(|(idx, _)| idx);
@@ -90,7 +93,12 @@ impl<'a> TangleSolver<'a> {
         todo!()
     }
 
-    fn extract_tangles(&mut self, region_owner: Owner, region: Vec<VertexId>, game: &SubGame<u32, ParityGame>) -> Vec<Tangle> {
+    fn extract_tangles(
+        &mut self,
+        region_owner: Owner,
+        region: Vec<VertexId>,
+        game: &SubGame<u32, ParityGame>,
+    ) -> Vec<Tangle> {
         //TODO:
         // region.iter().filter(|v| game.get_u(**v));
 
@@ -184,7 +192,8 @@ impl AttractionComputer {
 
                     // Can be more efficient, only check for tangles who have this new vertex.
                     let tangles_to_attract = outgoing_game_edges
-                        .iter().zip(&relevant_tangles)
+                        .iter()
+                        .zip(&relevant_tangles)
                         .filter(|(t_edges, t)| t_edges.iter().all(|v| attract_set.contains(v)))
                         .collect_vec();
 
@@ -214,15 +223,11 @@ impl AttractionComputer {
 
 #[cfg(test)]
 pub mod test {
-    use std::{time::Instant};
+    use std::time::Instant;
 
     use pg_parser::parse_pg;
 
-    use crate::{
-        Owner,
-        ParityGame,
-        explicit::solvers::zielonka::ZielonkaSolver, tests::example_dir, VertexId,
-    };
+    use crate::{explicit::solvers::zielonka::ZielonkaSolver, Owner, ParityGame, tests::example_dir};
 
     #[test]
     pub fn test_solve_tue_example() {

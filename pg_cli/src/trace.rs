@@ -1,24 +1,22 @@
-use std::fmt;
-use std::time::{Duration};
 use indicatif::{ProgressState, ProgressStyle};
+use std::{fmt, time::Duration};
 use tracing::Subscriber;
 use tracing_indicatif::IndicatifLayer;
-use tracing_subscriber::{EnvFilter, Layer};
-use tracing_subscriber::fmt::format::Writer;
-use tracing_subscriber::fmt::time::{FormatTime};
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{
+    fmt::{format::Writer, time::FormatTime},
+    layer::SubscriberExt,
+    EnvFilter, Layer,
+};
 
 pub fn create_subscriber(default_directives: &str) -> impl Subscriber {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_directives));
-    let indicatif_layer = IndicatifLayer::new().with_progress_style(
-        ProgressStyle::with_template(
-            "{color_start}{span_child_prefix}{spinner} {span_name} {wide_msg} {elapsed_subsec}{color_end}",
-        )
-            .unwrap()
-            .with_key(
-                "elapsed_subsec",
-                elapsed_subsec,
+    let indicatif_layer = IndicatifLayer::new()
+        .with_progress_style(
+            ProgressStyle::with_template(
+                "{color_start}{span_child_prefix}{spinner} {span_name} {wide_msg} {elapsed_subsec}{color_end}",
             )
+            .unwrap()
+            .with_key("elapsed_subsec", elapsed_subsec)
             .with_key(
                 "color_start",
                 |state: &ProgressState, writer: &mut dyn std::fmt::Write| {
@@ -37,11 +35,13 @@ pub fn create_subscriber(default_directives: &str) -> impl Subscriber {
                 "color_end",
                 |state: &ProgressState, writer: &mut dyn std::fmt::Write| {
                     if state.elapsed() > Duration::from_secs(4) {
-                        let _ =write!(writer, "\x1b[0m");
+                        let _ = write!(writer, "\x1b[0m");
                     }
                 },
             ),
-    ).with_span_child_prefix_symbol("↳ ").with_span_child_prefix_indent(" ");
+        )
+        .with_span_child_prefix_symbol("↳ ")
+        .with_span_child_prefix_indent(" ");
 
     let format = tracing_subscriber::fmt::format()
         .with_source_location(false)
@@ -49,7 +49,12 @@ pub fn create_subscriber(default_directives: &str) -> impl Subscriber {
         .with_timer(Uptime::default());
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()).event_format(format).with_filter(env_filter))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(indicatif_layer.get_stderr_writer())
+                .event_format(format)
+                .with_filter(env_filter),
+        )
         .with(indicatif_layer)
 }
 

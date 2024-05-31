@@ -1,11 +1,11 @@
-use std::cmp::Ordering;
-use std::collections::VecDeque;
-use itertools::Itertools;
 use crate::{Owner, ParityGraph};
+use itertools::Itertools;
+use std::{cmp::Ordering, collections::VecDeque};
 
-
-use crate::parity_game::{ParityGame, Priority, VertexId};
-use crate::explicit::solvers::SolverOutput;
+use crate::{
+    explicit::solvers::SolverOutput,
+    parity_game::{ParityGame, Priority, VertexId},
+};
 
 type Progress = u32;
 type ProgressMeasureData<'a> = &'a [Progress];
@@ -28,24 +28,31 @@ impl<'a> SmallProgressSolver<'a> {
         // Calculate the max possible values we will allow during lifting for each player.
         let max_m_even = (0..tuple_dimension)
             // .filter(|i| i % 2 == 0)
-            .map(|i| if i % 2 == 0 {
-                priority_class_counts.get(&i).copied().unwrap_or_default()
-            } else {
-                0
+            .map(|i| {
+                if i % 2 == 0 {
+                    priority_class_counts.get(&i).copied().unwrap_or_default()
+                } else {
+                    0
+                }
             })
             .collect();
         let max_m_odd = (0..tuple_dimension)
             // .filter(|i| i % 2 == 1)
-            .map(|i| if i % 2 == 1 {
-                priority_class_counts.get(&i).copied().unwrap_or_default()
-            } else {
-                0
+            .map(|i| {
+                if i % 2 == 1 {
+                    priority_class_counts.get(&i).copied().unwrap_or_default()
+                } else {
+                    0
+                }
             })
             .collect();
 
         Self {
             // progress_measures: vec![0; game.vertex_count() * tuple_dimension as usize],
-            progress_measures: ProgressMeasures(vec![ProgressMeasure::new(Owner::Odd, tuple_dimension as usize); game.vertex_count()]),
+            progress_measures: ProgressMeasures(vec![
+                ProgressMeasure::new(Owner::Odd, tuple_dimension as usize);
+                game.vertex_count()
+            ]),
             game,
             max_m_even,
             max_m_odd,
@@ -54,28 +61,33 @@ impl<'a> SmallProgressSolver<'a> {
     }
 
     /// Run the solver and return a Vec corresponding to each [crate::parity_game::Vertex] indicating who wins.
-    #[tracing::instrument(name="Run SPM", skip(self))]
+    #[tracing::instrument(name = "Run SPM", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         let mut queue = VecDeque::from((0..self.game.vertex_count()).map(VertexId::new).collect_vec());
-        
+
         while let Some(vertex_id) = queue.pop_back() {
             let made_change = self.lift(vertex_id, Owner::Odd).expect("Impossible");
-            
+
             if made_change {
                 queue.extend(self.game.predecessors(vertex_id));
             }
         }
-        
+
         // Final assignment
-        let winners = self.progress_measures.0.iter().map(|prog| {
-            if prog == &ProgressMeasure::Top {
-                Owner::Odd
-            } else {
-                Owner::Even
-            }
-        }).collect();
-        
+        let winners = self
+            .progress_measures
+            .0
+            .iter()
+            .map(|prog| {
+                if prog == &ProgressMeasure::Top {
+                    Owner::Odd
+                } else {
+                    Owner::Even
+                }
+            })
+            .collect();
+
         SolverOutput {
             winners,
             strategy: None,
@@ -83,49 +95,77 @@ impl<'a> SmallProgressSolver<'a> {
     }
 
     /// Progress the progress measure of the given vertex if possible
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `true` if a change was made, and thus the fixed point has not yet been reached
     /// * `false` if no change was made, and therefore a fixed point _may_ have been reached.
     #[profiling::function]
     fn lift(&mut self, vertex_id: VertexId, for_player: Owner) -> Option<bool> {
         let vertex = self.game.get(vertex_id)?;
         self.prog_count += 1;
-        
+
         let existing_prog = self.progress_measures.get_measure(vertex_id)?;
         let prog_values = self.game.edges(vertex_id).flat_map(|other_id| {
             let next = self.prog(vertex_id, other_id, for_player);
-            tracing::trace!("  - From: {} To: {} ({:?}) with value `{:?}`", vertex_id.index(), other_id.index(), self.game.label(other_id), next);
+            tracing::trace!(
+                "  - From: {} To: {} ({:?}) with value `{:?}`",
+                vertex_id.index(),
+                other_id.index(),
+                self.game.label(other_id),
+                next
+            );
             next
         });
-        
+
         // Always want to maximise the progress if we own the vertex
         let possible_measure = if vertex.owner == for_player {
             prog_values.max()
         } else {
             prog_values.min()
         }?;
-        
+
         // Max(self, new)
         if &possible_measure > existing_prog {
-            tracing::trace!("Vertex: {} ({:?}) from measure: `{:?}` to: `{:?}`", vertex_id.index(), self.game.label(vertex_id), existing_prog, possible_measure);
+            tracing::trace!(
+                "Vertex: {} ({:?}) from measure: `{:?}` to: `{:?}`",
+                vertex_id.index(),
+                self.game.label(vertex_id),
+                existing_prog,
+                possible_measure
+            );
             self.progress_measures.set_measure(vertex_id, possible_measure);
             Some(true)
         } else {
-            tracing::trace!("Vertex: {} ({:?}) keeps measure: `{:?}` instead of: `{:?}`", vertex_id.index(), self.game.label(vertex_id), existing_prog, possible_measure);
+            tracing::trace!(
+                "Vertex: {} ({:?}) keeps measure: `{:?}` instead of: `{:?}`",
+                vertex_id.index(),
+                self.game.label(vertex_id),
+                existing_prog,
+                possible_measure
+            );
             Some(false)
         }
     }
-    
+
     fn prog(&self, from: VertexId, to: VertexId, calculating_for: Owner) -> Option<ProgressMeasure> {
         let v_from = self.game.get(from)?;
         let from_progress = self.progress_measures.get_measure(from)?;
         let to_progress = self.progress_measures.get_measure(to)?;
-        
-        let next = to_progress.calculate_next(calculating_for, v_from.priority, from_progress, self.max_measure(calculating_for));
-        tracing::trace!("      * From: `{:?}` To: `{:?}` Next: `{:?}`", from_progress, to_progress, next);
-        
+
+        let next = to_progress.calculate_next(
+            calculating_for,
+            v_from.priority,
+            from_progress,
+            self.max_measure(calculating_for),
+        );
+        tracing::trace!(
+            "      * From: `{:?}` To: `{:?}` Next: `{:?}`",
+            from_progress,
+            to_progress,
+            next
+        );
+
         Some(next)
     }
 
@@ -149,7 +189,7 @@ impl ProgressMeasures {
     pub fn replace_measure(&mut self, vertex_id: VertexId, measure: ProgressMeasure) -> ProgressMeasure {
         std::mem::replace(&mut self.0[vertex_id.index()], measure)
     }
-    
+
     pub fn get_measure(&self, vertex_id: VertexId) -> Option<&ProgressMeasure> {
         self.0.get(vertex_id.index())
     }
@@ -191,7 +231,7 @@ impl ProgressMeasure {
             // Owner::Even => items.filter(|i| i % 2 == 0).map(|_| 0).collect(),
             // Owner::Odd => items.filter(|i| i % 2 == 1).map(|_| 0).collect()
             Owner::Even => items.map(|_| 0).collect(),
-            Owner::Odd => items.map(|_| 0).collect()
+            Owner::Odd => items.map(|_| 0).collect(),
         };
 
         Self::Tuple(data_tuple)
@@ -205,19 +245,25 @@ impl ProgressMeasure {
             (ProgressMeasure::Top, ProgressMeasure::Tuple(_)) => Ordering::Greater,
             (ProgressMeasure::Tuple(left), ProgressMeasure::Tuple(right)) => {
                 left[min_incl..].iter().rev().cmp(right[min_incl..].iter().rev())
-            },
+            }
         }
     }
 
     #[profiling::function]
     #[inline]
-    pub fn calculate_next(&self, calculate_for: Owner, incoming_priority: Priority, incoming_progress: &ProgressMeasure, max_prog: &[Progress]) -> ProgressMeasure {
+    pub fn calculate_next(
+        &self,
+        calculate_for: Owner,
+        incoming_priority: Priority,
+        incoming_progress: &ProgressMeasure,
+        max_prog: &[Progress],
+    ) -> ProgressMeasure {
         match self {
             ProgressMeasure::Top => ProgressMeasure::Top,
             ProgressMeasure::Tuple(values) => {
                 let mut incoming_values = match incoming_progress {
                     ProgressMeasure::Top => return ProgressMeasure::Top,
-                    ProgressMeasure::Tuple(vals) => vals.clone()
+                    ProgressMeasure::Tuple(vals) => vals.clone(),
                 };
                 let priority_floor = incoming_priority as usize;
 
@@ -250,13 +296,14 @@ impl ProgressMeasure {
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
-    use std::time::Instant;
+    use std::{cmp::Ordering, time::Instant};
 
-    use pg_parser::{parse_pg};
-    use crate::{Owner, ParityGame};
-    use crate::explicit::solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver};
-    use crate::tests::example_dir;
+    use crate::{
+        explicit::solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver},
+        tests::example_dir,
+        Owner, ParityGame,
+    };
+    use pg_parser::parse_pg;
 
     #[test]
     pub fn test_solve_tue_example() {
@@ -266,7 +313,7 @@ mod tests {
         let mut solver = SmallProgressSolver::new(&game);
 
         let solution = solver.run();
-        
+
         println!("Solution: {:#?}", solution);
 
         println!("Parity Game: {:#?}", solver);
@@ -280,26 +327,29 @@ mod tests {
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
         let mut solver = SmallProgressSolver::new(&game);
-        
+
         let now = Instant::now();
         let solution = solver.run();
 
         println!("Solution: {:#?}", solution);
         println!("Prog Count: {}", solver.prog_count);
         println!("Took: {:?}", now.elapsed());
-        assert_eq!(solution.winners, vec![
-            Owner::Even,
-            Owner::Odd,
-            Owner::Even,
-            Owner::Even,
-            Owner::Even,
-            Owner::Even,
-            Owner::Odd,
-            Owner::Odd,
-            Owner::Even,
-        ])
+        assert_eq!(
+            solution.winners,
+            vec![
+                Owner::Even,
+                Owner::Odd,
+                Owner::Even,
+                Owner::Even,
+                Owner::Even,
+                Owner::Even,
+                Owner::Odd,
+                Owner::Odd,
+                Owner::Even,
+            ]
+        )
     }
-    
+
     #[test]
     pub fn perf_test() {
         let input = std::fs::read_to_string(example_dir().join("amba_decomposed_arbiter_6.tlsf.ehoa.pg")).unwrap();
@@ -382,9 +432,21 @@ mod tests {
 
         let successor = t(vec![0, 2, 0, 0]);
 
-        assert_eq_s!(priority, successor.calculate_next(Owner::Odd, 0, &origin, &max_prog), t(vec![0, 2, 0, 0]));
-        assert_eq_s!(priority, successor.calculate_next(Owner::Odd, 1, &origin, &max_prog), t(vec![0, 0, 0, 1]));
+        assert_eq_s!(
+            priority,
+            successor.calculate_next(Owner::Odd, 0, &origin, &max_prog),
+            t(vec![0, 2, 0, 0])
+        );
+        assert_eq_s!(
+            priority,
+            successor.calculate_next(Owner::Odd, 1, &origin, &max_prog),
+            t(vec![0, 0, 0, 1])
+        );
         // First three elements (p0, p1, p2) are set to `don't care`, thus don't copy them!
-        assert_eq_s!(priority, successor.calculate_next(Owner::Odd, 3, &origin, &max_prog), t(vec![0, 0, 0, 1]));
+        assert_eq_s!(
+            priority,
+            successor.calculate_next(Owner::Odd, 3, &origin, &max_prog),
+            t(vec![0, 0, 0, 1])
+        );
     }
 }

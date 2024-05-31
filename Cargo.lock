@@ -117,7 +117,7 @@ dependencies = [
 [[package]]
 name = "arcslab"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "crossbeam-utils",
  "libc",
@@ -603,7 +603,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hugealloc"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "allocator-api2",
  "libc",
@@ -780,7 +780,7 @@ checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 [[package]]
 name = "linear-hashtbl"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 
 [[package]]
 name = "linux-raw-sys"
@@ -896,7 +896,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "oxidd"
 version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "cfg-if",
  "document-features",
@@ -916,7 +916,7 @@ dependencies = [
 [[package]]
 name = "oxidd-cache"
 version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "allocator-api2",
  "document-features",
@@ -928,7 +928,7 @@ dependencies = [
 [[package]]
 name = "oxidd-core"
 version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "nanorand",
 ]
@@ -936,7 +936,7 @@ dependencies = [
 [[package]]
 name = "oxidd-derive"
 version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -947,7 +947,7 @@ dependencies = [
 [[package]]
 name = "oxidd-dump"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -960,7 +960,7 @@ dependencies = [
 [[package]]
 name = "oxidd-manager-pointer"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "arcslab",
  "bitvec",
@@ -975,7 +975,7 @@ dependencies = [
 [[package]]
 name = "oxidd-reorder"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "flume",
  "is_sorted",
@@ -987,7 +987,7 @@ dependencies = [
 [[package]]
 name = "oxidd-rules-bdd"
 version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -999,7 +999,7 @@ dependencies = [
 [[package]]
 name = "oxidd-rules-mtbdd"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -1010,7 +1010,7 @@ dependencies = [
 [[package]]
 name = "oxidd-rules-tdd"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -1021,7 +1021,7 @@ dependencies = [
 [[package]]
 name = "oxidd-rules-zbdd"
 version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#67dc683b2812e028fe7045e06d364df5b5d66820"
+source = "git+https://github.com/OxiDD/oxidd#3703933ed3a5d85983f2a22c4a9932f354921ac0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -2020,9 +2020,9 @@ checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
 
 [[package]]
 name = "winnow"
-version = "0.6.8"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c52e9c97a68071b23e836c9380edae937f17b9c4667bd021973efc689f618d"
+checksum = "86c949fede1d13936a99f14fafd3e76fd642b556dd2ce96287fbe2e0151bfac6"
 dependencies = [
  "memchr",
 ]

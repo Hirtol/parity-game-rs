@@ -60,7 +60,7 @@ impl DotWriter {
         additional_funcs: impl IntoIterator<Item = (&'a oxidd::bdd::BDDFunction, String)>,
     ) -> eyre::Result<String> {
         use oxidd_core::ManagerRef;
-        
+
         let mut out = Vec::new();
 
         graph
