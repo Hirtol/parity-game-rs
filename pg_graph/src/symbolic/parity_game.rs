@@ -165,13 +165,12 @@ impl SymbolicParityGame {
     }
 
     pub fn create_subgame(&self, ignored: &BDD) -> symbolic::Result<Self> {
-        let negated_vertices = ignored.not()?;
-        let negated_vertices_edges = self.edge_substitute(ignored)?.not_owned()?;
+        let ignored_edge = self.edge_substitute(ignored)?;
 
         let priorities = self
             .priorities
             .iter()
-            .flat_map(|(priority, bdd)| Ok::<_, helpers::BddError>((*priority, bdd.and(&negated_vertices)?)))
+            .flat_map(|(priority, bdd)| Ok::<_, helpers::BddError>((*priority, bdd.diff(&ignored)?)))
             .collect();
 
         Ok(Self {
@@ -181,10 +180,10 @@ impl SymbolicParityGame {
             variables_edges: self.variables_edges.clone(),
             conjugated_variables: self.conjugated_variables.clone(),
             conjugated_v_edges: self.conjugated_v_edges.clone(),
-            vertices: self.vertices.and(&negated_vertices)?,
-            vertices_even: self.vertices_even.and(&negated_vertices)?,
-            vertices_odd: self.vertices_odd.and(&negated_vertices)?,
-            edges: self.edges.and(&negated_vertices)?.and(&negated_vertices_edges)?,
+            vertices: self.vertices.diff(&ignored)?,
+            vertices_even: self.vertices_even.diff(&ignored)?,
+            vertices_odd: self.vertices_odd.diff(&ignored)?,
+            edges: self.edges.diff(&ignored)?.diff(&ignored_edge)?,
             base_true: self.base_true.clone(),
             priorities,
             base_false: self.base_false.clone(),
