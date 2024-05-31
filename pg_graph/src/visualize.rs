@@ -82,6 +82,7 @@ impl DotWriter {
                             },
                         )
                     });
+
                 let functions = graph
                     .priorities
                     .iter()

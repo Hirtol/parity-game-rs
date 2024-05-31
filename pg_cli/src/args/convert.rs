@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use pg_graph::{
     Owner,
     ParityGraph,
-    register_game::RegisterGame, visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
+    register_game::RegisterGame,
+    symbolic::SymbolicParityGame, visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
 };
-use pg_graph::symbolic::SymbolicParityGame;
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {

@@ -5,19 +5,19 @@ use itertools::Itertools;
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst},
-    util::Subst,
-    Manager, ManagerRef,
+    Manager,
+    ManagerRef, util::Subst,
 };
 use petgraph::prelude::EdgeRef;
 
 use crate::{
-    symbolic,
-    symbolic::{
+    Owner,
+    ParityGame,
+    ParityGraph, Priority, symbolic, symbolic::{
+        BDD,
         helpers,
         helpers::{BddExtensions, CachedSymbolicEncoder},
-        BDD,
-    },
-    Owner, ParityGame, ParityGraph, Priority, VertexId,
+    }, VertexId,
 };
 
 pub struct SymbolicParityGame {
@@ -64,41 +64,6 @@ impl SymbolicParityGame {
 
         let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.clone());
         let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
-
-        tracing::trace!("Starting vertex BDD construction");
-        // Contains all vertices in the graph
-        let mut s_vertices = base_true.clone();
-
-        // Declare Vertices, exclude ones which are not part of the statespace
-        if ((explicit.vertex_count() as f64).log2() - n_variables as f64) < f64::EPSILON {
-            // We either exclude all items explicitly (inefficient if we're really close to the next power of two),
-            // or explicitly include all valid vertices with their last bit == 1, while blacklisting everything else
-            let items_to_exclude = 2_usize.pow(n_variables as u32) - explicit.vertex_count();
-            let include_threshold = 2_usize.pow((n_variables - 1) as u32) / 2;
-
-            if items_to_exclude > include_threshold {
-                let start = 2_usize.pow((n_variables - 1) as u32);
-
-                tracing::trace!(
-                    n_included = explicit.vertex_count() - start,
-                    items_to_exclude,
-                    include_threshold,
-                    "Explicitly including additional vertices"
-                );
-                let mut blacklist = variables.last().expect("Impossible").not()?;
-
-                for v_idx in start..explicit.vertex_count() {
-                    blacklist = blacklist.or(var_encoder.encode(v_idx)?)?;
-                }
-
-                s_vertices = s_vertices.and(&blacklist)?;
-            } else {
-                tracing::trace!(n_excluded = items_to_exclude, "Explicitly excluding vertices");
-                for v_idx in explicit.vertex_count()..2_usize.pow(n_variables as u32) {
-                    s_vertices = s_vertices.diff(var_encoder.encode(v_idx)?)?;
-                }
-            }
-        }
 
         tracing::trace!("Starting edge BDD construction");
         // Edges
@@ -151,7 +116,7 @@ impl SymbolicParityGame {
             variables_edges: edge_variables,
             conjugated_variables: conj_v,
             conjugated_v_edges: conj_e,
-            vertices: s_vertices,
+            vertices: s_even.or(&s_odd)?,
             vertices_even: s_even,
             vertices_odd: s_odd,
             edges: s_edges,
@@ -305,10 +270,10 @@ mod tests {
 
     use crate::{
         explicit::solvers::AttractionComputer,
-        symbolic::{helpers::BddExtensions, parity_game::SymbolicParityGame},
-        tests::load_example,
-        visualize::DotWriter,
-        Owner, ParityGame, ParityGraph,
+        Owner,
+        ParityGame,
+        ParityGraph,
+        symbolic::{helpers::BddExtensions, parity_game::SymbolicParityGame}, tests::load_example, visualize::DotWriter,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {
