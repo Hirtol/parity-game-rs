@@ -1,41 +1,39 @@
 use std::{collections::hash_map::Entry, hash::Hash};
 
 use ecow::EcoVec;
-use oxidd::bdd::{BDDFunction, BDDManagerRef};
+use oxidd::bdd::BDDFunction;
 use oxidd_core::{
     function::{BooleanFunction, Function},
     ManagerRef,
     util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
 };
 
-use crate::{
-    symbolic::{BDD, helpers::new_valuations::TruthAssignmentsIterator},
-    VertexId,
-};
+use crate::{symbolic::helpers::truth_assignments::TruthAssignmentsIterator, VertexId};
 
 /// Bit-wise encoder of given values
-pub struct CachedSymbolicEncoder<T> {
-    cache: ahash::HashMap<T, BDDFunction>,
-    variables: EcoVec<BDDFunction>,
-    leading_zeros: EcoVec<BDDFunction>,
+pub struct CachedSymbolicEncoder<T, F> {
+    cache: ahash::HashMap<T, F>,
+    variables: EcoVec<F>,
+    leading_zeros: EcoVec<F>,
 }
 
-impl<T> CachedSymbolicEncoder<T>
+impl<T, F> CachedSymbolicEncoder<T, F>
 where
     T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
     T: Eq + Hash,
     <T as std::ops::BitAnd>::Output: PartialEq<T>,
+    F: Function + BooleanFunctionExtensions,
 {
-    pub fn new(manager: &BDDManagerRef, variables: EcoVec<BDDFunction>) -> Self {
+    pub fn new(manager: &F::ManagerRef, variables: EcoVec<F>) -> Self {
         // First cache a few BDDs for leading zeros, which allows much faster vertex encoding in 50% of cases.
-        let base_true = manager.with_manager_shared(|f| BDDFunction::t(f));
+        let base_true = manager.with_manager_shared(|f| F::t(f));
         let mut leading_zeros_bdds = EcoVec::new();
 
-        for trailing_zeros in 0..(variables.len() + 1) {
+        for leading_zeros in 0..(variables.len() + 1) {
             let conjugated = variables
                 .iter()
                 .rev()
-                .take(trailing_zeros)
+                .take(leading_zeros)
                 .fold(base_true.clone(), |acc, b| acc.diff(b).unwrap());
 
             leading_zeros_bdds.push(conjugated);
@@ -51,7 +49,7 @@ where
     /// Encode the given value as a [BDDFunction], caching it for future use.
     ///
     /// If `value` was already provided once the previously created [BDDFunction] will be returned.
-    pub fn encode(&mut self, value: T) -> super::Result<&BDDFunction> {
+    pub fn encode(&mut self, value: T) -> super::Result<&F> {
         let out = match self.cache.entry(value) {
             Entry::Occupied(val) => val.into_mut(),
             Entry::Vacant(val) => val.insert(Self::efficient_encode_impl(
@@ -67,17 +65,13 @@ where
     /// Perform a binary encoding of the given value.
     ///
     /// Uses a cached `trailing_zeros_fns` to skip a lot of conjugations in 50% of cases.
-    pub(crate) fn efficient_encode_impl(
-        leading_zero_fns: &[BDDFunction],
-        variables: &[BDDFunction],
-        value: T,
-    ) -> super::Result<BDDFunction> {
+    pub(crate) fn efficient_encode_impl(leading_zero_fns: &[F], variables: &[F], value: T) -> super::Result<F> {
         let leading_zeros = value.leading_zeros_help();
         let base_subtraction = value.num_bits() - variables.len() as u32;
-        let actual_trailing_zeros = (leading_zeros - base_subtraction) as usize;
+        let actual_leading_zeros = (leading_zeros - base_subtraction) as usize;
 
-        let mut expr = leading_zero_fns[actual_trailing_zeros].clone();
-        for i in 0..(variables.len() - actual_trailing_zeros) {
+        let mut expr = leading_zero_fns[actual_leading_zeros].clone();
+        for i in 0..(variables.len() - actual_leading_zeros) {
             // Check if bit is set
             if value & (T::from(1) << T::from(i as u8)) != 0.into() {
                 expr = expr.and(&variables[i])?;
@@ -90,7 +84,7 @@ where
     }
 
     /// Perform a binary encoding of the given value.
-    pub(crate) fn encode_impl(variables: &[BDDFunction], value: T) -> super::Result<BDDFunction> {
+    pub(crate) fn encode_impl(variables: &[F], value: T) -> super::Result<F> {
         let mut expr = if value & 1.into() != 0.into() {
             variables[0].clone()
         } else {
@@ -110,9 +104,9 @@ where
     }
 
     pub(crate) fn encode_eval<'a>(
-        variables: &'a [BDD],
+        variables: &'a [F],
         value: T,
-    ) -> super::Result<impl Iterator<Item = (&'a BDD, bool)> + 'a>
+    ) -> super::Result<impl Iterator<Item = (&'a F, bool)> + 'a>
     where
         T: 'a,
     {
@@ -164,16 +158,24 @@ impl From<OutOfMemory> for BddError {
 
 pub trait BddExtensions: Function {
     /// Returns an [Iterator] which results in all possible satisfying assignments of the variables.
-    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDD>;
+    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, Self>;
 
     fn sat_quick_count(&self, n_vars: u32) -> u64;
-
-    /// Efficiently compute `self & !rhs`.
-    fn diff(&self, rhs: &Self) -> AllocResult<BDDFunction>;
 }
 
+pub trait BooleanFunctionExtensions: BooleanFunction {
+    /// Efficiently compute `self & !rhs`.
+    #[inline(always)]
+    fn diff(&self, rhs: &Self) -> AllocResult<Self> {
+        // `imp_strict` <=> !rhs & self <=> self & !rhs
+        rhs.imp_strict(self)
+    }
+}
+
+impl<F: BooleanFunction> BooleanFunctionExtensions for F {}
+
 impl BddExtensions for BDDFunction {
-    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDD> {
+    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDDFunction> {
         TruthAssignmentsIterator::new(manager, self)
     }
 
@@ -181,15 +183,9 @@ impl BddExtensions for BDDFunction {
         let mut cache: SatCountCache<u64, ahash::RandomState> = SatCountCache::default();
         self.sat_count(n_vars, &mut cache)
     }
-
-    #[inline(always)]
-    fn diff(&self, rhs: &Self) -> AllocResult<BDDFunction> {
-        // `imp_strict` <=> !rhs & self <=> self & !rhs
-        rhs.imp_strict(self)
-    }
 }
 
-mod new_valuations {
+mod truth_assignments {
     use std::collections::VecDeque;
 
     use oxidd::bdd::BDDFunction;
@@ -329,7 +325,7 @@ mod tests {
     use oxidd::bdd::BDDFunction;
     use oxidd_core::{function::BooleanFunction, ManagerRef, util::OptBool};
 
-    use crate::symbolic::helpers::{BddExtensions, new_valuations::TruthAssignmentsIterator};
+    use crate::symbolic::helpers::{BddExtensions, truth_assignments::TruthAssignmentsIterator};
 
     #[test]
     pub fn test_valuations() -> crate::symbolic::Result<()> {

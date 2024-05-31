@@ -58,7 +58,7 @@ impl DotWriter {
 
     pub fn write_dot_symbolic<'a>(
         graph: &'a crate::symbolic::SymbolicParityGame,
-        additional_funcs: impl IntoIterator<Item = (&'a oxidd::bdd::BDDFunction, String)>,
+        additional_funcs: impl IntoIterator<Item = (&'a crate::symbolic::BDD, String)>,
     ) -> eyre::Result<String> {
         use oxidd_core::ManagerRef;
 

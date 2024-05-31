@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use ecow::EcoVec;
 use itertools::Itertools;
-use oxidd::bdd::{BDDFunction, BDDManagerRef};
+use oxidd::{
+    bcdd::BCDDManagerRef,
+    bdd::{BDDFunction, BDDManagerRef},
+};
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst},
     Manager,
@@ -16,7 +19,7 @@ use crate::{
     ParityGraph, Priority, symbolic, symbolic::{
         BDD,
         helpers,
-        helpers::{BddExtensions, CachedSymbolicEncoder},
+        helpers::{BddExtensions, BooleanFunctionExtensions, CachedSymbolicEncoder},
     }, VertexId,
 };
 
@@ -55,17 +58,17 @@ impl SymbolicParityGame {
         let manager = oxidd::bdd::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
 
         // Construct base building blocks for the BDD
-        let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
-        let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
+        let base_true = manager.with_manager_exclusive(|man| BDD::t(man));
+        let base_false = manager.with_manager_exclusive(|man| BDD::f(man));
         let variables: EcoVec<BDD> =
-            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDDFunction::new_var(man)).collect());
+            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDD::new_var(man)).collect());
         let edge_variables: EcoVec<BDD> =
-            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDDFunction::new_var(man)).collect());
+            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDD::new_var(man)).collect());
 
         let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.clone());
         let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
 
-        tracing::trace!("Starting edge BDD construction");
+        tracing::debug!("Starting edge BDD construction");
         // Edges
         let mut s_edges = base_false.clone();
         for edge in explicit.graph_edges() {
@@ -84,7 +87,7 @@ impl SymbolicParityGame {
         let mut s_even = base_false.clone();
         let mut s_odd = base_false.clone();
 
-        tracing::trace!("Starting priority/owner BDD construction");
+        tracing::debug!("Starting priority/owner BDD construction");
         for v_idx in explicit.vertices_index() {
             let vertex = explicit.get(v_idx).expect("Impossible");
             let expr = var_encoder.encode(v_idx.index())?;
@@ -146,12 +149,12 @@ impl SymbolicParityGame {
         (self.variables.len() + self.variables_edges.len()) as u32
     }
 
-    pub fn encode_vertex(&self, v_idx: VertexId) -> symbolic::Result<BDDFunction> {
-        CachedSymbolicEncoder::encode_impl(&self.variables, v_idx.index())
+    pub fn encode_vertex(&self, v_idx: VertexId) -> symbolic::Result<BDD> {
+        CachedSymbolicEncoder::<_, BDD>::encode_impl(&self.variables, v_idx.index())
     }
 
-    pub fn encode_edge_vertex(&self, v_idx: VertexId) -> symbolic::Result<BDDFunction> {
-        CachedSymbolicEncoder::encode_impl(&self.variables_edges, v_idx.index())
+    pub fn encode_edge_vertex(&self, v_idx: VertexId) -> symbolic::Result<BDD> {
+        CachedSymbolicEncoder::<_, BDD>::encode_impl(&self.variables_edges, v_idx.index())
     }
 
     /// Calculate all vertex ids which belong to the set represented by the `bdd`.
