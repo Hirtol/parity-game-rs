@@ -19,7 +19,8 @@ use crate::{
     ParityGraph, Priority, symbolic, symbolic::{
         BDD,
         helpers,
-        helpers::{BddExtensions, BooleanFunctionExtensions, CachedSymbolicEncoder},
+        helpers::CachedSymbolicEncoder,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
     }, VertexId,
 };
 
@@ -43,17 +44,18 @@ pub struct SymbolicParityGame {
 }
 
 impl SymbolicParityGame {
+    /// For now, mostly translated from [here](https://github.com/olijzenga/bdd-parity-game-solver/blob/master/src/pg.py).
+    ///
+    /// Constructs the following BDDs:
+    /// * A BDD for the sets `V_even` and `V_odd`
+    /// * A BDD representing the edge relation `E`
+    /// * A BDD for every priority in the game, containing the equation for the vertices which have that priority.
     #[tracing::instrument(name = "Build Symbolic Parity Game", skip_all)]
-    /// For now, translated from [https://github.com/olijzenga/bdd-parity-game-solver/blob/master/src/pg.py].
     pub fn from_explicit(explicit: &ParityGame) -> eyre::Result<Self> {
         Self::from_explicit_impl(explicit).map_err(|e| eyre::eyre!("Could not construct BDD due to: {e:?}"))
     }
 
     fn from_explicit_impl(explicit: &ParityGame) -> symbolic::Result<Self> {
-        // Need: BDD for set V, BDDs for sets V_even and V_odd, BDD^p for every p in P of the PG.
-        // Alternatively, for BDD^p we could use a multi-terminal BDD (according to https://arxiv.org/pdf/2009.10876.pdf), and oxidd provides it!
-        // Lastly need a duplication of the variable set (which is distinct!) to then create a BDD representing the edge relation E.
-
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
         let manager = oxidd::bdd::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
 
@@ -173,7 +175,7 @@ impl SymbolicParityGame {
         let priorities = self
             .priorities
             .iter()
-            .flat_map(|(priority, bdd)| Ok::<_, helpers::BddError>((*priority, bdd.diff(&ignored)?)))
+            .flat_map(|(priority, bdd)| Ok::<_, symbolic::BddError>((*priority, bdd.diff(&ignored)?)))
             .collect();
 
         Ok(Self {
@@ -275,7 +277,7 @@ mod tests {
         Owner,
         ParityGame,
         ParityGraph,
-        symbolic::{helpers::BddExtensions, parity_game::SymbolicParityGame}, tests::load_example, visualize::DotWriter,
+        symbolic::{oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame}, tests::load_example, visualize::DotWriter,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {

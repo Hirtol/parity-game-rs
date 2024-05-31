@@ -1,14 +1,9 @@
 use std::{collections::hash_map::Entry, hash::Hash};
 
 use ecow::EcoVec;
-use oxidd::bdd::BDDFunction;
-use oxidd_core::{
-    function::{BooleanFunction, Function},
-    ManagerRef,
-    util::{AllocResult, OptBool, OutOfMemory, SatCountCache},
-};
+use oxidd_core::{function::Function, ManagerRef, util::OptBool};
 
-use crate::{symbolic::helpers::truth_assignments::TruthAssignmentsIterator, VertexId};
+use crate::{symbolic::oxidd_extensions::BooleanFunctionExtensions, VertexId};
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T, F> {
@@ -142,50 +137,7 @@ macro_rules! impl_bithelpers {
 
 impl_bithelpers!(u8, u16, u32, u64, usize);
 
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum BddError {
-    #[error("Failed to allocate memory")]
-    AllocError(OutOfMemory),
-    #[error("No input was provided")]
-    NoInput,
-}
-
-impl From<OutOfMemory> for BddError {
-    fn from(value: OutOfMemory) -> Self {
-        Self::AllocError(value)
-    }
-}
-
-pub trait BddExtensions: Function {
-    /// Returns an [Iterator] which results in all possible satisfying assignments of the variables.
-    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, Self>;
-
-    fn sat_quick_count(&self, n_vars: u32) -> u64;
-}
-
-pub trait BooleanFunctionExtensions: BooleanFunction {
-    /// Efficiently compute `self & !rhs`.
-    #[inline(always)]
-    fn diff(&self, rhs: &Self) -> AllocResult<Self> {
-        // `imp_strict` <=> !rhs & self <=> self & !rhs
-        rhs.imp_strict(self)
-    }
-}
-
-impl<F: BooleanFunction> BooleanFunctionExtensions for F {}
-
-impl BddExtensions for BDDFunction {
-    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDDFunction> {
-        TruthAssignmentsIterator::new(manager, self)
-    }
-
-    fn sat_quick_count(&self, n_vars: u32) -> u64 {
-        let mut cache: SatCountCache<u64, ahash::RandomState> = SatCountCache::default();
-        self.sat_count(n_vars, &mut cache)
-    }
-}
-
-mod truth_assignments {
+pub mod truth_assignments {
     use std::collections::VecDeque;
 
     use oxidd::bdd::BDDFunction;
@@ -325,7 +277,7 @@ mod tests {
     use oxidd::bdd::BDDFunction;
     use oxidd_core::{function::BooleanFunction, ManagerRef, util::OptBool};
 
-    use crate::symbolic::helpers::{BddExtensions, truth_assignments::TruthAssignmentsIterator};
+    use crate::symbolic::{helpers::truth_assignments::TruthAssignmentsIterator, oxidd_extensions::BddExtensions};
 
     #[test]
     pub fn test_valuations() -> crate::symbolic::Result<()> {
@@ -340,7 +292,7 @@ mod tests {
         let v0_and_v1 = variables[0].and(&variables[1])?;
         let v0_and_v2 = variables[0].and(&variables[2])?;
         let both = v0_and_v1.or(&v0_and_v2)?;
-        let multi = variables[2].and(&variables[1].or(&variables[0])?)?;
+        let multi = variables[0].and(&variables[1].or(&variables[2])?)?;
 
         manager.with_manager_shared(|man| {
             let iter = TruthAssignmentsIterator::new(man, &v0_and_v1);
@@ -349,10 +301,14 @@ mod tests {
                 vec![vec![OptBool::True, OptBool::True, OptBool::None]]
             );
 
-            println!("{:#?}", multi.sat_assignments(man).collect_vec());
-            // assert_eq!(both.sat_valuations(man).collect::<Vec<_>>(), vec![
-            //     vec![OptBool::True, OptBool::False]
-            // ]);
+            let multi_assignments = multi.sat_assignments(man).collect_vec();
+            assert_eq!(
+                multi_assignments,
+                vec![
+                    vec![OptBool::True, OptBool::False, OptBool::True],
+                    vec![OptBool::True, OptBool::True, OptBool::None]
+                ]
+            );
         });
 
         Ok(())

@@ -41,7 +41,7 @@ pub enum ConversionGoal {
         /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
         #[clap(short)]
         k: Option<u32>,
-        #[clap(short, default_value = "old")]
+        #[clap(short, default_value = "new")]
         v: RgVersion,
         /// Whether this should use the paper renderer.
         #[clap(short)]
