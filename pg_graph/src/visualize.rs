@@ -8,6 +8,7 @@ use crate::{
         VertexId,
     },
     Owner,
+    symbolic::BDD,
 };
 
 /// An abstraction to allow for generic writing of the underlying graphs.
@@ -99,6 +100,38 @@ impl DotWriter {
                         (&graph.edges, "edges".into()),
                     ])
                     .chain(additional_funcs);
+
+                oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
+            })
+            .expect("Failed to lock");
+
+        Ok(String::from_utf8(out).expect("Invalid UTF-8"))
+    }
+
+    pub fn write_dot_symbolic_register<'a>(
+        graph: &'a crate::symbolic::register_game::SymbolicRegisterGame<BDD>,
+        additional_funcs: impl IntoIterator<Item = (&'a crate::symbolic::BDD, String)>,
+    ) -> eyre::Result<String> {
+        use oxidd_core::ManagerRef;
+
+        let mut out = Vec::new();
+
+        graph
+            .manager
+            .with_manager_exclusive(|man| {
+                let variables = graph
+                    .variables
+                    .iter_names("")
+                    .chain(graph.variables_edges.iter_names("_"));
+
+                let functions = [
+                    // (&graph.vertices, "vertices".into()),
+                    (&graph.v_even, "vertices_even".into()),
+                    (&graph.v_odd, "vertices_odd".into()),
+                    // (&graph.edges, "edges".into()),
+                ]
+                .into_iter()
+                .chain(additional_funcs);
 
                 oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
             })
