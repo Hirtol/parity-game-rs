@@ -62,12 +62,24 @@ impl SymbolicParityGame {
         let manager = oxidd::bdd::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
 
         // Construct base building blocks for the BDD
-        let base_true = manager.with_manager_exclusive(|man| BDD::t(man));
-        let base_false = manager.with_manager_exclusive(|man| BDD::f(man));
         let variables: EcoVec<BDD> =
             manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDD::new_var(man)).collect());
         let edge_variables: EcoVec<BDD> =
             manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDD::new_var(man)).collect());
+
+        Self::from_explicit_impl_vars(explicit, manager, variables, edge_variables)
+    }
+
+    /// Create the symbolic game with the given variables.
+    /// It is assumed that the amount of variables matches the size of the binary encoding of the max vertex id.
+    pub(crate) fn from_explicit_impl_vars(
+        explicit: &ParityGame,
+        manager: BDDManagerRef,
+        variables: EcoVec<BDD>,
+        edge_variables: EcoVec<BDD>,
+    ) -> symbolic::Result<Self> {
+        let base_true = manager.with_manager_exclusive(|man| BDD::t(man));
+        let base_false = manager.with_manager_exclusive(|man| BDD::f(man));
 
         let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.clone());
         let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
@@ -260,7 +272,7 @@ impl SymbolicParityGame {
 
     /// Return both sets of vertices, with the first element of the returned tuple matching the `player`.
     #[inline(always)]
-    fn get_player_sets(&self, player: Owner) -> (&BDD, &BDD) {
+    pub(crate) fn get_player_sets(&self, player: Owner) -> (&BDD, &BDD) {
         match player {
             Owner::Even => (&self.vertices_even, &self.vertices_odd),
             Owner::Odd => (&self.vertices_odd, &self.vertices_even),
