@@ -128,7 +128,7 @@ impl DotWriter {
                     // (&graph.vertices, "vertices".into()),
                     (&graph.v_even, "vertices_even".into()),
                     (&graph.v_odd, "vertices_odd".into()),
-                    // (&graph.edges, "edges".into()),
+                    (&graph.e_move, "E_move".into()), // (&graph.edges, "edges".into()),
                 ]
                 .into_iter()
                 .chain(additional_funcs);

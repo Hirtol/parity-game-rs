@@ -29,6 +29,7 @@ pub struct SymbolicRegisterGame<F: Function> {
 
     pub v_even: F,
     pub v_odd: F,
+    pub e_move: F,
 
     pub base_true: F,
     pub base_false: F,
@@ -55,14 +56,16 @@ where
         let base_false = manager.with_manager_exclusive(|man| F::f(man));
 
         let (variables, edge_variables) = manager.with_manager_exclusive(|man| {
+            let next_move = F::new_var(man)?;
+            let next_move_edge = F::new_var(man)?;
             Ok::<_, symbolic::BddError>((
                 RegisterVertexVars {
-                    next_move_var: F::new_var(man)?,
+                    next_move_var: next_move,
                     register_vars: (0..n_regis_vars).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
                     vertex_vars: (0..n_variables).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
                 },
                 RegisterVertexVars {
-                    next_move_var: F::new_var(man)?,
+                    next_move_var: next_move_edge,
                     register_vars: (0..n_regis_vars).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
                     vertex_vars: (0..n_variables).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
                 },
@@ -70,7 +73,7 @@ where
         })?;
 
         let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.vertex_vars.clone());
-        // let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
+        let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.vertex_vars.clone());
 
         tracing::debug!("Starting player vertex set construction");
         let mut s_even = base_false.clone();
@@ -91,6 +94,21 @@ where
                 Owner::Even => s_even = s_even.or(&v_expr)?,
                 Owner::Odd => s_odd = s_odd.or(&v_expr)?,
             }
+        }
+
+        tracing::debug!("Starting E_move construction");
+
+        let mut e_move = base_false.clone();
+        for edge in explicit.graph_edges() {
+            let (source, target) = (
+                var_encoder
+                    .encode(edge.source().index())?
+                    .and(&variables.next_move_var)?,
+                e_var_encoder
+                    .encode(edge.target().index())?
+                    .diff(&edge_variables.next_move_var)?,
+            );
+            e_move = e_move.or(&source.and(&target)?)?;
         }
 
         // tracing::debug!("Starting edge BDD construction");
@@ -141,6 +159,7 @@ where
             conjugated_v_edges: conj_e,
             v_even: s_even,
             v_odd: s_odd,
+            e_move,
             base_true,
             base_false,
         })
