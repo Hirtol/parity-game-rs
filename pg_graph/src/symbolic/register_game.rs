@@ -1,11 +1,12 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 use ecow::EcoVec;
+use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
-    function::{BooleanFunctionQuant, Function},
+    function::{BooleanFunctionQuant, Function, FunctionSubst},
     ManagerRef,
-    util::AllocResult,
+    util::{AllocResult, Subst},
 };
 use petgraph::prelude::EdgeRef;
 
@@ -37,16 +38,17 @@ pub struct SymbolicRegisterGame<F: Function> {
 
 impl<F> SymbolicRegisterGame<F>
 where
-    F: Function + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension,
+    F: Function + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension + FunctionSubst,
 {
     /// Construct a new symbolic register game straight from an explicit parity game.
     ///
     /// See [crate::register_game::RegisterGame::construct]
     #[tracing::instrument(name = "Build Symbolic Register Game", skip_all)]
     pub fn from_explicit(explicit: &ParityGame, k: Rank, controller: Owner) -> symbolic::Result<Self> {
+        let k = k as usize;
         let register_bits_needed = (explicit.priority_max() as f64).log2().ceil() as usize;
         // Calculate the amount of variables we'll need for the binary encodings of the registers and vertices.
-        let n_regis_vars = register_bits_needed * (k as usize + 1);
+        let n_regis_vars = register_bits_needed * (k + 1);
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
 
         let manager = F::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
@@ -59,23 +61,30 @@ where
             let next_move = F::new_var(man)?;
             let next_move_edge = F::new_var(man)?;
             Ok::<_, symbolic::BddError>((
-                RegisterVertexVars {
-                    next_move_var: next_move,
-                    register_vars: (0..n_regis_vars).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
-                    vertex_vars: (0..n_variables).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
-                },
-                RegisterVertexVars {
-                    next_move_var: next_move_edge,
-                    register_vars: (0..n_regis_vars).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
-                    vertex_vars: (0..n_variables).flat_map(|_| F::new_var(man)).collect::<EcoVec<_>>(),
-                },
+                RegisterVertexVars::new(
+                    next_move,
+                    (0..n_regis_vars)
+                        .flat_map(|_| F::new_var(man))
+                        .collect_vec()
+                        .into_iter(),
+                    (0..n_variables).flat_map(|_| F::new_var(man)),
+                ),
+                RegisterVertexVars::new(
+                    next_move_edge,
+                    (0..n_regis_vars)
+                        .flat_map(|_| F::new_var(man))
+                        .collect_vec()
+                        .into_iter(),
+                    (0..n_variables).flat_map(|_| F::new_var(man)),
+                ),
             ))
         })?;
 
-        let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.vertex_vars.clone());
-        let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.vertex_vars.clone());
+        let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.vertex_vars().into());
+        let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.vertex_vars().into());
 
         tracing::debug!("Starting player vertex set construction");
+
         let mut s_even = base_false.clone();
         let mut s_odd = base_false.clone();
         for v_idx in explicit.vertices_index() {
@@ -85,7 +94,7 @@ where
             // The opposing player can only play with E_move
             // Thus, `next_move_var` should be `1/true`
             if controller != vertex.owner {
-                v_expr = v_expr.and(&variables.next_move_var)?;
+                v_expr = v_expr.and(variables.next_move_var())?;
             }
 
             // Set owners
@@ -99,54 +108,46 @@ where
         tracing::debug!("Starting E_move construction");
 
         let mut e_move = base_false.clone();
+        let iff_register_condition = variables
+            .register_vars()
+            .iter()
+            .zip(edge_variables.register_vars())
+            .fold(base_true.clone(), |acc, (r, r_next)| {
+                acc.and(&r.equiv(r_next).unwrap()).unwrap()
+            });
+
         for edge in explicit.graph_edges() {
             let (source, target) = (
                 var_encoder
                     .encode(edge.source().index())?
-                    .and(&variables.next_move_var)?,
+                    .and(&variables.next_move_var())?,
                 e_var_encoder
                     .encode(edge.target().index())?
-                    .diff(&edge_variables.next_move_var)?,
+                    .diff(&edge_variables.next_move_var())?,
             );
-            e_move = e_move.or(&source.and(&target)?)?;
+            e_move = e_move.or(&source.and(&target)?.and(&iff_register_condition)?)?;
         }
 
-        // tracing::debug!("Starting edge BDD construction");
-        // // Edges
-        // let mut s_edges = base_false.clone();
-        // for edge in explicit.graph_edges() {
-        //     let (source, target) = (
-        //         var_encoder.encode(edge.source().index())?,
-        //         e_var_encoder.encode(edge.target().index())?,
-        //     );
-        //     s_edges = s_edges.or(&source.and(target)?)?;
-        // }
-        //
-        // // Priorities
-        // let mut s_priorities = explicit
-        //     .priorities_unique()
-        //     .map(|p| (p, base_false.clone()))
-        //     .collect::<HashMap<_, _>>();
-        // let mut s_even = base_false.clone();
-        // let mut s_odd = base_false.clone();
-        //
-        // tracing::debug!("Starting priority/owner BDD construction");
-        // for v_idx in explicit.vertices_index() {
-        //     let vertex = explicit.get(v_idx).expect("Impossible");
-        //     let expr = var_encoder.encode(v_idx.index())?;
-        //     let priority = vertex.priority;
-        //
-        //     // Fill priority
-        //     s_priorities
-        //         .entry(priority)
-        //         .and_modify(|bdd| *bdd = bdd.or(&expr).expect("Out of memory"));
-        //
-        //     // Set owners
-        //     match vertex.owner {
-        //         Owner::Even => s_even = s_even.or(&expr)?,
-        //         Owner::Odd => s_odd = s_odd.or(&expr)?,
-        //     }
-        // }
+        tracing::debug!("Starting E_i construction");
+        let n_priorities = if controller == Owner::Even { k + 1 } else { k + 2 };
+        let mut priorities = (0..=2 * n_priorities)
+            .into_iter()
+            .map(|val| (val, base_false.clone()))
+            .collect::<ahash::HashMap<_, _>>();
+        // All E_move edges get a priority of `0` by default.
+        let _ = priorities
+            .entry(0)
+            .and_modify(|pri| *pri = variables.next_move_var().not().unwrap());
+
+        let mut e_i_edges = vec![base_false.clone(); k + 1];
+
+        for i in 0..=k {
+            let e_i = &mut e_i_edges[i];
+            // From t=0 -> t=1
+            let base_edge = edge_variables.next_move_var().diff(&variables.next_move_var())?;
+
+            for (v_idx, vertex) in explicit.vertices_and_index() {}
+        }
 
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
@@ -164,50 +165,74 @@ where
             base_false,
         })
     }
+
+    #[inline]
+    fn edge_substitute(&self, bdd: &F) -> symbolic::Result<F> {
+        let subs = Subst::new(&self.variables.all_variables, &self.variables_edges.all_variables);
+        Ok(bdd.substitute(subs)?)
+    }
+
+    #[inline]
+    fn rev_edge_substitute(&self, bdd: &F) -> symbolic::Result<F> {
+        let subs = Subst::new(&self.variables_edges.all_variables, &self.variables.all_variables);
+        Ok(bdd.substitute(subs)?)
+    }
 }
 
 pub struct RegisterVertexVars<F: Function> {
-    pub next_move_var: F,
-    pub register_vars: EcoVec<F>,
-    pub vertex_vars: EcoVec<F>,
+    pub all_variables: EcoVec<F>,
+    n_register_vars: usize,
 }
 
 impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
-    fn conjugated(&self, base_true: &F) -> AllocResult<F> {
-        self.next_move_var
-            .and(
-                &self
-                    .register_vars
-                    .iter()
-                    .fold(base_true.clone(), |acc: F, next: &F| acc.and(next).unwrap()),
-            )?
-            .and(
-                &self
-                    .vertex_vars
-                    .as_slice()
-                    .iter()
-                    .fold(base_true.clone(), |acc: F, next: &F| acc.and(next).unwrap()),
-            )
+    pub fn new(
+        next_move: F,
+        register_vars: impl ExactSizeIterator<Item = F>,
+        vertex_vars: impl Iterator<Item = F>,
+    ) -> Self {
+        Self {
+            n_register_vars: register_vars.len(),
+            all_variables: [next_move]
+                .into_iter()
+                .chain(register_vars)
+                .chain(vertex_vars)
+                .collect(),
+        }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &F> {
-        [&self.next_move_var]
-            .into_iter()
-            .chain(&self.register_vars)
-            .chain(&self.vertex_vars)
+    #[inline(always)]
+    pub fn next_move_var(&self) -> &F {
+        &self.all_variables[0]
+    }
+
+    #[inline(always)]
+    pub fn register_vars(&self) -> &[F] {
+        &self.all_variables[1..self.n_register_vars + 1]
+    }
+
+    #[inline(always)]
+    pub fn vertex_vars(&self) -> &[F] {
+        &self.all_variables[self.n_register_vars + 1..]
+    }
+
+    fn conjugated(&self, base_true: &F) -> AllocResult<F> {
+        Ok(self
+            .all_variables
+            .iter()
+            .fold(base_true.clone(), |acc: F, next: &F| acc.and(next).unwrap()))
     }
 
     pub fn iter_names<'a>(&'a self, suffix: &'a str) -> impl Iterator<Item = (&F, String)> + 'a {
-        [(&self.next_move_var, format!("t{suffix}"))]
+        [(self.next_move_var(), format!("t{suffix}"))]
             .into_iter()
             .chain(
-                self.register_vars
+                self.register_vars()
                     .iter()
                     .enumerate()
                     .map(move |(i, r)| (r, format!("r{i}{suffix}"))),
             )
             .chain(
-                self.vertex_vars
+                self.vertex_vars()
                     .iter()
                     .enumerate()
                     .map(move |(i, r)| (r, format!("x{i}{suffix}"))),
@@ -217,20 +242,23 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
 
 #[cfg(test)]
 mod tests {
-    use oxidd_core::{Manager, ManagerRef};
+    use oxidd_core::{
+        function::{BooleanFunction, BooleanFunctionQuant},
+        Manager, ManagerRef,
+    };
 
     use pg_parser::parse_pg;
 
     use crate::{
         explicit::ParityGame,
         Owner,
-        symbolic::{BDD, register_game::SymbolicRegisterGame},
+        symbolic::{BDD, helpers::CachedSymbolicEncoder, register_game::SymbolicRegisterGame},
         tests::example_dir,
         visualize::DotWriter,
     };
 
     #[test]
-    pub fn test() {
+    pub fn test_tue() {
         let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
@@ -238,5 +266,40 @@ mod tests {
         s_pg.manager.with_manager_exclusive(|man| man.gc());
 
         std::fs::write("out.dot", DotWriter::write_dot_symbolic_register(&s_pg, []).unwrap()).unwrap();
+    }
+
+    #[test]
+    pub fn test_small() {
+        let game = small_pg().unwrap();
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_explicit(&game, 1, Owner::Even).unwrap();
+        s_pg.manager.with_manager_exclusive(|man| man.gc());
+        let vert = CachedSymbolicEncoder::encode_impl(&s_pg.variables.vertex_vars(), 0usize).unwrap();
+        let next_move = vert.and(&s_pg.variables.next_move_var()).unwrap();
+        let register_contents = CachedSymbolicEncoder::encode_impl(&s_pg.variables.register_vars(), 3usize).unwrap();
+        let full_vert = next_move.and(&register_contents).unwrap();
+
+        let total_next_v = s_pg
+            .e_move
+            .and(&full_vert)
+            .unwrap()
+            .exist(&s_pg.conjugated_variables)
+            .unwrap();
+        let real = s_pg.rev_edge_substitute(&total_next_v).unwrap();
+        s_pg.manager.with_manager_exclusive(|man| man.gc());
+
+        std::fs::write(
+            "out.dot",
+            DotWriter::write_dot_symbolic_register(&s_pg, [(&real, "Next V".to_string())]).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn small_pg() -> eyre::Result<ParityGame> {
+        let mut pg = r#"parity 3;
+0 1 1 0,1 "0";
+1 1 0 2 "1";
+2 2 0 2 "2";"#;
+        let pg = pg_parser::parse_pg(&mut pg).unwrap();
+        ParityGame::new(pg)
     }
 }
