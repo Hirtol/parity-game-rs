@@ -242,13 +242,7 @@ impl<'a> RegisterGame<'a> {
                                 let mut new_registers = reg_v.register_state.clone();
 
                                 let new_r = new_registers.make_mut();
-                                for i in 0..reg_quantity {
-                                    match i.cmp(&r) {
-                                        Ordering::Less => new_r[i] = 0,
-                                        Ordering::Equal => new_r[i] = original_vertex.priority,
-                                        Ordering::Greater => new_r[i] = new_r[i].max(original_vertex.priority),
-                                    }
-                                }
+                                next_registers_2021(new_r, original_vertex.priority, reg_quantity, r);
 
                                 let e_r = RegisterVertex {
                                     original_graph_id: reg_v.original_graph_id,
@@ -424,7 +418,8 @@ fn rank_to_priority(rank: Rank, saved_priority: Priority, controller: Owner) -> 
     }
 }
 
-fn reset_to_priority_2021(
+/// Convert a reset of a particular register to a priority to be used in the register game.
+pub fn reset_to_priority_2021(
     rank: Rank,
     saved_priority: Priority,
     vertex_priority: Priority,
@@ -446,6 +441,22 @@ fn reset_to_priority_2021(
             } else {
                 out + 2
             }
+        }
+    }
+}
+
+/// Calculate the next set of registers for a particular set of register contents.
+pub fn next_registers_2021(
+    current: &mut [Priority],
+    vertex_priority: Priority,
+    n_registers: usize,
+    reset_register: usize,
+) {
+    for i in 0..n_registers {
+        match i.cmp(&reset_register) {
+            Ordering::Less => current[i] = 0,
+            Ordering::Equal => current[i] = vertex_priority,
+            Ordering::Greater => current[i] = current[i].max(vertex_priority),
         }
     }
 }
