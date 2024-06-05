@@ -124,6 +124,9 @@ impl DotWriter {
                     .iter_names("")
                     .chain(graph.variables_edges.iter_names("_"));
 
+                let prio = graph.priorities.iter().map(|(p, bdd)| (bdd, format!("Priority {p}")));
+                let e_is = graph.e_i.iter().enumerate().map(|(i, bdd)| (bdd, format!("E_{i}")));
+
                 let functions = [
                     // (&graph.vertices, "vertices".into()),
                     (&graph.v_even, "vertices_even".into()),
@@ -131,6 +134,8 @@ impl DotWriter {
                     (&graph.e_move, "E_move".into()), // (&graph.edges, "edges".into()),
                 ]
                 .into_iter()
+                .chain(prio)
+                .chain(e_is)
                 .chain(additional_funcs);
 
                 oxidd_dump::dot::dump_all(&mut out, man, variables, functions)

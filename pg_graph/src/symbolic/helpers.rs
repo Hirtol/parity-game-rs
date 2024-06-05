@@ -1,9 +1,12 @@
-use std::{collections::hash_map::Entry, hash::Hash};
+use std::{borrow::Borrow, collections::hash_map::Entry, fmt::Debug, hash::Hash};
 
 use ecow::EcoVec;
 use oxidd_core::{function::Function, ManagerRef, util::OptBool};
 
-use crate::{explicit::VertexId, symbolic::oxidd_extensions::BooleanFunctionExtensions};
+use crate::{
+    explicit::VertexId,
+    symbolic::{BddError, oxidd_extensions::BooleanFunctionExtensions},
+};
 
 /// Bit-wise encoder of given values
 pub struct CachedSymbolicEncoder<T, F> {
@@ -15,7 +18,7 @@ pub struct CachedSymbolicEncoder<T, F> {
 impl<T, F> CachedSymbolicEncoder<T, F>
 where
     T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
-    T: Eq + Hash,
+    T: Eq + Hash + Debug,
     <T as std::ops::BitAnd>::Output: PartialEq<T>,
     F: Function + BooleanFunctionExtensions,
 {
@@ -63,6 +66,7 @@ where
     pub(crate) fn efficient_encode_impl(leading_zero_fns: &[F], variables: &[F], value: T) -> super::Result<F> {
         let leading_zeros = value.leading_zeros_help();
         let base_subtraction = value.num_bits() - variables.len() as u32;
+        tracing::debug!("LEAD - BASE: {leading_zeros} {base_subtraction} - `{value:?}`");
         let actual_leading_zeros = (leading_zeros - base_subtraction) as usize;
 
         let mut expr = leading_zero_fns[actual_leading_zeros].clone();
@@ -109,6 +113,46 @@ where
             .iter()
             .enumerate()
             .map(move |(bit_index, variable)| (variable, value & (T::from(1) << T::from(bit_index as u8)) != 0.into())))
+    }
+}
+
+pub struct MultiEncoder<T, F> {
+    encoders: Vec<CachedSymbolicEncoder<T, F>>,
+}
+
+impl<T, F> MultiEncoder<T, F>
+where
+    T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
+    T: Eq + Hash + Debug,
+    <T as std::ops::BitAnd>::Output: PartialEq<T>,
+    F: Function + BooleanFunctionExtensions,
+{
+    pub fn new<I: IntoIterator<Item = F>>(
+        manager: &F::ManagerRef,
+        variable_slices: impl IntoIterator<Item = I>,
+    ) -> Self {
+        Self {
+            encoders: variable_slices
+                .into_iter()
+                .map(|slice| CachedSymbolicEncoder::new(manager, slice.into_iter().collect()))
+                .collect(),
+        }
+    }
+
+    /// Encode the given values as a [BDDFunction], where each individual value is potentially cached and `AND`ed together to form the final BDD.
+    ///
+    /// Note that the entire `value` is not cached.
+    pub fn encode_many(&mut self, value: impl IntoIterator<Item = impl Borrow<T>>) -> super::Result<F> {
+        let mut it = value.into_iter().enumerate();
+        let (i, first_item) = it.next().ok_or(BddError::NoInput)?;
+        let mut first_encoding = self.encoders[i].encode(*first_item.borrow())?.clone();
+
+        for (i, item) in it {
+            let encoder = &mut self.encoders[i];
+            first_encoding = first_encoding.and(encoder.encode(*item.borrow())?)?;
+        }
+
+        Ok(first_encoding)
     }
 }
 
