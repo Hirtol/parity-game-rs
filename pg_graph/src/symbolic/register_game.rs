@@ -5,8 +5,8 @@ use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst},
-    ManagerRef,
-    util::{AllocResult, Subst},
+    Manager,
+    ManagerRef, util::{AllocResult, Subst},
 };
 use petgraph::prelude::EdgeRef;
 
@@ -286,7 +286,8 @@ impl SymbolicRegisterGame<BDD>
         let unique_register_contents =
             itertools::repeat_n(sg.priorities.keys().copied(), num_registers).multi_cartesian_product();
 
-        for permutation in unique_register_contents {
+        for (i, permutation) in unique_register_contents.enumerate() {
+            tracing::trace!("Starting E_i permutation number: `{i}`");
             let permutation_encoding = perm_encoder.encode_many(&permutation)?;
 
             for (&priority, prio_bdd) in &sg.priorities {
@@ -314,15 +315,6 @@ impl SymbolicRegisterGame<BDD>
                     priorities
                         .entry(rg_priority)
                         .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
-
-                    tracing::debug!(
-                        "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
-                        permutation,
-                        next_registers,
-                        priority,
-                        i,
-                        rg_priority
-                    );
                 }
             }
         }
@@ -358,6 +350,14 @@ impl SymbolicRegisterGame<BDD>
             base_true,
             base_false,
         })
+    }
+
+    pub fn gc(&self) -> usize {
+        self.manager.with_manager_exclusive(|m| m.gc())
+    }
+
+    pub fn bdd_node_count(&self) -> usize {
+        self.manager.with_manager_exclusive(|m| m.num_inner_nodes())
     }
 
     #[inline]
@@ -451,6 +451,7 @@ mod tests {
         visualize::DotWriter,
     };
 
+    #[tracing_test::traced_test]
     #[test]
     pub fn test_tue() {
         let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();

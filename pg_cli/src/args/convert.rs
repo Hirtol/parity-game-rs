@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use pg_graph::{
     explicit::{ParityGraph, register_game::RegisterGame},
     Owner,
-    symbolic::SymbolicParityGame,
+    symbolic::{register_game::SymbolicRegisterGame, SymbolicParityGame},
     visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
 };
 
@@ -47,6 +47,14 @@ pub enum ConversionGoal {
         #[clap(short)]
         p: bool,
     },
+    #[clap(name = "srg")]
+    SymbolicRegisterGame {
+        /// Create a `k`-register-index game, upper bound for valid results is `1 + log(n)`
+        ///
+        /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
+        #[clap(short)]
+        k: Option<u32>,
+    },
 }
 
 #[derive(Debug, clap::ValueEnum, Copy, Clone)]
@@ -87,6 +95,14 @@ impl ConvertCommand {
                     RgVersion::Old => RegisterGame::construct(&parity_game, k, Owner::Even),
                     RgVersion::New => RegisterGame::construct_2021(&parity_game, k, Owner::Even),
                 };
+                let rg_vtx = register_game.vertices.len();
+
+                tracing::debug!(
+                    from_vertex = register_game.original_game.vertex_count(),
+                    to_vertex = rg_vtx,
+                    ratio = rg_vtx / register_game.original_game.vertex_count(),
+                    "Converted from PG to RG PG"
+                );
 
                 if let Some(path) = self.mermaid_path {
                     let out_str = if p {
@@ -137,6 +153,23 @@ impl ConvertCommand {
 
                 if let Some(path) = self.dot_path {
                     std::fs::write(&path, DotWriter::write_dot_symbolic(&s_pg, [])?)?;
+
+                    tracing::info!(?path, "Wrote GraphViz graph to path")
+                }
+            }
+            ConversionGoal::SymbolicRegisterGame { k } => {
+                let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog2()) as u8;
+                let s_rg = SymbolicRegisterGame::from_symbolic(&parity_game, k, Owner::Even)?;
+                s_rg.gc();
+
+                tracing::info!(
+                    parity_node_count = parity_game.vertex_count(),
+                    symbolic_node_count = s_rg.bdd_node_count(),
+                    "Converted to symbolic parity game"
+                );
+
+                if let Some(path) = self.dot_path {
+                    std::fs::write(&path, DotWriter::write_dot_symbolic_register(&s_rg, [])?)?;
 
                     tracing::info!(?path, "Wrote GraphViz graph to path")
                 }

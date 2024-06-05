@@ -66,7 +66,6 @@ where
     pub(crate) fn efficient_encode_impl(leading_zero_fns: &[F], variables: &[F], value: T) -> super::Result<F> {
         let leading_zeros = value.leading_zeros_help();
         let base_subtraction = value.num_bits() - variables.len() as u32;
-        tracing::debug!("LEAD - BASE: {leading_zeros} {base_subtraction} - `{value:?}`");
         let actual_leading_zeros = (leading_zeros - base_subtraction) as usize;
 
         let mut expr = leading_zero_fns[actual_leading_zeros].clone();
