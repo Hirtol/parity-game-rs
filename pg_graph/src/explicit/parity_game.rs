@@ -185,7 +185,7 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
 
     #[inline(always)]
     fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
-        self.labels[vertex_id.index()].as_deref()
+        self.labels.get(vertex_id.index()).and_then(|i| i.as_deref())
     }
 
     #[inline(always)]

@@ -131,3 +131,120 @@ pub fn decode_assignments<'a>(values: impl IntoIterator<Item = impl AsRef<[OptBo
 
     output
 }
+
+/// Turn a sequence of booleans into a sequence of `VertexId`s based on a binary encoding.
+///
+/// # Arguments
+/// * `values` - The binary encoding
+/// * `windows` - Each window contains the indices from `values` to use in a binary encoding.
+pub fn decode_split_assignments<'a>(
+    values: impl IntoIterator<Item = impl AsRef<[OptBool]>>,
+    windows: &[&[usize]],
+) -> Vec<Vec<u32>> {
+    fn inner<'b, I: Iterator<Item = &'b OptBool> + Clone>(
+        current_value: u32,
+        idx: usize,
+        mut assignments: I,
+        out: &mut Vec<u32>,
+    ) {
+        let Some(next) = assignments.next() else {
+            out.push(current_value);
+            return;
+        };
+
+        match next {
+            OptBool::None => {
+                // True
+                inner(current_value | (1 << idx), idx + 1, assignments.clone(), out);
+                // False
+                inner(current_value, idx + 1, assignments, out);
+            }
+            OptBool::False => {
+                inner(current_value, idx + 1, assignments, out);
+            }
+            OptBool::True => {
+                inner(current_value | (1 << idx), idx + 1, assignments, out);
+            }
+        }
+    }
+
+    let mut outputs = vec![vec![]; windows.len()];
+
+    for vertex_assigment in values {
+        let vertices = vertex_assigment.as_ref();
+        for (i, &window) in windows.iter().enumerate() {
+            let iter = DiscontiguousArrayIterator::new(vertices, window.into_iter().copied());
+            inner(0, 0, iter, &mut outputs[i])
+        }
+    }
+
+    outputs
+}
+
+#[derive(Clone)]
+struct DiscontiguousArrayIterator<'a, T, I> {
+    inner: &'a [T],
+    window: I,
+}
+
+impl<'a, 'b, T, I: Iterator<Item = usize> + 'b> DiscontiguousArrayIterator<'a, T, I> {
+    pub fn new(existing: &'a [T], window: I) -> Self {
+        Self {
+            inner: existing,
+            window: window.into_iter(),
+        }
+    }
+}
+
+impl<'a, 'b, T, I: Iterator<Item = usize> + 'b> Iterator for DiscontiguousArrayIterator<'a, T, I> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let idx = self.window.next()?;
+        self.inner.get(idx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use oxidd::bdd::BDDFunction;
+    use oxidd_core::{function::BooleanFunction, ManagerRef, util::OptBool};
+
+    use crate::symbolic::{oxidd_extensions::BddExtensions, sat::TruthAssignmentsIterator};
+
+    #[test]
+    pub fn test_valuations() -> crate::symbolic::Result<()> {
+        let manager = oxidd::bdd::new_manager(0, 0, 12);
+
+        // Construct base building blocks for the BDD
+        let base_true = manager.with_manager_exclusive(|man| BDDFunction::t(man));
+        let base_false = manager.with_manager_exclusive(|man| BDDFunction::f(man));
+        let variables =
+            manager.with_manager_exclusive(|man| (0..3).flat_map(|_| BDDFunction::new_var(man)).collect_vec());
+
+        let v0_and_v1 = variables[0].and(&variables[1])?;
+        let v0_and_v2 = variables[0].and(&variables[2])?;
+        let both = v0_and_v1.or(&v0_and_v2)?;
+        let multi = variables[0].and(&variables[1].or(&variables[2])?)?;
+
+        manager.with_manager_shared(|man| {
+            let iter = TruthAssignmentsIterator::new(man, &v0_and_v1);
+            assert_eq!(
+                iter.collect::<Vec<_>>(),
+                vec![vec![OptBool::True, OptBool::True, OptBool::None]]
+            );
+
+            let multi_assignments = multi.sat_assignments(man).collect_vec();
+            assert_eq!(
+                multi_assignments,
+                vec![
+                    vec![OptBool::True, OptBool::False, OptBool::True],
+                    vec![OptBool::True, OptBool::True, OptBool::None]
+                ]
+            );
+        });
+
+        Ok(())
+    }
+}

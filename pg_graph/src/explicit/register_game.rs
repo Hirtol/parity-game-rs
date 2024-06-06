@@ -472,6 +472,16 @@ pub struct RegisterVertex {
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum ChosenAction {
-    RegisterChange,
-    Move,
+    RegisterChange = 0,
+    Move = 1,
+}
+
+impl ChosenAction {
+    pub fn from_num(val: u32) -> ChosenAction {
+        match val {
+            0 => ChosenAction::RegisterChange,
+            1 => ChosenAction::Move,
+            _ => panic!("Invalid"),
+        }
+    }
 }
