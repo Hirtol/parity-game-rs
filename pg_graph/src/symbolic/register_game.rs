@@ -23,6 +23,8 @@ use crate::{
 };
 
 pub struct SymbolicRegisterGame<F: Function> {
+    pub k: Rank,
+    pub controller: Owner,
     pub manager: F::ManagerRef,
     pub variables: RegisterVertexVars<F>,
     pub variables_edges: RegisterVertexVars<F>,
@@ -192,6 +194,15 @@ impl SymbolicRegisterGame<BDD>
                     priorities
                         .entry(rg_priority)
                         .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
+
+                    tracing::debug!(
+                        "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
+                        permutation,
+                        next_registers,
+                        priority,
+                        i,
+                        rg_priority
+                    );
                 }
             }
         }
@@ -214,6 +225,8 @@ impl SymbolicRegisterGame<BDD>
         let conj_e = edge_variables.conjugated(&base_true)?;
 
         Ok(Self {
+            k: k as Rank,
+            controller,
             manager,
             variables,
             variables_edges: edge_variables,
@@ -339,6 +352,170 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
     }
 }
 
+mod experiments {
+    use itertools::Itertools;
+    use oxidd_core::{function::BooleanFunction, ManagerRef};
+
+    use crate::{
+        explicit::ParityGame,
+        Owner,
+        symbolic,
+        symbolic::{
+            BDD, helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions,
+            register_game::SymbolicRegisterGame, sat::decode_split_assignments,
+        }, Vertex,
+    };
+
+// fn symbolic_to_explicit<'a>(empty_pg: &'a ParityGame, symb: &SymbolicRegisterGame<BDD>) -> RegisterGame<'a> {
+    //     let rg = RegisterGame::construct(&empty_pg, symb.k, symb.controller);
+    //     let num_registers = symb.k + 1;
+    //     let n_reg_vars = symb.variables.n_register_vars;
+    //     let mut reg_v_index = ahash::HashMap::default();
+    //
+    //     let (r_vertex_window, r_next_vertex_window) = {
+    //         // t
+    //         let mut r_vertex_window = vec![0];
+    //         // r
+    //         let mut n_reg_range = 2..2 + n_reg_vars;
+    //         r_vertex_window.extend(n_reg_range);
+    //         // x
+    //         let n_vertex_vars = symb.variables.vertex_vars().len();
+    //         let max_reg_var_index = 2 + 2 * n_reg_vars;
+    //         let n_vertex_range = max_reg_var_index..max_reg_var_index + n_vertex_vars;
+    //         r_vertex_window.extend(n_vertex_range);
+    //         // t'
+    //         let mut r_vertex_next_window = vec![1];
+    //         // r'
+    //         let mut n_next_reg_range = 2 + n_reg_vars..2 + 2 * n_reg_vars;
+    //         r_vertex_next_window.extend(n_next_reg_range);
+    //         // x'
+    //         let n_next_vertex_range = max_reg_var_index + n_vertex_vars..max_reg_var_index + n_vertex_vars * 2;
+    //         r_vertex_next_window.extend(n_next_vertex_range);
+    //         (r_vertex_window, r_vertex_next_window)
+    //     };
+    //
+    //     symb.manager.with_manager_shared(|man| {
+    //         let mut vertex_window = vec![&r_vertex_window[0..1]];
+    //         // The set of vertice variables from the original game
+    //         vertex_window.push(&r_vertex_window[1 + n_reg_vars..]);
+    //         // Split all the registers into their own set
+    //         vertex_window.extend(r_vertex_window[1..].chunks(n_reg_vars / num_registers as usize));
+    //
+    //         for (priority, bdd) in &symb.priorities {
+    //             // First, all even
+    //             let split_prios = [
+    //                 (Owner::Even, bdd.and(&symb.v_even)?),
+    //                 (Owner::Odd, bdd.and(&symb.v_odd)?),
+    //             ];
+    //             for (owner, prio) in split_prios {
+    //                 let vertex_contents = prio.sat_assignments(man).collect_vec();
+    //
+    //                 let register_vertices = decode_split_assignments(&vertex_contents, &vertex_window);
+    //
+    //                 for next_move in register_vertices[0] {
+    //                     for &original_pg_id in &register_vertices[1] {
+    //                         let new_v = RegisterVertex {
+    //                             original_graph_id: original_pg_id.into(),
+    //                             priority: *priority,
+    //                             owner,
+    //                             register_state: Default::default(),
+    //                             next_action: ChosenAction::from_num(next_move),
+    //                         };
+    //                     }
+    //                 }
+    //             }
+    //             // Then all odd
+    //         }
+    //     });
+    //
+    //     rg
+    // }
+
+    pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityGame {
+        let mut pg = ParityGame::empty();
+        let n_reg_vars = symb.variables.n_register_vars;
+        let mut reg_v_index = ahash::HashMap::default();
+        let mut edges = ahash::HashMap::default();
+
+        let (r_vertex_window, r_next_vertex_window) = {
+            // t
+            let mut r_vertex_window = vec![0];
+            // r
+            let mut n_reg_range = (2..2 + n_reg_vars);
+            r_vertex_window.extend(n_reg_range);
+            // x
+            let n_vertex_vars = symb.variables.vertex_vars().len();
+            let max_reg_var_index = 2 + 2 * n_reg_vars;
+            let n_vertex_range = (max_reg_var_index..max_reg_var_index + n_vertex_vars);
+            r_vertex_window.extend(n_vertex_range);
+            // t'
+            let mut r_vertex_next_window = vec![1];
+            // r'
+            let mut n_next_reg_range = (2 + n_reg_vars..2 + 2 * n_reg_vars);
+            r_vertex_next_window.extend(n_next_reg_range);
+            // x'
+            let n_next_vertex_range = (max_reg_var_index + n_vertex_vars..max_reg_var_index + n_vertex_vars * 2);
+            r_vertex_next_window.extend(n_next_vertex_range);
+            (r_vertex_window, r_vertex_next_window)
+        };
+
+        symb.manager
+            .with_manager_shared(|man| {
+                for (priority, bdd) in &symb.priorities {
+                    let split_prios = [
+                        (Owner::Even, bdd.and(&symb.v_even)?),
+                        (Owner::Odd, bdd.and(&symb.v_odd)?),
+                    ];
+                    for (owner, prio) in split_prios {
+                        let vertex_contents = prio.sat_assignments(man).collect_vec();
+
+                        let register_vertices = decode_split_assignments(&vertex_contents, &[&r_vertex_window])
+                            .pop()
+                            .unwrap();
+                        let mut cached_encoder =
+                            CachedSymbolicEncoder::new(&symb.manager, symb.variables.all_variables.clone());
+
+                        for vertex in register_vertices {
+                            let idx = reg_v_index.entry(vertex).or_insert_with(|| {
+                                pg.graph.add_node(Vertex {
+                                    priority: *priority,
+                                    owner,
+                                })
+                            });
+
+                            let encoded = cached_encoder.encode(vertex)?;
+                            let edges_from = encoded.and(&symb.edges)?;
+                            let targets =
+                                decode_split_assignments(edges_from.sat_assignments(man), &[&r_next_vertex_window])
+                                    .pop()
+                                    .unwrap();
+
+                            tracing::debug!("Vertex: {vertex} has edges: {targets:?}");
+
+                            edges
+                                .entry(vertex)
+                                .and_modify(|v: &mut Vec<u32>| v.extend(targets))
+                                .or_insert_with(Vec::new);
+                        }
+                    }
+                }
+
+                Ok::<_, symbolic::BddError>(())
+            })
+            .unwrap();
+
+        for (v_idx, edges) in edges {
+            let start_idx = reg_v_index.get(&v_idx).unwrap();
+            for target in edges {
+                let target_idx = reg_v_index.get(&target).unwrap();
+                pg.graph.add_edge(*start_idx, *target_idx, ());
+            }
+        }
+
+        pg
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
@@ -406,6 +583,8 @@ mod tests {
         s_pg.manager.with_manager_shared(|man| {
             let valuations = won_projected.sat_assignments(man).collect_vec();
             println!("VALUES: {valuations:#?}");
+            let l = crate::symbolic::sat::decode_split_assignments(valuations, &[&[4]]);
+            println!("VALUES: {l:#?}");
             // crate::symbolic::helpers::decode_assignments(valuations, self.variables.len())
         });
         s_pg.gc();
@@ -416,6 +595,9 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
+
+        let converted_to_pg = super::experiments::symbolic_to_explicit_alt(&s_pg);
+        std::fs::write("converted.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
         // std::fs::write(
         //     "out.dot",
         //     DotWriter::write_dot_symbolic(&spg, []).unwrap(),
