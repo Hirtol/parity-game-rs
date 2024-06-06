@@ -128,10 +128,11 @@ impl DotWriter {
                 let e_is = graph.e_i.iter().enumerate().map(|(i, bdd)| (bdd, format!("E_{i}")));
 
                 let functions = [
-                    // (&graph.vertices, "vertices".into()),
+                    (&graph.vertices, "vertices".into()),
                     (&graph.v_even, "vertices_even".into()),
                     (&graph.v_odd, "vertices_odd".into()),
-                    (&graph.e_move, "E_move".into()), // (&graph.edges, "edges".into()),
+                    (&graph.e_move, "E_move".into()),
+                    (&graph.edges, "edges".into()),
                 ]
                 .into_iter()
                 .chain(prio)

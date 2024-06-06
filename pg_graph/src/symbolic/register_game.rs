@@ -18,7 +18,7 @@ use crate::{
     symbolic, symbolic::{
         BDD,
         helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BooleanFunctionExtensions, FunctionManagerExtension}, SymbolicParityGame,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension}, SymbolicParityGame,
     },
 };
 
@@ -29,8 +29,10 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub conjugated_variables: F,
     pub conjugated_v_edges: F,
 
+    pub vertices: F,
     pub v_even: F,
     pub v_odd: F,
+    pub edges: F,
     pub e_move: F,
     pub e_i: Vec<F>,
     pub priorities: ahash::HashMap<Priority, F>,
@@ -44,132 +46,6 @@ impl SymbolicRegisterGame<BDD>
 // where
 // F: Function + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension + FunctionSubst,
 {
-    // /// Construct a new symbolic register game straight from an explicit parity game.
-    // ///
-    // /// See [crate::register_game::RegisterGame::construct]
-    // #[tracing::instrument(name = "Build Symbolic Register Game", skip_all)]
-    // pub fn from_explicit(explicit: &ParityGame, k: Rank, controller: Owner) -> symbolic::Result<Self> {
-    //     let k = k as usize;
-    //     let register_bits_needed = (explicit.priority_max() as f64).log2().ceil() as usize;
-    //     // Calculate the amount of variables we'll need for the binary encodings of the registers and vertices.
-    //     let n_regis_vars = register_bits_needed * (k + 1);
-    //     let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
-    //
-    //     let manager = F::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
-    //
-    //     // Construct base building blocks for the BDD
-    //     let base_true = manager.with_manager_exclusive(|man| F::t(man));
-    //     let base_false = manager.with_manager_exclusive(|man| F::f(man));
-    //
-    //     let (variables, edge_variables) = manager.with_manager_exclusive(|man| {
-    //         let next_move = F::new_var(man)?;
-    //         let next_move_edge = F::new_var(man)?;
-    //         Ok::<_, symbolic::BddError>((
-    //             RegisterVertexVars::new(
-    //                 next_move,
-    //                 (0..n_regis_vars)
-    //                     .flat_map(|_| F::new_var(man))
-    //                     .collect_vec()
-    //                     .into_iter(),
-    //                 (0..n_variables).flat_map(|_| F::new_var(man)),
-    //             ),
-    //             RegisterVertexVars::new(
-    //                 next_move_edge,
-    //                 (0..n_regis_vars)
-    //                     .flat_map(|_| F::new_var(man))
-    //                     .collect_vec()
-    //                     .into_iter(),
-    //                 (0..n_variables).flat_map(|_| F::new_var(man)),
-    //             ),
-    //         ))
-    //     })?;
-    //
-    //     let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.vertex_vars().into());
-    //     let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.vertex_vars().into());
-    //
-    //     tracing::debug!("Starting player vertex set construction");
-    //
-    //     let mut s_even = base_false.clone();
-    //     let mut s_odd = base_false.clone();
-    //     for v_idx in explicit.vertices_index() {
-    //         let vertex = explicit.get(v_idx).expect("Impossible");
-    //         let mut v_expr = var_encoder.encode(v_idx.index())?.clone();
-    //
-    //         // The opposing player can only play with E_move
-    //         // Thus, `next_move_var` should be `1/true`
-    //         if controller != vertex.owner {
-    //             v_expr = v_expr.and(variables.next_move_var())?;
-    //         }
-    //
-    //         // Set owners
-    //         // Note that possible register contents are not constrained here, this will be done in the edge relation.
-    //         match vertex.owner {
-    //             Owner::Even => s_even = s_even.or(&v_expr)?,
-    //             Owner::Odd => s_odd = s_odd.or(&v_expr)?,
-    //         }
-    //     }
-    //
-    //     tracing::debug!("Starting E_move construction");
-    //
-    //     let mut e_move = base_false.clone();
-    //     let iff_register_condition = variables
-    //         .register_vars()
-    //         .iter()
-    //         .zip(edge_variables.register_vars())
-    //         .fold(base_true.clone(), |acc, (r, r_next)| {
-    //             acc.and(&r.equiv(r_next).unwrap()).unwrap()
-    //         });
-    //
-    //     for edge in explicit.graph_edges() {
-    //         let (source, target) = (
-    //             var_encoder
-    //                 .encode(edge.source().index())?
-    //                 .and(&variables.next_move_var())?,
-    //             e_var_encoder
-    //                 .encode(edge.target().index())?
-    //                 .diff(&edge_variables.next_move_var())?,
-    //         );
-    //         e_move = e_move.or(&source.and(&target)?.and(&iff_register_condition)?)?;
-    //     }
-    //
-    //     tracing::debug!("Starting E_i construction");
-    //     let n_priorities = if controller == Owner::Even { k + 1 } else { k + 2 };
-    //     let mut priorities = (0..=2 * n_priorities)
-    //         .into_iter()
-    //         .map(|val| (val, base_false.clone()))
-    //         .collect::<ahash::HashMap<_, _>>();
-    //     // All E_move edges get a priority of `0` by default.
-    //     let _ = priorities
-    //         .entry(0)
-    //         .and_modify(|pri| *pri = variables.next_move_var().not().unwrap());
-    //
-    //     let mut e_i_edges = vec![base_false.clone(); k + 1];
-    //
-    //     for i in 0..=k {
-    //         let e_i = &mut e_i_edges[i];
-    //         // From t=0 -> t=1
-    //         let base_edge = edge_variables.next_move_var().diff(&variables.next_move_var())?;
-    //
-    //         for (v_idx, vertex) in explicit.vertices_and_index() {}
-    //     }
-    //
-    //     let conj_v = variables.conjugated(&base_true)?;
-    //     let conj_e = edge_variables.conjugated(&base_true)?;
-    //
-    //     Ok(Self {
-    //         manager,
-    //         variables,
-    //         variables_edges: edge_variables,
-    //         conjugated_variables: conj_v,
-    //         conjugated_v_edges: conj_e,
-    //         v_even: s_even,
-    //         v_odd: s_odd,
-    //         e_move,
-    //         base_true,
-    //         base_false,
-    //     })
-    // }
-
     /// Construct a new symbolic register game straight from an explicit parity game.
     ///
     /// See [crate::register_game::RegisterGame::construct]
@@ -219,14 +95,14 @@ impl SymbolicRegisterGame<BDD>
         tracing::debug!("Starting player vertex set construction");
 
         let (s_even, s_odd) = match controller {
-            Owner::Even => (
-                sg.vertices_even.clone(),
-                sg.vertices_odd.and(variables.next_move_var())?,
-            ),
-            Owner::Odd => (
-                sg.vertices_even.and(variables.next_move_var())?,
-                sg.vertices_odd.clone(),
-            ),
+            Owner::Even => {
+                let odd = sg.vertices_odd.and(variables.next_move_var())?;
+                (sg.vertices.diff(&odd)?, odd)
+            }
+            Owner::Odd => {
+                let even = sg.vertices_even.and(variables.next_move_var())?;
+                (even, sg.vertices.diff(&even)?)
+            }
         };
 
         tracing::debug!("Creating priority BDDs");
@@ -342,14 +218,42 @@ impl SymbolicRegisterGame<BDD>
             variables_edges: edge_variables,
             conjugated_variables: conj_v,
             conjugated_v_edges: conj_e,
+            vertices: s_even.or(&s_odd)?,
             v_even: s_even,
             v_odd: s_odd,
+            edges: e_move.or(&e_i_edges
+                .iter()
+                .fold(base_false.clone(), |acc, bdd| acc.or(bdd).unwrap()))?,
             e_move,
             e_i: e_i_edges,
             priorities,
             base_true,
             base_false,
         })
+    }
+
+    pub fn to_symbolic_parity_game(&self) -> SymbolicParityGame {
+        SymbolicParityGame {
+            pg_vertex_count: self.vertices.sat_quick_count(self.variables.all_variables.len() as u32) as usize,
+            manager: self.manager.clone(),
+            variables: self.variables.all_variables.clone(),
+            variables_edges: self.variables_edges.all_variables.clone(),
+            conjugated_variables: self.conjugated_variables.clone(),
+            conjugated_v_edges: self.conjugated_v_edges.clone(),
+            vertices: self.vertices.clone(),
+            vertices_even: self.v_even.clone(),
+            vertices_odd: self.v_odd.clone(),
+            priorities: self.priorities.clone(),
+            edges: self
+                .e_move
+                .or(&self
+                    .e_i
+                    .iter()
+                    .fold(self.base_false.clone(), |acc, bdd| acc.or(bdd).unwrap()))
+                .unwrap(),
+            base_true: self.base_true.clone(),
+            base_false: self.base_false.clone(),
+        }
     }
 
     pub fn gc(&self) -> usize {
@@ -436,6 +340,7 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use oxidd_core::{
         function::{BooleanFunction, BooleanFunctionQuant},
         Manager, ManagerRef,
@@ -444,11 +349,18 @@ mod tests {
     use pg_parser::parse_pg;
 
     use crate::{
+        explicit,
         explicit::ParityGame,
         Owner,
-        symbolic::{BDD, helpers::CachedSymbolicEncoder, register_game::SymbolicRegisterGame},
-        tests::example_dir,
-        visualize::DotWriter,
+        Priority,
+        symbolic::{
+            BDD,
+            helpers::{CachedSymbolicEncoder, MultiEncoder},
+            oxidd_extensions::BddExtensions,
+            register_game::SymbolicRegisterGame,
+            solvers::symbolic_zielonka::SymbolicZielonkaSolver,
+        },
+        tests::example_dir, visualize::DotWriter,
     };
 
     #[tracing_test::traced_test]
@@ -466,29 +378,48 @@ mod tests {
     #[tracing_test::traced_test]
     #[test]
     pub fn test_small() {
-        let game = small_pg().unwrap();
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
-        s_pg.manager.with_manager_exclusive(|man| man.gc());
-        // let vert = CachedSymbolicEncoder::encode_impl(&s_pg.variables.vertex_vars(), 0usize).unwrap();
-        // let next_move = vert.and(&s_pg.variables.next_move_var()).unwrap();
-        // let register_contents = CachedSymbolicEncoder::encode_impl(&s_pg.variables.register_vars(), 3usize).unwrap();
-        // let full_vert = next_move.and(&register_contents).unwrap();
-        //
-        // let total_next_v = s_pg
-        //     .e_move
-        //     .and(&full_vert)
-        //     .unwrap()
-        //     .exist(&s_pg.conjugated_variables)
-        //     .unwrap();
-        // let real = s_pg.rev_edge_substitute(&total_next_v).unwrap();
-        // s_pg.manager.with_manager_exclusive(|man| man.gc());
+        let game = trivial_pg_2().unwrap();
+        let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
+        println!("Expected: {normal_sol:#?}");
 
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
+        s_pg.manager.with_manager_exclusive(|man| man.gc());
+
+        let spg = s_pg.to_symbolic_parity_game();
+        spg.gc();
+
+        let mut solver = SymbolicZielonkaSolver::new(&spg);
+
+        let (w_even, w_odd) = solver.run_symbolic();
+        let mut perm_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
+            &s_pg.manager,
+            &s_pg.variables.register_vars().into_iter().cloned().chunks(2),
+        );
+        let zero_registers = perm_encoder.encode_many([0]).unwrap();
+        let won_projected = w_even
+            .and(&zero_registers)
+            .unwrap()
+            .and(&s_pg.variables.next_move_var().not().unwrap())
+            .unwrap();
+        // println!("WON: {:#?}", spg.vertices_of_bdd(&won_projected));
+        s_pg.manager.with_manager_shared(|man| {
+            let valuations = won_projected.sat_assignments(man).collect_vec();
+            println!("VALUES: {valuations:#?}");
+            // crate::symbolic::helpers::decode_assignments(valuations, self.variables.len())
+        });
+        s_pg.gc();
+
+        std::fs::write(
+            "out.dot",
+            DotWriter::write_dot_symbolic_register(&s_pg, [(&won_projected, "won_projected_even".to_string())])
+                .unwrap(),
+        )
+        .unwrap();
         // std::fs::write(
         //     "out.dot",
-        //     DotWriter::write_dot_symbolic_register(&s_pg, [(&real, "Next V".to_string())]).unwrap(),
+        //     DotWriter::write_dot_symbolic(&spg, []).unwrap(),
         // )
         // .unwrap();
-        std::fs::write("out.dot", DotWriter::write_dot_symbolic_register(&s_pg, []).unwrap()).unwrap();
     }
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -496,6 +427,21 @@ mod tests {
 0 1 1 0,1 "0";
 1 1 0 2 "1";
 2 2 0 2 "2";"#;
+        let pg = pg_parser::parse_pg(&mut pg).unwrap();
+        ParityGame::new(pg)
+    }
+
+    fn other_pg() -> eyre::Result<ParityGame> {
+        let mut pg = r#"parity 1;
+0 1 1 0 "0";"#;
+        let pg = pg_parser::parse_pg(&mut pg).unwrap();
+        ParityGame::new(pg)
+    }
+
+    fn trivial_pg_2() -> eyre::Result<ParityGame> {
+        let mut pg = r#"parity 2;
+0 0 0 0,1 "0";
+1 1 1 1 "1";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }

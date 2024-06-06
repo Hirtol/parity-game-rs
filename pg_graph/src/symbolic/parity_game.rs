@@ -37,7 +37,7 @@ pub struct SymbolicParityGame {
     pub vertices: BDD,
     pub vertices_even: BDD,
     pub vertices_odd: BDD,
-    pub priorities: HashMap<Priority, BDD>,
+    pub priorities: ahash::HashMap<Priority, BDD>,
 
     pub edges: BDD,
 
@@ -99,7 +99,7 @@ impl SymbolicParityGame {
         let mut s_priorities = explicit
             .priorities_unique()
             .map(|p| (p, base_false.clone()))
-            .collect::<HashMap<_, _>>();
+            .collect::<ahash::HashMap<_, _>>();
         let mut s_even = base_false.clone();
         let mut s_odd = base_false.clone();
 

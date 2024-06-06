@@ -28,6 +28,7 @@ impl<'a> SymbolicZielonkaSolver<'a> {
         let even = self.game.vertices_of_bdd(&even);
 
         let mut winners = vec![Owner::Odd; self.game.vertex_count()];
+
         for idx in even {
             winners[idx.index()] = Owner::Even;
         }
@@ -36,6 +37,12 @@ impl<'a> SymbolicZielonkaSolver<'a> {
             winners,
             strategy: None,
         }
+    }
+
+    /// Run the symbolic solver algorithm and return (W_even, W_odd) (the winning regions of even and odd respectively).
+    #[tracing::instrument(name = "Run Symbolic Zielonka", skip(self))]
+    pub fn run_symbolic(&mut self) -> (BDD, BDD) {
+        self.zielonka(self.game).expect("Failed to compute solution")
     }
 
     fn zielonka(&mut self, game: &SymbolicParityGame) -> symbolic::Result<(BDD, BDD)> {

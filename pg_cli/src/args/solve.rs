@@ -58,11 +58,7 @@ impl SolveCommand {
     pub fn run(self) -> eyre::Result<()> {
         let parity_game = crate::utils::load_parity_game(&self.game_path)?;
         let register_game = if let Some(k) = self.register_game_k {
-            let k = if k == 0 {
-                RegisterGame::max_register_index(&parity_game)
-            } else {
-                k as u8
-            };
+            let k = k as u8;
 
             tracing::debug!(k, "Constructing with register index");
             let register_game = timed_solve!(
