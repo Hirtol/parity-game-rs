@@ -4,7 +4,7 @@ use oxidd_core::{
     util::{AllocResult, SatCountCache},
 };
 
-use crate::symbolic::helpers::truth_assignments::TruthAssignmentsIterator;
+use crate::symbolic::sat::TruthAssignmentsIterator;
 
 pub trait BddExtensions: Function {
     /// Returns an [Iterator] which results in all possible satisfying assignments of the variables.

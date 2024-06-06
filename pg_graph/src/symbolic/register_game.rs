@@ -101,7 +101,8 @@ impl SymbolicRegisterGame<BDD>
             }
             Owner::Odd => {
                 let even = sg.vertices_even.and(variables.next_move_var())?;
-                (even, sg.vertices.diff(&even)?)
+                let odd = sg.vertices.diff(&even)?;
+                (even, odd)
             }
         };
 

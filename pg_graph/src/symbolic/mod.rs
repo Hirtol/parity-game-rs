@@ -7,6 +7,7 @@ pub mod helpers;
 pub mod oxidd_extensions;
 pub mod parity_game;
 pub mod register_game;
+pub mod sat;
 pub mod solvers;
 
 pub type BDD = BDDFunction;

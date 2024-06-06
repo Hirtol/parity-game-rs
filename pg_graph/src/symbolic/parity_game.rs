@@ -179,7 +179,7 @@ impl SymbolicParityGame {
     pub fn vertices_of_bdd(&self, bdd: &BDD) -> Vec<VertexId> {
         self.manager.with_manager_shared(|man| {
             let valuations = bdd.sat_assignments(man);
-            crate::symbolic::helpers::decode_assignments(valuations, self.variables.len())
+            crate::symbolic::sat::decode_assignments(valuations, self.variables.len())
         })
     }
 
