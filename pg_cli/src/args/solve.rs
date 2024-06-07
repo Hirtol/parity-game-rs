@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use pg_graph::{
     explicit::{ParityGraph, register_game::RegisterGame},
     Owner,
-    visualize::MermaidWriter,
+    visualize::{DotWriter, MermaidWriter},
 };
 
 #[derive(clap::Args, Debug)]
@@ -16,10 +16,10 @@ pub struct SolveCommand {
     /// Whether to print which vertices are won by which player.
     #[clap(short)]
     print_solution: bool,
-    /// Export the solution to a Mermaid.js graph where the vertices are coloured according to their winner
+    /// Export the solution to a GraphViz graph where the vertices are coloured according to their winner
     /// Green = Even, Red = Odd
-    #[clap(short = 'm')]
-    solution_mermaid: Option<PathBuf>,
+    #[clap(short = 'd')]
+    solution_dot: Option<PathBuf>,
     /// Whether to first convert the given game into an explicit expanded `k`-register game.
     ///
     /// Creates a `k`-register-index game, upper bound for valid results is `1 + log(n)`
@@ -71,9 +71,9 @@ impl SolveCommand {
             None
         };
 
-        let mermaid_output = self
-            .solution_mermaid
-            .map(|out| (out, MermaidWriter::write_mermaid(&parity_game).unwrap()));
+        let dot_output = self
+            .solution_dot
+            .map(|out| (out, DotWriter::write_dot(&parity_game).unwrap()));
         let solver = self.solver.unwrap_or(Solver::Spm);
         tracing::info!(?solver, "Using solver");
 
@@ -132,17 +132,19 @@ impl SolveCommand {
             tracing::info!("Solution: {:?}", solution);
         }
 
-        if let Some((out_path, mut mermaid)) = mermaid_output {
+        if let Some((out_path, mut dot)) = dot_output {
             use std::fmt::Write;
+            let mut new_dot = dot.strip_suffix("}").unwrap().to_string();
             for (v_id, winner) in solution.iter().enumerate() {
                 let fill = match winner {
                     Owner::Even => "#013220",
                     Owner::Odd => "#b10000",
                 };
-                writeln!(&mut mermaid, "style {v_id} fill:{fill}")?;
+                writeln!(&mut new_dot, "{v_id} [fillcolor = \"{fill}\"]")?;
             }
+            write!(&mut new_dot, "}}")?;
 
-            std::fs::write(out_path, mermaid)?;
+            std::fs::write(out_path, new_dot)?;
         }
 
         Ok(())

@@ -7,8 +7,8 @@ use crate::{
         register_game::{ChosenAction, RegisterGame},
         VertexId,
     },
-    Owner,
     symbolic::BDD,
+    Owner,
 };
 
 /// An abstraction to allow for generic writing of the underlying graphs.
@@ -57,7 +57,7 @@ impl DotWriter {
             writeln!(&mut output, ">]")?;
         }
 
-        writeln!(&mut output, "}}")?;
+        write!(&mut output, "}}")?;
 
         Ok(output)
     }
