@@ -1,6 +1,6 @@
 use std::{collections::HashMap, marker::PhantomData};
 
-use ecow::EcoVec;
+use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
@@ -18,7 +18,7 @@ use crate::{
     symbolic, symbolic::{
         BDD,
         helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension}, SymbolicParityGame,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
     },
 };
 
@@ -57,10 +57,14 @@ impl SymbolicRegisterGame<BDD>
     pub fn from_symbolic(explicit: &ParityGame, k: Rank, controller: Owner) -> symbolic::Result<Self> {
         let k = k as usize;
         let num_registers = k + 1;
+
+        let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
+        let max_reg_priority = 2 * k + extra_priorities;
         let register_bits_needed = (explicit.priority_max() as f64 + 1.).log2().ceil() as usize;
         // Calculate the amount of variables we'll need for the binary encodings of the registers and vertices.
         let n_register_vars = register_bits_needed * num_registers;
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
+        let n_prio_vars = (max_reg_priority as f64 + 1.).log2().ceil() as usize;
 
         let manager = F::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
 
@@ -69,22 +73,34 @@ impl SymbolicRegisterGame<BDD>
         let base_false = manager.with_manager_exclusive(|man| F::f(man));
 
         let (variables, edge_variables) = manager.with_manager_exclusive(|man| {
-            let next_move = F::new_var(man)?;
-            let next_move_edge = F::new_var(man)?;
+            let next_move = F::new_var_layer_idx(man)?;
+            let next_move_edge = F::new_var_layer_idx(man)?;
 
-            let registers = (0..n_register_vars).flat_map(|_| F::new_var(man)).collect_vec();
-            let next_registers = (0..n_register_vars).flat_map(|_| F::new_var(man)).collect_vec();
+            let registers = (0..n_register_vars)
+                .flat_map(|_| F::new_var_layer_idx(man))
+                .collect_vec();
+            let registers_edge = (0..n_register_vars)
+                .flat_map(|_| F::new_var_layer_idx(man))
+                .collect_vec();
+
+            let vertex_vars = (0..n_variables).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+            let vertex_vars_edge = (0..n_variables).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+
+            let prio_vars = (0..n_prio_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+            let prio_vars_edge = (0..n_prio_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
             Ok::<_, symbolic::BddError>((
                 RegisterVertexVars::new(
                     next_move,
                     registers.into_iter(),
-                    (0..n_variables).flat_map(|_| F::new_var(man)),
+                    prio_vars.into_iter(),
+                    vertex_vars.into_iter(),
                 ),
                 RegisterVertexVars::new(
                     next_move_edge,
-                    next_registers.into_iter(),
-                    (0..n_variables).flat_map(|_| F::new_var(man)),
+                    registers_edge.into_iter(),
+                    prio_vars_edge.into_iter(),
+                    vertex_vars_edge.into_iter(),
                 ),
             ))
         })?;
@@ -160,10 +176,14 @@ impl SymbolicRegisterGame<BDD>
                 .chunks(register_bits_needed),
         );
 
+        let mut prio_encoder =
+            CachedSymbolicEncoder::new(&manager, variables.priority_vars().into_iter().cloned().collect());
+        let mut prio_edge_encoder =
+            CachedSymbolicEncoder::new(&manager, variables.priority_vars().into_iter().cloned().collect());
+
         // Calculate all possible next register sets based on a current set of registers and priorities.
         // This will be vastly more efficient than constructing the full register game following the explicit naive algorithm.
         // However, should a game with `n` vertices and `n` priorities be used, this approach will likely take... forever...
-        // let unique_register_contents = sg.priorities.keys().copied().permutations(num_registers);
         let unique_register_contents =
             itertools::repeat_n(sg.priorities.keys().copied(), num_registers).multi_cartesian_product();
 
@@ -185,14 +205,17 @@ impl SymbolicRegisterGame<BDD>
                     explicit::register_game::next_registers_2021(&mut next_registers, priority, num_registers, i);
 
                     let next_encoding = next_encoder.encode_many(&next_registers)?;
-                    let all_vertices = starting_vertices.and(&next_encoding)?;
+                    let next_with_priority = next_encoding.and(prio_edge_encoder.encode(rg_priority)?)?;
+                    let all_vertices = starting_vertices.and(&next_with_priority)?;
 
                     let e_i = &mut e_i_edges[i];
                     *e_i = e_i.or(&all_vertices)?;
 
                     // Update the priority set as well
                     let next_base_encoding = perm_encoder.encode_many(&next_registers)?;
-                    let vertices_with_priority = prio_bdd.and(&next_base_encoding)?.and(variables.next_move_var())?;
+                    let next_base_with_priority = next_base_encoding.and(prio_encoder.encode(rg_priority)?)?;
+                    let vertices_with_priority =
+                        prio_bdd.and(&next_base_with_priority)?.and(variables.next_move_var())?;
                     priorities
                         .entry(rg_priority)
                         .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
@@ -295,22 +318,58 @@ impl SymbolicRegisterGame<BDD>
 
 pub struct RegisterVertexVars<F: Function> {
     pub all_variables: EcoVec<F>,
+    pub manager_layer_indices: ahash::HashMap<RegisterLayers, EcoVec<usize>>,
     n_register_vars: usize,
+    n_priority_vars: usize,
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Hash, Eq)]
+pub enum RegisterLayers {
+    NextMove,
+    Registers,
+    Vertex,
+    Priority,
 }
 
 impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
     pub fn new(
-        next_move: F,
-        register_vars: impl ExactSizeIterator<Item = F>,
-        vertex_vars: impl Iterator<Item = F>,
+        next_move: FunctionVarRef<F>,
+        register_vars: impl ExactSizeIterator<Item = FunctionVarRef<F>>,
+        priority_vars: impl ExactSizeIterator<Item = FunctionVarRef<F>>,
+        vertex_vars: impl Iterator<Item = FunctionVarRef<F>>,
     ) -> Self {
+        let mut manager_indices =
+            ahash::HashMap::from_iter([(RegisterLayers::NextMove, eco_vec![next_move.idx as usize])]);
+        let mut all_variables = eco_vec![next_move.func];
+
+        let n_register_vars = register_vars.len();
+        let n_priority_vars = priority_vars.len();
+
+        macro_rules! distribute {
+            ($($itr:expr => $key:expr),*) => {
+                $(
+                    let mut entry = manager_indices.entry($key).or_insert_with(EcoVec::new);
+                    for var_ref in $itr {
+                        entry.push(var_ref.idx as usize);
+                        all_variables.push(var_ref.func);
+                    }
+                )*
+            };
+        }
+
+        distribute!(
+            register_vars => RegisterLayers::Registers,
+            vertex_vars => RegisterLayers::Vertex,
+            priority_vars => RegisterLayers::Priority
+        );
+
+        println!("Priority Indices: {:?}", manager_indices);
+
         Self {
-            n_register_vars: register_vars.len(),
-            all_variables: [next_move]
-                .into_iter()
-                .chain(register_vars)
-                .chain(vertex_vars)
-                .collect(),
+            n_register_vars,
+            n_priority_vars,
+            all_variables,
+            manager_layer_indices: manager_indices,
         }
     }
 
@@ -326,7 +385,18 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
 
     #[inline(always)]
     pub fn vertex_vars(&self) -> &[F] {
-        &self.all_variables[self.n_register_vars + 1..]
+        let start = self.n_register_vars + 1;
+        let end = self.all_variables.len() - self.n_priority_vars;
+        &self.all_variables[start..end]
+    }
+
+    #[inline(always)]
+    pub fn priority_vars(&self) -> &[F] {
+        &self.all_variables[self.all_variables.len() - self.n_priority_vars..]
+    }
+
+    pub fn var_indices(&self, group: RegisterLayers) -> &EcoVec<usize> {
+        self.manager_layer_indices.get(&group).expect("Impossible")
     }
 
     fn conjugated(&self, base_true: &F) -> AllocResult<F> {
@@ -350,6 +420,12 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
                     .iter()
                     .enumerate()
                     .map(move |(i, r)| (r, format!("x{i}{suffix}"))),
+            )
+            .chain(
+                self.priority_vars()
+                    .iter()
+                    .enumerate()
+                    .map(move |(i, r)| (r, format!("p{i}{suffix}"))),
             )
     }
 }

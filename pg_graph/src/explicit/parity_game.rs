@@ -115,7 +115,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
 pub struct ParityGame<Ix: IndexType = u32> {
     pub graph: petgraph::Graph<Vertex, (), petgraph::Directed, Ix>,
     inverted_vertices: Vec<Vec<VertexId<Ix>>>,
-    labels: Vec<Option<String>>,
+    pub(crate) labels: Vec<Option<String>>,
 }
 
 impl<Ix: IndexType> ParityGame<Ix> {

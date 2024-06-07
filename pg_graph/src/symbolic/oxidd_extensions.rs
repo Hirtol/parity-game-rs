@@ -1,10 +1,16 @@
 use oxidd::{bcdd::BCDDFunction, bdd::BDDFunction, zbdd::ZBDDFunction};
 use oxidd_core::{
     function::{BooleanFunction, Function},
+    Manager,
     util::{AllocResult, SatCountCache},
 };
 
 use crate::symbolic::sat::TruthAssignmentsIterator;
+
+pub struct FunctionVarRef<F> {
+    pub func: F,
+    pub idx: u32,
+}
 
 pub trait BddExtensions: Function {
     /// Returns an [Iterator] which results in all possible satisfying assignments of the variables.
@@ -19,6 +25,14 @@ pub trait BooleanFunctionExtensions: BooleanFunction {
     fn diff(&self, rhs: &Self) -> AllocResult<Self> {
         // `imp_strict` <=> !rhs & self <=> self & !rhs
         rhs.imp_strict(self)
+    }
+
+    /// Create a new variable and record the index of the new level in the manager.
+    fn new_var_layer_idx(man: &mut Self::Manager<'_>) -> AllocResult<FunctionVarRef<Self>> {
+        Ok(FunctionVarRef {
+            func: Self::new_var(man)?,
+            idx: man.num_levels() - 1,
+        })
     }
 }
 

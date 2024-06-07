@@ -1,5 +1,6 @@
+use ahash::{HashSet, HashSetExt};
 use itertools::Itertools;
-use oxidd_core::{function::BooleanFunction, ManagerRef};
+use oxidd_core::{function::BooleanFunction, Manager, ManagerRef};
 
 use crate::{
     explicit::ParityGame,
@@ -17,27 +18,20 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
     let mut reg_v_index = ahash::HashMap::default();
     let mut edges = ahash::HashMap::default();
 
-    let (r_vertex_window, r_next_vertex_window) = {
-        // t
-        let mut r_vertex_window = vec![0];
-        // r
-        let mut n_reg_range = 2..2 + n_reg_vars;
-        r_vertex_window.extend(n_reg_range);
-        // x
-        let n_vertex_vars = symb.variables.vertex_vars().len();
-        let max_reg_var_index = 2 + 2 * n_reg_vars;
-        let n_vertex_range = max_reg_var_index..max_reg_var_index + n_vertex_vars;
-        r_vertex_window.extend(n_vertex_range);
-        // t'
-        let mut r_vertex_next_window = vec![1];
-        // r'
-        let mut n_next_reg_range = 2 + n_reg_vars..2 + 2 * n_reg_vars;
-        r_vertex_next_window.extend(n_next_reg_range);
-        // x'
-        let n_next_vertex_range = max_reg_var_index + n_vertex_vars..max_reg_var_index + n_vertex_vars * 2;
-        r_vertex_next_window.extend(n_next_vertex_range);
-        (r_vertex_window, r_vertex_next_window)
-    };
+    let (r_vertex_window, r_next_vertex_window) = (
+        symb.variables
+            .manager_layer_indices
+            .values()
+            .flatten()
+            .copied()
+            .collect_vec(),
+        symb.variables_edges
+            .manager_layer_indices
+            .values()
+            .flatten()
+            .copied()
+            .collect_vec(),
+    );
 
     symb.manager
         .with_manager_shared(|man| {
@@ -72,7 +66,7 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
 
                         tracing::debug!("Vertex: ({vertex}, {owner:?}, {priority}) has edges: {targets:?}");
 
-                        let edge = edges.entry(vertex).or_insert_with(Vec::new);
+                        let edge = edges.entry(vertex).or_insert_with(HashSet::new);
                         edge.extend(targets);
                     }
                 }
@@ -82,10 +76,15 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
         })
         .unwrap();
 
+    pg.labels = vec![None; reg_v_index.keys().len()];
     for (v_idx, edges) in edges {
         let start_idx = reg_v_index.get(&v_idx).unwrap();
+        pg.labels[start_idx.index()] = v_idx.to_string().into();
         for target in edges {
-            let target_idx = reg_v_index.get(&target).unwrap();
+            let Some(target_idx) = reg_v_index.get(&target) else {
+                tracing::warn!("Missing edge target in reg_v_index: {target}");
+                continue;
+            };
             pg.graph.add_edge(*start_idx, *target_idx, ());
         }
     }
@@ -112,7 +111,7 @@ mod tests {
             BDD,
             helpers::{CachedSymbolicEncoder, MultiEncoder},
             oxidd_extensions::BddExtensions,
-            register_game::{SymbolicRegisterGame, test_helpers},
+            register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
         tests::example_dir, visualize::DotWriter,
@@ -141,7 +140,6 @@ mod tests {
         s_pg.manager.with_manager_exclusive(|man| man.gc());
 
         let spg = s_pg.to_symbolic_parity_game();
-        spg.gc();
 
         let mut solver = SymbolicZielonkaSolver::new(&spg);
 
@@ -150,9 +148,14 @@ mod tests {
             &s_pg.manager,
             &s_pg.variables.register_vars().into_iter().cloned().chunks(2),
         );
+
         let zero_registers = perm_encoder.encode_many([0]).unwrap();
-        let won_projected = w_even
+        let zero_prio = CachedSymbolicEncoder::encode_impl(s_pg.variables.priority_vars(), 0u32).unwrap();
+
+        let won_projected = w_odd
             .and(&zero_registers)
+            .unwrap()
+            .and(&zero_prio)
             .unwrap()
             .and(&s_pg.variables.next_move_var().not().unwrap())
             .unwrap();
@@ -160,7 +163,11 @@ mod tests {
         s_pg.manager.with_manager_shared(|man| {
             let valuations = won_projected.sat_assignments(man).collect_vec();
             println!("VALUES: {valuations:#?}");
-            let l = crate::symbolic::sat::decode_split_assignments(valuations, &[&[4]]);
+            
+            let l = crate::symbolic::sat::decode_split_assignments(
+                valuations,
+                &[s_pg.variables.var_indices(RegisterLayers::Vertex).as_slice()],
+            );
             println!("VALUES: {l:#?}");
             // crate::symbolic::helpers::decode_assignments(valuations, self.variables.len())
         });
@@ -168,18 +175,15 @@ mod tests {
 
         std::fs::write(
             "out.dot",
-            DotWriter::write_dot_symbolic_register(&s_pg, [(&won_projected, "won_projected_even".to_string())])
-                .unwrap(),
+            DotWriter::write_dot_symbolic_register(&s_pg, [(&won_projected, "won_projected_odd".to_string())]).unwrap(),
         )
         .unwrap();
 
         let converted_to_pg = test_helpers::symbolic_to_explicit_alt(&s_pg);
         std::fs::write("converted.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
-        // std::fs::write(
-        //     "out.dot",
-        //     DotWriter::write_dot_symbolic(&spg, []).unwrap(),
-        // )
-        // .unwrap();
+
+        // spg.gc();
+        // std::fs::write("out.dot", DotWriter::write_dot_symbolic(&spg, []).unwrap()).unwrap();
     }
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -201,7 +205,7 @@ mod tests {
     fn trivial_pg_2() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 2;
 0 0 0 0,1 "0";
-1 1 1 1,0 "1";"#;
+1 1 1 1 "1";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }
