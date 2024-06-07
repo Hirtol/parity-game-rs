@@ -127,11 +127,15 @@ impl SymbolicRegisterGame<BDD>
         };
 
         tracing::debug!("Creating priority BDDs");
-        let extr_priorities = if controller == Owner::Even { 1 } else { 2 };
-        let mut priorities: ahash::HashMap<_, _> = (0..=2 * k + extr_priorities)
+        let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
+        let mut priorities: ahash::HashMap<_, _> = (0..=2 * k + extra_priorities)
             .into_iter()
             .map(|val| (val as Priority, base_false.clone()))
             .collect();
+        let mut prio_encoder =
+            CachedSymbolicEncoder::new(&manager, variables.priority_vars().into_iter().cloned().collect());
+        let mut prio_edge_encoder =
+            CachedSymbolicEncoder::new(&manager, edge_variables.priority_vars().into_iter().cloned().collect());
 
         tracing::debug!("Starting E_move construction");
 
@@ -144,17 +148,25 @@ impl SymbolicRegisterGame<BDD>
                 acc.and(&r.equiv(r_next).unwrap()).unwrap()
             });
 
-        // t = 1 && t' = 0 && (r0 <-> r0')
+        // t = 1 && t' = 0 && (r0 <-> r0') && (p' = 0)
+        let edge_priority_zero = prio_edge_encoder.encode(0)?;
         let mut e_move = sg
             .edges
             .and(variables.next_move_var())?
             .diff(edge_variables.next_move_var())?
-            .and(&iff_register_condition)?;
+            .and(&iff_register_condition)?
+            .and(edge_priority_zero)?;
 
         // All E_move edges get a priority of `0` by default.
-        let _ = priorities
-            .entry(0)
-            .and_modify(|pri| *pri = variables.next_move_var().not().unwrap());
+        let priority_zero = prio_encoder.encode(0)?;
+        let _ = priorities.entry(0).and_modify(|pri| {
+            *pri = sg
+                .vertices
+                .and(&priority_zero)
+                .unwrap()
+                .and(&variables.next_move_var().not().unwrap())
+                .unwrap()
+        });
 
         tracing::debug!("Starting E_i construction");
 
@@ -175,11 +187,6 @@ impl SymbolicRegisterGame<BDD>
                 .cloned()
                 .chunks(register_bits_needed),
         );
-
-        let mut prio_encoder =
-            CachedSymbolicEncoder::new(&manager, variables.priority_vars().into_iter().cloned().collect());
-        let mut prio_edge_encoder =
-            CachedSymbolicEncoder::new(&manager, variables.priority_vars().into_iter().cloned().collect());
 
         // Calculate all possible next register sets based on a current set of registers and priorities.
         // This will be vastly more efficient than constructing the full register game following the explicit naive algorithm.
@@ -362,8 +369,6 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
             vertex_vars => RegisterLayers::Vertex,
             priority_vars => RegisterLayers::Priority
         );
-
-        println!("Priority Indices: {:?}", manager_indices);
 
         Self {
             n_register_vars,

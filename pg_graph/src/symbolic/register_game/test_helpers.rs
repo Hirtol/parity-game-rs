@@ -14,7 +14,6 @@ use crate::{
 
 pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityGame {
     let mut pg = ParityGame::empty();
-    let n_reg_vars = symb.variables.n_register_vars;
     let mut reg_v_index = ahash::HashMap::default();
     let mut edges = ahash::HashMap::default();
 
@@ -24,12 +23,14 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
             .values()
             .flatten()
             .copied()
+            .sorted()
             .collect_vec(),
         symb.variables_edges
             .manager_layer_indices
             .values()
             .flatten()
             .copied()
+            .sorted()
             .collect_vec(),
     );
 
@@ -115,7 +116,7 @@ mod tests {
             register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
-        tests::example_dir, visualize::DotWriter,
+        tests::example_dir, visualize::{DotWriter, VisualRegisterGame},
     };
 
     #[tracing_test::traced_test]
@@ -132,16 +133,39 @@ mod tests {
 
     #[tracing_test::traced_test]
     #[test]
-    pub fn test_small() -> symbolic::Result<()> {
+    pub fn test_convert_symb_to_pg() -> symbolic::Result<()> {
         // let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
         // let pg = parse_pg(&mut input.as_str()).unwrap();
         // let game = ParityGame::new(pg).unwrap();
 
-        let game = small_pg().unwrap();
+        let game = trivial_pg_2().unwrap();
+        let register_index = 0;
+        let controller = Owner::Even;
+
+        let rg = explicit::register_game::RegisterGame::construct_2021(&game, register_index, controller);
+        let explicit_rg = DotWriter::write_dot(&VisualRegisterGame(&rg)).unwrap();
+        std::fs::write("explicit_rg.dot", &explicit_rg).unwrap();
+
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, register_index, controller)?;
+        s_pg.gc();
+
+        let converted_to_pg = test_helpers::symbolic_to_explicit_alt(&s_pg);
+        std::fs::write("converted_rg.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
+        Ok(())
+    }
+
+    #[tracing_test::traced_test]
+    #[test]
+    pub fn test_small() -> symbolic::Result<()> {
+        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
+        let pg = parse_pg(&mut input.as_str()).unwrap();
+        let game = ParityGame::new(pg).unwrap();
+
+        // let game = small_pg().unwrap();
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
         println!("Expected: {normal_sol:#?}");
 
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even)?;
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even)?;
         s_pg.manager.with_manager_exclusive(|man| man.gc());
 
         let spg = s_pg.to_symbolic_parity_game();
@@ -154,7 +178,7 @@ mod tests {
             &s_pg.variables.register_vars().into_iter().cloned().chunks(2),
         );
 
-        let zero_registers = perm_encoder.encode_many([0]).unwrap();
+        let zero_registers = perm_encoder.encode_many([0, 0]).unwrap();
         let zero_prio = CachedSymbolicEncoder::encode_impl(s_pg.variables.priority_vars(), 0u32).unwrap();
 
         let projector_func = zero_registers
@@ -174,7 +198,7 @@ mod tests {
                 .pop()
                 .unwrap();
 
-                tracing::info!(winner, "Winning: {projected_win:?}");
+                tracing::info!(winner, "Winning: {:?}", projected_win);
             }
         });
         s_pg.gc();
@@ -201,10 +225,20 @@ mod tests {
     }
 
     fn small_pg() -> eyre::Result<ParityGame> {
+        //TODO: The below game doesn't get a correct solution, even though it's very similar (discontinuous priority problem?)
+        //        let mut pg = r#"parity 3;
+        // 0 1 1 0,1 "0";
+        // 1 1 0 2 "1";
+        // 2 2 0 2 "2";"#;
+        // This one has the problem that the solution should be [Odd, Even, Even], but it thinks [Odd, Odd, Even]
+        //         let mut pg = r#"parity 3;
+        // 0 1 1 0,1 "0";
+        // 1 1 0 2 "1";
+        // 2 0 0 2 "2";"#;
         let mut pg = r#"parity 3;
-0 1 1 0,1 "0";
-1 1 0 2 "1";
-2 2 0 2 "2";"#;
+0 0 0 0,1 "0";
+1 0 1 2 "1";
+2 1 1 2 "2";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }
