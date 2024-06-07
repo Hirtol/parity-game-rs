@@ -107,6 +107,7 @@ mod tests {
         explicit::ParityGame,
         Owner,
         Priority,
+        symbolic,
         symbolic::{
             BDD,
             helpers::{CachedSymbolicEncoder, MultiEncoder},
@@ -131,12 +132,16 @@ mod tests {
 
     #[tracing_test::traced_test]
     #[test]
-    pub fn test_small() {
-        let game = trivial_pg_2().unwrap();
+    pub fn test_small() -> symbolic::Result<()> {
+        // let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
+        // let pg = parse_pg(&mut input.as_str()).unwrap();
+        // let game = ParityGame::new(pg).unwrap();
+
+        let game = small_pg().unwrap();
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
         println!("Expected: {normal_sol:#?}");
 
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even)?;
         s_pg.manager.with_manager_exclusive(|man| man.gc());
 
         let spg = s_pg.to_symbolic_parity_game();
@@ -152,38 +157,47 @@ mod tests {
         let zero_registers = perm_encoder.encode_many([0]).unwrap();
         let zero_prio = CachedSymbolicEncoder::encode_impl(s_pg.variables.priority_vars(), 0u32).unwrap();
 
-        let won_projected = w_odd
-            .and(&zero_registers)
-            .unwrap()
-            .and(&zero_prio)
-            .unwrap()
-            .and(&s_pg.variables.next_move_var().not().unwrap())
-            .unwrap();
-        // println!("WON: {:#?}", spg.vertices_of_bdd(&won_projected));
+        let projector_func = zero_registers
+            .and(&zero_prio)?
+            .and(&s_pg.variables.next_move_var().not()?)?;
+
+        let (wp_even, wp_odd) = (w_even.and(&projector_func)?, w_odd.and(&projector_func)?);
+
         s_pg.manager.with_manager_shared(|man| {
-            let valuations = won_projected.sat_assignments(man).collect_vec();
-            println!("VALUES: {valuations:#?}");
-            
-            let l = crate::symbolic::sat::decode_split_assignments(
-                valuations,
-                &[s_pg.variables.var_indices(RegisterLayers::Vertex).as_slice()],
-            );
-            println!("VALUES: {l:#?}");
-            // crate::symbolic::helpers::decode_assignments(valuations, self.variables.len())
+            for (winner, winning_fn) in [("even", &wp_even), ("odd", &wp_odd)] {
+                let valuations = winning_fn.sat_assignments(man).collect_vec();
+                tracing::debug!(winner, "Valuations: {valuations:?}");
+                let projected_win = crate::symbolic::sat::decode_split_assignments(
+                    valuations,
+                    &[s_pg.variables.var_indices(RegisterLayers::Vertex).as_slice()],
+                )
+                .pop()
+                .unwrap();
+
+                tracing::info!(winner, "Winning: {projected_win:?}");
+            }
         });
         s_pg.gc();
 
         std::fs::write(
             "out.dot",
-            DotWriter::write_dot_symbolic_register(&s_pg, [(&won_projected, "won_projected_odd".to_string())]).unwrap(),
+            DotWriter::write_dot_symbolic_register(
+                &s_pg,
+                [
+                    (&wp_odd, "won_projected_odd".to_string()),
+                    (&wp_even, "won_projected_even".to_string()),
+                ],
+            )
+            .unwrap(),
         )
         .unwrap();
 
-        let converted_to_pg = test_helpers::symbolic_to_explicit_alt(&s_pg);
-        std::fs::write("converted.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
+        // let converted_to_pg = test_helpers::symbolic_to_explicit_alt(&s_pg);
+        // std::fs::write("converted.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
 
         // spg.gc();
         // std::fs::write("out.dot", DotWriter::write_dot_symbolic(&spg, []).unwrap()).unwrap();
+        Ok(())
     }
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -195,7 +209,7 @@ mod tests {
         ParityGame::new(pg)
     }
 
-    fn other_pg() -> eyre::Result<ParityGame> {
+    fn trivial_pg() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 1;
 0 1 1 0 "0";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
@@ -205,7 +219,7 @@ mod tests {
     fn trivial_pg_2() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 2;
 0 0 0 0,1 "0";
-1 1 1 1 "1";"#;
+1 1 1 1,0 "1";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }
