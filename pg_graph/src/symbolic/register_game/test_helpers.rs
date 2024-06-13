@@ -4,12 +4,12 @@ use oxidd_core::{function::BooleanFunction, Manager, ManagerRef};
 
 use crate::{
     explicit::ParityGame,
-    Owner,
     symbolic,
     symbolic::{
-        BDD, helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions,
-        register_game::SymbolicRegisterGame, sat::decode_split_assignments,
-    }, Vertex,
+        helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions, register_game::SymbolicRegisterGame,
+        sat::decode_split_assignments, BDD,
+    },
+    Owner, Vertex,
 };
 
 pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityGame {
@@ -106,17 +106,17 @@ mod tests {
     use crate::{
         explicit,
         explicit::ParityGame,
-        Owner,
-        Priority,
         symbolic,
         symbolic::{
-            BDD,
             helpers::{CachedSymbolicEncoder, MultiEncoder},
             oxidd_extensions::BddExtensions,
-            register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
+            register_game::{test_helpers, RegisterLayers, SymbolicRegisterGame},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
+            BDD,
         },
-        tests::example_dir, visualize::{DotWriter, VisualRegisterGame},
+        tests::example_dir,
+        visualize::{DotWriter, VisualRegisterGame},
+        Owner, Priority,
     };
 
     #[tracing_test::traced_test]
@@ -157,7 +157,8 @@ mod tests {
     #[tracing_test::traced_test]
     #[test]
     pub fn test_small() -> symbolic::Result<()> {
-        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
+        // amba_decomposed_decode.tlsf.ehoa.pg
+        let input = std::fs::read_to_string(example_dir().join("two_counters_4.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
 
@@ -165,20 +166,23 @@ mod tests {
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
         println!("Expected: {normal_sol:#?}");
 
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even)?;
+        let k = 2;
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, k, Owner::Even)?;
         s_pg.manager.with_manager_exclusive(|man| man.gc());
 
         let spg = s_pg.to_symbolic_parity_game();
 
         let mut solver = SymbolicZielonkaSolver::new(&spg);
-
+        println!("RVars: {:#?}", s_pg.variables.register_vars().len());
         let (w_even, w_odd) = solver.run_symbolic();
+
+        let chunk_size = s_pg.variables.register_vars().len() / (k + 1) as usize;
         let mut perm_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
             &s_pg.manager,
-            &s_pg.variables.register_vars().into_iter().cloned().chunks(2),
+            &s_pg.variables.register_vars().into_iter().cloned().chunks(chunk_size),
         );
 
-        let zero_registers = perm_encoder.encode_many([0, 0]).unwrap();
+        let zero_registers = perm_encoder.encode_many(vec![0; (k + 1) as usize]).unwrap();
         let zero_prio = CachedSymbolicEncoder::encode_impl(s_pg.variables.priority_vars(), 0u32).unwrap();
 
         let projector_func = zero_registers
