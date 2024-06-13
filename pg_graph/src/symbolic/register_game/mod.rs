@@ -193,9 +193,10 @@ impl SymbolicRegisterGame<BDD>
         // However, should a game with `n` vertices and `n` priorities be used, this approach will likely take... forever...
         let unique_register_contents =
             itertools::repeat_n(sg.priorities.keys().copied(), num_registers).multi_cartesian_product();
+        let mut logger = ProgressLogger::new(&unique_register_contents);
 
         for (i, permutation) in unique_register_contents.enumerate() {
-            tracing::trace!("Starting E_i permutation number: `{i}`");
+            logger.tick(i);
             let permutation_encoding = perm_encoder.encode_many(&permutation)?;
 
             for (&priority, prio_bdd) in &sg.priorities {
@@ -335,8 +336,6 @@ impl SymbolicRegisterGame<BDD>
     }
 
     /// Project the winning regions within the register game to the underlying vertices of the original parity game.
-    ///
-    ///
     pub fn project_winning_regions(&self, w_even: &F, w_odd: &F) -> symbolic::Result<(Vec<u32>, Vec<u32>)> {
         let (wp_even, wp_odd) = self.projected_winning_regions(w_even, w_odd)?;
 
@@ -488,5 +487,37 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
                     .enumerate()
                     .map(move |(i, r)| (r, format!("p{i}{suffix}"))),
             )
+    }
+}
+
+struct ProgressLogger {
+    total_len: usize,
+    start: std::time::Instant,
+    now: std::time::Instant,
+}
+
+impl ProgressLogger {
+    fn new<T>(permutations: &impl Iterator<Item = T>) -> Self {
+        let total_len = permutations.size_hint().0;
+        Self {
+            total_len,
+            start: std::time::Instant::now(),
+            now: std::time::Instant::now(),
+        }
+    }
+
+    fn tick(&mut self, progress: usize) {
+        if self.now.elapsed() > Duration::from_secs(3) {
+            let explore_rate = progress as f64 / self.start.elapsed().as_secs_f64();
+            let eta = (self.total_len - progress) as f64 / explore_rate;
+            tracing::debug!(
+                "Current permutation: `{}/{}`, rate: `{:.2}/s`, ETA: `{:.2}`s",
+                progress,
+                self.total_len,
+                explore_rate,
+                eta
+            );
+            self.now = std::time::Instant::now();
+        }
     }
 }
