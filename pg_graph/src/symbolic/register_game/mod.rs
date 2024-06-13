@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData, time::Duration};
 
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
@@ -12,7 +12,7 @@ use petgraph::prelude::EdgeRef;
 
 use crate::{
     explicit,
-    explicit::{ParityGame, ParityGraph, register_game::Rank},
+    explicit::{ParityGame, ParityGraph, register_game::Rank, VertexId},
     Owner,
     Priority,
     symbolic, symbolic::{
@@ -310,6 +310,58 @@ impl SymbolicRegisterGame<BDD>
         self.manager.with_manager_exclusive(|m| m.num_inner_nodes())
     }
 
+    /// Project the winning regions within the register game to the underlying symbolic parity game.
+    ///
+    /// The returned BDDs will reference _only_ the variables corresponding to the binary encoding of the original parity game's vertices.
+    pub fn projected_winning_regions(&self, w_even: &F, w_odd: &F) -> symbolic::Result<(F, F)> {
+        // The principle is simple:
+        // Every vertex with zeroed registers, zero priority, and next move `reset`, is implicitly a 'starting' vertice in the register game.
+        // Only one such vertex would exist for every vertex in the underlying parity game, so we can safely use their result
+        // for the desired effect.
+        let chunk_size = self.variables.register_vars().len() / self.n_registers();
+        let mut perm_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
+            &self.manager,
+            &self.variables.register_vars().into_iter().cloned().chunks(chunk_size),
+        );
+
+        let zero_registers = perm_encoder.encode_many(vec![0; self.n_registers()]).unwrap();
+        let zero_prio = CachedSymbolicEncoder::encode_impl(self.variables.priority_vars(), 0u32).unwrap();
+
+        let projector_func = zero_registers
+            .and(&zero_prio)?
+            .and(&self.variables.next_move_var().not()?)?;
+
+        Ok((w_even.and(&projector_func)?, w_odd.and(&projector_func)?))
+    }
+
+    /// Project the winning regions within the register game to the underlying vertices of the original parity game.
+    ///
+    ///
+    pub fn project_winning_regions(&self, w_even: &F, w_odd: &F) -> symbolic::Result<(Vec<u32>, Vec<u32>)> {
+        let (wp_even, wp_odd) = self.projected_winning_regions(w_even, w_odd)?;
+
+        let result = self.manager.with_manager_shared(|man| {
+            let (vals_even, vals_odd) = (wp_even.sat_assignments(man), wp_odd.sat_assignments(man));
+            let variable_indices = [self.variables.var_indices(RegisterLayers::Vertex).as_slice()];
+
+            (
+                symbolic::sat::decode_split_assignments(vals_even, &variable_indices)
+                    .pop()
+                    .expect("No valid window was provided"),
+                symbolic::sat::decode_split_assignments(vals_odd, &variable_indices)
+                    .pop()
+                    .expect("No valid window was provided"),
+            )
+        });
+
+        Ok(result)
+    }
+
+    /// Return the number of registers encoded in this symbolic register game.
+    fn n_registers(&self) -> usize {
+        (self.k + 1) as usize
+    }
+
     #[inline]
     fn edge_substitute(&self, bdd: &F) -> symbolic::Result<F> {
         let subs = Subst::new(&self.variables.all_variables, &self.variables_edges.all_variables);
@@ -332,9 +384,13 @@ pub struct RegisterVertexVars<F: Function> {
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Hash, Eq)]
 pub enum RegisterLayers {
+    /// The variable related to the next move of each register game vertex.
     NextMove,
+    /// The variables related to the registers of the register game, containing the priorities of the underlying parity game.
     Registers,
+    /// The variables related to the original vertex ids of the underlying parity game
     Vertex,
+    /// The variables related to the register game priority of each register game vertex.
     Priority,
 }
 

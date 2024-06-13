@@ -4,12 +4,12 @@ use oxidd_core::{function::BooleanFunction, Manager, ManagerRef};
 
 use crate::{
     explicit::ParityGame,
+    Owner,
     symbolic,
     symbolic::{
-        helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions, register_game::SymbolicRegisterGame,
-        sat::decode_split_assignments, BDD,
-    },
-    Owner, Vertex,
+        BDD, helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions,
+        register_game::SymbolicRegisterGame, sat::decode_split_assignments,
+    }, Vertex,
 };
 
 pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityGame {
@@ -106,29 +106,54 @@ mod tests {
     use crate::{
         explicit,
         explicit::ParityGame,
+        Owner,
+        Priority,
         symbolic,
         symbolic::{
+            BDD,
             helpers::{CachedSymbolicEncoder, MultiEncoder},
             oxidd_extensions::BddExtensions,
-            register_game::{test_helpers, RegisterLayers, SymbolicRegisterGame},
+            register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
-            BDD,
         },
-        tests::example_dir,
-        visualize::{DotWriter, VisualRegisterGame},
-        Owner, Priority,
+        tests::example_dir, visualize::{DotWriter, VisualRegisterGame},
     };
 
-    #[tracing_test::traced_test]
     #[test]
-    pub fn test_tue() {
-        let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
-        s_pg.manager.with_manager_exclusive(|man| man.gc());
+    pub fn test_trivial_2() -> eyre::Result<()> {
+        let game = trivial_pg_2()?;
+        let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
 
-        std::fs::write("out.dot", DotWriter::write_dot_symbolic_register(&s_pg, []).unwrap()).unwrap();
+        let spg = srg.to_symbolic_parity_game();
+        let mut solver = SymbolicZielonkaSolver::new(&spg);
+        let (w_even, w_odd) = solver.run_symbolic();
+        let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
+
+        assert_eq!(wp_even, vec![0]);
+        assert_eq!(wp_odd, vec![1]);
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_amba_decomposed() -> eyre::Result<()> {
+        // Register-index=1, but also gets correct results for Owner::Even as the controller and k=0.
+        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg"))?;
+        let pg = parse_pg(&mut input.as_str()).unwrap();
+        let game = ParityGame::new(pg)?;
+        let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
+
+        let spg = srg.to_symbolic_parity_game();
+        let mut solver = SymbolicZielonkaSolver::new(&spg);
+        let (w_even, w_odd) = solver.run_symbolic();
+        let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
+
+        let explicit_solution = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
+
+        assert_eq!(wp_even, vec![2, 0, 5, 3]);
+        assert_eq!(wp_odd, vec![6, 4, 1]);
+
+        Ok(())
     }
 
     #[tracing_test::traced_test]
@@ -157,39 +182,24 @@ mod tests {
     #[tracing_test::traced_test]
     #[test]
     pub fn test_small() -> symbolic::Result<()> {
-        // amba_decomposed_decode.tlsf.ehoa.pg
-        let input = std::fs::read_to_string(example_dir().join("two_counters_4.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
+        // let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
+        // let pg = parse_pg(&mut input.as_str()).unwrap();
+        // let game = ParityGame::new(pg).unwrap();
 
-        // let game = small_pg().unwrap();
+        let game = small_pg().unwrap();
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
         println!("Expected: {normal_sol:#?}");
 
-        let k = 2;
+        let k = 0;
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, k, Owner::Even)?;
         s_pg.manager.with_manager_exclusive(|man| man.gc());
+        println!("RVars: {:#?}", s_pg.variables.register_vars().len());
 
         let spg = s_pg.to_symbolic_parity_game();
-
         let mut solver = SymbolicZielonkaSolver::new(&spg);
-        println!("RVars: {:#?}", s_pg.variables.register_vars().len());
         let (w_even, w_odd) = solver.run_symbolic();
 
-        let chunk_size = s_pg.variables.register_vars().len() / (k + 1) as usize;
-        let mut perm_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
-            &s_pg.manager,
-            &s_pg.variables.register_vars().into_iter().cloned().chunks(chunk_size),
-        );
-
-        let zero_registers = perm_encoder.encode_many(vec![0; (k + 1) as usize]).unwrap();
-        let zero_prio = CachedSymbolicEncoder::encode_impl(s_pg.variables.priority_vars(), 0u32).unwrap();
-
-        let projector_func = zero_registers
-            .and(&zero_prio)?
-            .and(&s_pg.variables.next_move_var().not()?)?;
-
-        let (wp_even, wp_odd) = (w_even.and(&projector_func)?, w_odd.and(&projector_func)?);
+        let (wp_even, wp_odd) = s_pg.projected_winning_regions(&w_even, &w_odd)?;
 
         s_pg.manager.with_manager_shared(|man| {
             for (winner, winning_fn) in [("even", &wp_even), ("odd", &wp_odd)] {
@@ -229,20 +239,21 @@ mod tests {
     }
 
     fn small_pg() -> eyre::Result<ParityGame> {
-        //TODO: The below game doesn't get a correct solution, even though it's very similar (discontinuous priority problem?)
-        //        let mut pg = r#"parity 3;
-        // 0 1 1 0,1 "0";
-        // 1 1 0 2 "1";
-        // 2 2 0 2 "2";"#;
+        //TODO: The below game doesn't get a correct solution, even though it's very similar.
+        // This seems to be caused by the lack of a zero priority in the underlying game?
+        let mut pg = r#"parity 3;
+0 1 1 0,1 "0";
+1 1 0 2 "1";
+2 2 0 2 "2";"#;
         // This one has the problem that the solution should be [Odd, Even, Even], but it thinks [Odd, Odd, Even]
         //         let mut pg = r#"parity 3;
         // 0 1 1 0,1 "0";
         // 1 1 0 2 "1";
         // 2 0 0 2 "2";"#;
-        let mut pg = r#"parity 3;
-0 0 0 0,1 "0";
-1 0 1 2 "1";
-2 1 1 2 "2";"#;
+        //         let mut pg = r#"parity 3;
+        // 0 0 0 0,1 "0";
+        // 1 0 1 2 "1";
+        // 2 1 1 2 "2";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }
