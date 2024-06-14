@@ -5,21 +5,21 @@ use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst},
-    Manager,
-    ManagerRef, util::{AllocResult, Subst},
+    util::{AllocResult, Subst},
+    Manager, ManagerRef,
 };
 use petgraph::prelude::EdgeRef;
 
 use crate::{
     explicit,
-    explicit::{ParityGame, ParityGraph, register_game::Rank, VertexId},
-    Owner,
-    Priority,
-    symbolic, symbolic::{
-        BDD,
+    explicit::{register_game::Rank, ParityGame, ParityGraph, VertexId},
+    symbolic,
+    symbolic::{
         helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef},
+        SymbolicParityGame, BDD,
     },
+    Owner, Priority,
 };
 
 mod test_helpers;
@@ -189,18 +189,30 @@ impl SymbolicRegisterGame<BDD>
         // Calculate all possible next register sets based on a current set of registers and priorities.
         // This will be vastly more efficient than constructing the full register game following the explicit naive algorithm.
         // However, should a game with `n` vertices and `n` priorities be used, this approach will likely take... forever...
+        let n_unique_priorities = sg.priorities.keys().len();
         let unique_register_contents =
             itertools::repeat_n(sg.priorities.keys().copied(), num_registers).multi_cartesian_product();
         let mut logger = ProgressLogger::new(&unique_register_contents);
 
-        for (i, permutation) in unique_register_contents.enumerate() {
-            logger.tick(i);
-            let permutation_encoding = perm_encoder.encode_many(&permutation)?;
+        for (n_th_permutation, permutation) in unique_register_contents.enumerate() {
+            logger.tick(n_th_permutation);
+            let permutation_encoding = perm_encoder.encode_many_partial_rev(&permutation)?;
 
-            for (&priority, prio_bdd) in &sg.priorities {
-                let starting_vertices = prio_bdd.and(&permutation_encoding)?;
-                // Calculate the `e_i` reset
-                for i in 0..=k {
+            // Calculate the `e_i` reset
+            for i in 0..=k {
+                // As we iterate permutations backwards to forwards (aka, [0, 0, _], where `_` will have all values changed before [0, _, 0])
+                // we can stop iteration once we pass the point where we _know_ that the valuable BDDs have been constructed for the state-space.
+                let multiplier = (k - i) + 1;
+                let skip_threshold = n_unique_priorities.pow(multiplier as u32);
+                if n_th_permutation >= skip_threshold {
+                    break;
+                }
+
+                let index_to_use = k - i;
+                let used_permutation = &permutation_encoding[index_to_use];
+
+                for (&priority, prio_bdd) in &sg.priorities {
+                    let starting_vertices = prio_bdd.and(&used_permutation)?;
                     let mut next_registers = permutation.clone();
                     let rg_priority = explicit::register_game::reset_to_priority_2021(
                         i as Rank,
@@ -226,14 +238,15 @@ impl SymbolicRegisterGame<BDD>
                         .entry(rg_priority)
                         .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
 
-                    tracing::debug!(
-                        "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
-                        permutation,
-                        next_registers,
-                        priority,
-                        i,
-                        rg_priority
-                    );
+                    // tracing::debug!(
+                    //     n_th_permutation,
+                    //     "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
+                    //     permutation,
+                    //     next_registers,
+                    //     priority,
+                    //     i,
+                    //     rg_priority
+                    // );
                 }
             }
         }

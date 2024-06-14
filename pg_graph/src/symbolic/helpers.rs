@@ -151,6 +151,28 @@ where
 
         Ok(first_encoding)
     }
+
+    /// Encode the given values as a [BDDFunction], where each individual value is potentially cached and `AND`ed together to form the final BDD.
+    ///
+    /// Note that the entire `value` is not cached.
+    ///
+    /// Each individual BDD in the result is the partial AND result. The second item in the result is the BDD representing `value[0] ^ value[1]`.
+    /// The last item in the array is the same as the result of [Self::encode_many].
+    pub fn encode_many_partial_rev(&mut self, value: &[T]) -> super::Result<Vec<F>> {
+        let mut result = Vec::with_capacity(value.len());
+        let mut it = value.into_iter().enumerate().rev();
+        let (i, last_item) = it.next().ok_or(BddError::NoInput)?;
+        let mut first_encoding = self.encoders[i].encode(*last_item.borrow())?.clone();
+        result.push(first_encoding.clone());
+
+        for (i, item) in it {
+            let encoder = &mut self.encoders[i];
+            first_encoding = first_encoding.and(encoder.encode(*item.borrow())?)?;
+            result.push(first_encoding.clone());
+        }
+        
+        Ok(result)
+    }
 }
 
 pub trait BitHelper {
