@@ -29,7 +29,8 @@ where
                 .iter()
                 .rev()
                 .take(leading_zeros)
-                .fold(base_true.clone(), |acc, b| acc.diff(b).unwrap());
+                .try_fold(base_true.clone(), |acc, b| acc.diff(b))
+                .expect("Not enough memory");
 
             leading_zeros_bdds.push(conjugated);
         }
@@ -138,7 +139,7 @@ where
     /// Encode the given values as a [BDDFunction], where each individual value is potentially cached and `AND`ed together to form the final BDD.
     ///
     /// Note that the entire `value` is not cached.
-    pub fn encode_many(&mut self, value: impl IntoIterator<Item = impl Borrow<T>>) -> super::Result<F> {
+    pub fn encode_many(&mut self, value: &[T]) -> super::Result<F> {
         let mut it = value.into_iter().enumerate();
         let (i, first_item) = it.next().ok_or(BddError::NoInput)?;
         let mut first_encoding = self.encoders[i].encode(*first_item.borrow())?.clone();

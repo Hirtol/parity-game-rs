@@ -144,9 +144,7 @@ impl SymbolicRegisterGame<BDD>
             .register_vars()
             .iter()
             .zip(edge_variables.register_vars())
-            .fold(base_true.clone(), |acc, (r, r_next)| {
-                acc.and(&r.equiv(r_next).unwrap()).unwrap()
-            });
+            .try_fold(base_true.clone(), |acc, (r, r_next)| acc.and(&r.equiv(r_next)?))?;
 
         // t = 1 && t' = 0 && (r0 <-> r0') && (p' = 0)
         let edge_priority_zero = prio_edge_encoder.encode(0)?;
@@ -248,9 +246,7 @@ impl SymbolicRegisterGame<BDD>
             .vertex_vars()
             .iter()
             .zip(edge_variables.vertex_vars())
-            .fold(base_edge.clone(), |acc, (v, v_next)| {
-                acc.and(&v.equiv(v_next).unwrap()).unwrap()
-            });
+            .try_fold(base_edge.clone(), |acc, (v, v_next)| acc.and(&v.equiv(v_next)?))?;
 
         e_i_edges = e_i_edges.into_iter().flat_map(|e_i| e_i.and(&base_vertex)).collect();
 
@@ -268,9 +264,7 @@ impl SymbolicRegisterGame<BDD>
             vertices: s_even.or(&s_odd)?,
             v_even: s_even,
             v_odd: s_odd,
-            edges: e_move.or(&e_i_edges
-                .iter()
-                .fold(base_false.clone(), |acc, bdd| acc.or(bdd).unwrap()))?,
+            edges: e_move.or(&e_i_edges.iter().try_fold(base_false.clone(), |acc, bdd| acc.or(bdd))?)?,
             e_move,
             e_i: e_i_edges,
             priorities,
@@ -291,13 +285,7 @@ impl SymbolicRegisterGame<BDD>
             vertices_even: self.v_even.clone(),
             vertices_odd: self.v_odd.clone(),
             priorities: self.priorities.clone(),
-            edges: self
-                .e_move
-                .or(&self
-                    .e_i
-                    .iter()
-                    .fold(self.base_false.clone(), |acc, bdd| acc.or(bdd).unwrap()))
-                .unwrap(),
+            edges: self.edges.clone(),
             base_true: self.base_true.clone(),
             base_false: self.base_false.clone(),
         }
@@ -319,14 +307,12 @@ impl SymbolicRegisterGame<BDD>
         // Every vertex with zeroed registers, zero priority, and next move `reset`, is implicitly a 'starting' vertice in the register game.
         // Only one such vertex would exist for every vertex in the underlying parity game, so we can safely use their result
         // for the desired effect.
-        let chunk_size = self.variables.register_vars().len() / self.n_registers();
-        let mut perm_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
-            &self.manager,
-            &self.variables.register_vars().into_iter().cloned().chunks(chunk_size),
-        );
-
-        let zero_registers = perm_encoder.encode_many(vec![0; self.n_registers()]).unwrap();
-        let zero_prio = CachedSymbolicEncoder::encode_impl(self.variables.priority_vars(), 0u32).unwrap();
+        let zero_registers = self
+            .variables
+            .register_vars()
+            .into_iter()
+            .try_fold(self.base_true.clone(), |acc, next| acc.and(&next.not()?))?;
+        let zero_prio = CachedSymbolicEncoder::encode_impl(self.variables.priority_vars(), 0u32)?;
 
         let projector_func = zero_registers
             .and(&zero_prio)?
@@ -460,10 +446,9 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
     }
 
     fn conjugated(&self, base_true: &F) -> AllocResult<F> {
-        Ok(self
-            .all_variables
+        self.all_variables
             .iter()
-            .fold(base_true.clone(), |acc: F, next: &F| acc.and(next).unwrap()))
+            .try_fold(base_true.clone(), |acc: F, next: &F| acc.and(next))
     }
 
     pub fn iter_names<'a>(&'a self, suffix: &'a str) -> impl Iterator<Item = (&F, String)> + 'a {

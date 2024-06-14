@@ -123,10 +123,10 @@ impl SymbolicParityGame {
 
         let conj_v = variables
             .iter()
-            .fold(base_true.clone(), |acc, next| acc.and(next).unwrap());
+            .try_fold(base_true.clone(), |acc, next| acc.and(next))?;
         let conj_e = edge_variables
             .iter()
-            .fold(base_true.clone(), |acc, next| acc.and(next).unwrap());
+            .try_fold(base_true.clone(), |acc, next| acc.and(next))?;
 
         Ok(Self {
             pg_vertex_count: explicit.vertex_count(),
