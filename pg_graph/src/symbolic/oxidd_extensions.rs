@@ -7,6 +7,7 @@ use oxidd_core::{
 
 use crate::symbolic::sat::TruthAssignmentsIterator;
 
+#[derive(Clone)]
 pub struct FunctionVarRef<F> {
     pub func: F,
     pub idx: u32,

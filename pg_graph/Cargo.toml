@@ -13,6 +13,7 @@ thiserror.workspace = true
 aquamarine = "0.5.0"
 ecow = "0.2.2"
 ahash = "0.8.11"
+rayon = "1.10.0"
 
 tracing = { version = "0.1.40" }
 itertools.workspace = true

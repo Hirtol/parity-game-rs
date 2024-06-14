@@ -182,7 +182,7 @@ pub fn decode_split_assignments<'a>(
 }
 
 #[derive(Clone)]
-struct DiscontiguousArrayIterator<'a, T, I> {
+pub struct DiscontiguousArrayIterator<'a, T, I> {
     inner: &'a [T],
     window: I,
 }
@@ -202,6 +202,12 @@ impl<'a, 'b, T, I: Iterator<Item = usize> + 'b> Iterator for DiscontiguousArrayI
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.window.next()?;
         self.inner.get(idx)
+    }
+}
+
+impl<'a, 'b, T, I: ExactSizeIterator<Item = usize> + 'b> ExactSizeIterator for DiscontiguousArrayIterator<'a, T, I> {
+    fn len(&self) -> usize {
+        self.window.len()
     }
 }
 

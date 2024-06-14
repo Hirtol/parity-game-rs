@@ -1111,6 +1111,7 @@ dependencies = [
  "petgraph",
  "pg_parser",
  "profiling",
+ "rayon",
  "thiserror",
  "tracing",
  "tracing-test",
