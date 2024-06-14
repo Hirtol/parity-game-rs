@@ -182,18 +182,24 @@ mod tests {
     #[tracing_test::traced_test]
     #[test]
     pub fn test_small() -> symbolic::Result<()> {
-        // let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
-        // let pg = parse_pg(&mut input.as_str()).unwrap();
-        // let game = ParityGame::new(pg).unwrap();
+        // amba_decomposed_decode.tlsf.ehoa.pg
+        // let input = std::fs::read_to_string(example_dir().join("two_counters_4.pg")).unwrap();
+        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
+        let pg = parse_pg(&mut input.as_str()).unwrap();
+        let game = ParityGame::new(pg).unwrap();
 
-        let game = small_pg().unwrap();
+        // let game = small_pg().unwrap();
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
         println!("Expected: {normal_sol:#?}");
 
-        let k = 0;
+        let k = 2;
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, k, Owner::Even)?;
-        s_pg.manager.with_manager_exclusive(|man| man.gc());
-        println!("RVars: {:#?}", s_pg.variables.register_vars().len());
+        s_pg.gc();
+        println!(
+            "RVars: {:#?} - BDD Size: {:#?}",
+            s_pg.variables.register_vars().len(),
+            s_pg.bdd_node_count()
+        );
 
         let spg = s_pg.to_symbolic_parity_game();
         let mut solver = SymbolicZielonkaSolver::new(&spg);

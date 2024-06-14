@@ -170,7 +170,7 @@ where
             first_encoding = first_encoding.and(encoder.encode(*item.borrow())?)?;
             result.push(first_encoding.clone());
         }
-        
+
         Ok(result)
     }
 }

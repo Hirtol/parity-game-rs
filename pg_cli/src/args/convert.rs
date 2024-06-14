@@ -15,13 +15,13 @@ pub struct ConvertCommand {
     #[clap(subcommand)]
     goal: ConversionGoal,
     /// Write the visualised result of the `goal` conversion into a GraphViz file.
-    #[clap(short, long)]
+    #[clap(short, long, global = true)]
     dot_path: Option<PathBuf>,
     /// Write the visualised result of the `goal` conversion into a Mermaid.js file
-    #[clap(short, long)]
+    #[clap(short, long, global = true)]
     mermaid_path: Option<PathBuf>,
     /// Write the result of the `goal` conversion into a `.pg` file
-    #[clap(short, long)]
+    #[clap(short, long, global = true)]
     pg_path: Option<PathBuf>,
 }
 
