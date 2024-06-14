@@ -5,21 +5,21 @@ use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst},
-    util::{AllocResult, Subst},
-    Manager, ManagerRef,
+    Manager,
+    ManagerRef, util::{AllocResult, Subst},
 };
 use petgraph::prelude::EdgeRef;
 
 use crate::{
     explicit,
-    explicit::{register_game::Rank, ParityGame, ParityGraph, VertexId},
-    symbolic,
-    symbolic::{
+    explicit::{ParityGame, ParityGraph, register_game::Rank, VertexId},
+    Owner,
+    Priority,
+    symbolic, symbolic::{
+        BDD,
         helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef},
-        SymbolicParityGame, BDD,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
     },
-    Owner, Priority,
 };
 
 mod test_helpers;
