@@ -6,6 +6,9 @@ description = "Parity game solver"
 repository = "https://github.com/Hirtol/parity-game-rs"
 license = "MIT OR Apache-2.0"
 
+[features]
+statistics = ["oxidd-cache/statistics", "oxidd-rules-bdd/statistics", "oxidd/statistics"]
+
 [dependencies]
 eyre.workspace = true
 thiserror.workspace = true
@@ -19,11 +22,15 @@ tracing = { version = "0.1.40" }
 itertools.workspace = true
 
 petgraph = "0.6.4"
-oxidd = { git = "https://github.com/OxiDD/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
-oxidd-rules-bdd = { git = "https://github.com/OxiDD/oxidd" }
-oxidd-core = { git = "https://github.com/OxiDD/oxidd" }
-oxidd-dump = { git = "https://github.com/OxiDD/oxidd" }
-oxidd-reorder = { git = "https://github.com/OxiDD/oxidd" }
+# "multi-threading" feature is... weird. See `TODO_FIGURE_OUT`
+oxidd = { git = "https://github.com/Hirtol/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
+oxidd-rules-bdd = { git = "https://github.com/Hirtol/oxidd" }
+oxidd-core = { git = "https://github.com/Hirtol/oxidd" }
+oxidd-dump = { git = "https://github.com/Hirtol/oxidd" }
+oxidd-reorder = { git = "https://github.com/Hirtol/oxidd" }
+oxidd-cache = { git = "https://github.com/Hirtol/oxidd" }
+
+windows = { version = "0.57.0", features = ["Win32_System_Threading"] }
 
 pg_parser = { path = "../pg_parser" }
 profiling = "1"

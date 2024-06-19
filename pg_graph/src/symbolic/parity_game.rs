@@ -9,7 +9,7 @@ use oxidd::{
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst},
     Manager,
-    ManagerRef, util::Subst,
+    ManagerRef, util::Subst, WorkerManager,
 };
 use petgraph::prelude::EdgeRef;
 
@@ -60,6 +60,10 @@ impl SymbolicParityGame {
     fn from_explicit_impl(explicit: &ParityGame) -> symbolic::Result<Self> {
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
         let manager = oxidd::bdd::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
+        // Construction is _much_ faster single-threaded.
+        manager.with_manager_exclusive(|man| {
+            man.set_threading_enabled(false);
+        });
 
         // Construct base building blocks for the BDD
         let variables: EcoVec<BDD> =

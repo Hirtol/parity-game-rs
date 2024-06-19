@@ -1,6 +1,6 @@
 use ahash::{HashSet, HashSetExt};
 use itertools::Itertools;
-use oxidd_core::{function::BooleanFunction, Manager, ManagerRef};
+use oxidd_core::{function::BooleanFunction, ManagerRef};
 
 use crate::{
     explicit::ParityGame,
@@ -51,7 +51,7 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
                         CachedSymbolicEncoder::new(&symb.manager, symb.variables.all_variables.clone());
 
                     for vertex in register_vertices {
-                        let idx = reg_v_index.entry(vertex).or_insert_with(|| {
+                        let _ = reg_v_index.entry(vertex).or_insert_with(|| {
                             pg.graph.add_node(Vertex {
                                 priority: *priority,
                                 owner,
@@ -95,25 +95,25 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
-    use oxidd_core::{
-        function::{BooleanFunction, BooleanFunctionQuant},
-        Manager, ManagerRef,
+    use std::{
+        sync::{Mutex},
+        time::Instant,
     };
 
-    use pg_parser::parse_pg;
+    use itertools::Itertools;
+    use oxidd_core::ManagerRef;
 
     use crate::{
         explicit,
-        explicit::ParityGame,
+        explicit::{ParityGame},
         Owner,
-        Priority,
         symbolic,
         symbolic::{
             BDD,
             helpers::{CachedSymbolicEncoder, MultiEncoder},
-            oxidd_extensions::BddExtensions,
+            oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
             register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
+            sat::DiscontiguousArrayIterator,
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
         tests::example_dir, visualize::{DotWriter, VisualRegisterGame},
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     pub fn test_trivial_2() -> eyre::Result<()> {
-        let game = trivial_pg_2()?;
+        let game = crate::tests::trivial_pg_2()?;
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
 
         let spg = srg.to_symbolic_parity_game();
@@ -138,9 +138,7 @@ mod tests {
     #[test]
     pub fn test_amba_decomposed() -> eyre::Result<()> {
         // Register-index=1, but also gets correct results for Owner::Even as the controller and k=0.
-        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg"))?;
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg)?;
+        let game = crate::tests::load_example("amba_decomposed_decode.tlsf.ehoa.pg");
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
 
         let spg = srg.to_symbolic_parity_game();
@@ -148,7 +146,7 @@ mod tests {
         let (w_even, w_odd) = solver.run_symbolic();
         let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
 
-        let explicit_solution = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
+        let _ = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
 
         assert_eq!(wp_even, vec![2, 0, 5, 3]);
         assert_eq!(wp_odd, vec![6, 4, 1]);
@@ -159,11 +157,9 @@ mod tests {
     #[tracing_test::traced_test]
     #[test]
     pub fn test_convert_symb_to_pg() -> symbolic::Result<()> {
-        // let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
-        // let pg = parse_pg(&mut input.as_str()).unwrap();
-        // let game = ParityGame::new(pg).unwrap();
+        // let game = crate::tests::load_example("amba_decomposed_decode.tlsf.ehoa.pg");
 
-        let game = trivial_pg_2().unwrap();
+        let game = crate::tests::trivial_pg_2().unwrap();
         let register_index = 0;
         let controller = Owner::Even;
 
@@ -173,6 +169,11 @@ mod tests {
 
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, register_index, controller)?;
         s_pg.gc();
+        std::fs::write(
+            "symbolic_rg.dot",
+            DotWriter::write_dot_symbolic_register(&s_pg, None).unwrap(),
+        )
+        .unwrap();
 
         let converted_to_pg = test_helpers::symbolic_to_explicit_alt(&s_pg);
         std::fs::write("converted_rg.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
@@ -182,11 +183,7 @@ mod tests {
     #[tracing_test::traced_test]
     #[test]
     pub fn test_small() -> symbolic::Result<()> {
-        // amba_decomposed_decode.tlsf.ehoa.pg
-        // let input = std::fs::read_to_string(example_dir().join("two_counters_4.pg")).unwrap();
-        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_decode.tlsf.ehoa.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
+        let game = crate::tests::load_example("amba_decomposed_arbiter_6.tlsf.ehoa.pg");
 
         // let game = small_pg().unwrap();
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
@@ -195,6 +192,7 @@ mod tests {
         let k = 2;
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, k, Owner::Even)?;
         s_pg.gc();
+
         println!(
             "RVars: {:#?} - BDD Size: {:#?}",
             s_pg.variables.register_vars().len(),
@@ -260,21 +258,6 @@ mod tests {
         // 0 0 0 0,1 "0";
         // 1 0 1 2 "1";
         // 2 1 1 2 "2";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
-    }
-
-    fn trivial_pg() -> eyre::Result<ParityGame> {
-        let mut pg = r#"parity 1;
-0 1 1 0 "0";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
-    }
-
-    fn trivial_pg_2() -> eyre::Result<ParityGame> {
-        let mut pg = r#"parity 2;
-0 0 0 0,1 "0";
-1 1 1 1,0 "1";"#;
         let pg = pg_parser::parse_pg(&mut pg).unwrap();
         ParityGame::new(pg)
     }

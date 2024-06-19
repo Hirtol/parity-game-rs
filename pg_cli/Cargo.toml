@@ -31,5 +31,5 @@ serde_with = "3.8"
 
 itertools.workspace = true
 
-pg_graph = { path = "../pg_graph" }
-pg_parser = { path = "../pg_parser"}
+pg_graph = { path = "../pg_graph", features = [] }
+pg_parser = { path = "../pg_parser" }

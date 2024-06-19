@@ -117,7 +117,7 @@ dependencies = [
 [[package]]
 name = "arcslab"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "crossbeam-utils",
  "libc",
@@ -546,7 +546,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows",
+ "windows 0.54.0",
 ]
 
 [[package]]
@@ -603,7 +603,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hugealloc"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "allocator-api2",
  "libc",
@@ -780,7 +780,7 @@ checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 [[package]]
 name = "linear-hashtbl"
 version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 
 [[package]]
 name = "linux-raw-sys"
@@ -895,8 +895,8 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "oxidd"
-version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "cfg-if",
  "document-features",
@@ -904,6 +904,7 @@ dependencies = [
  "oxidd-core",
  "oxidd-derive",
  "oxidd-dump",
+ "oxidd-manager-index",
  "oxidd-manager-pointer",
  "oxidd-reorder",
  "oxidd-rules-bdd",
@@ -915,8 +916,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cache"
-version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "allocator-api2",
  "document-features",
@@ -927,16 +928,16 @@ dependencies = [
 
 [[package]]
 name = "oxidd-core"
-version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "nanorand",
 ]
 
 [[package]]
 name = "oxidd-derive"
-version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -946,8 +947,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-dump"
-version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.2.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "bitvec",
  "document-features",
@@ -958,9 +959,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidd-manager-index"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
+dependencies = [
+ "bitvec",
+ "crossbeam-utils",
+ "linear-hashtbl",
+ "oxidd-core",
+ "parking_lot",
+ "rayon",
+ "rustc-hash",
+]
+
+[[package]]
 name = "oxidd-manager-pointer"
-version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.2.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "arcslab",
  "bitvec",
@@ -974,8 +989,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-reorder"
-version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.2.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "flume",
  "is_sorted",
@@ -986,8 +1001,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-bdd"
-version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "bitvec",
  "document-features",
@@ -998,8 +1013,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-mtbdd"
-version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.2.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -1009,8 +1024,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-tdd"
-version = "0.1.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.2.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -1020,8 +1035,8 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-zbdd"
-version = "0.6.0"
-source = "git+https://github.com/OxiDD/oxidd#d0abb8c00679263eca62b2e6229b5b466ebfc3e3"
+version = "0.7.0"
+source = "git+https://github.com/Hirtol/oxidd#62dfa9198a46c0bff17d131ef7d4477684c51bb4"
 dependencies = [
  "bitvec",
  "document-features",
@@ -1104,6 +1119,7 @@ dependencies = [
  "eyre",
  "itertools 0.12.1",
  "oxidd",
+ "oxidd-cache",
  "oxidd-core",
  "oxidd-dump",
  "oxidd-reorder",
@@ -1115,6 +1131,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-test",
+ "windows 0.57.0",
 ]
 
 [[package]]
@@ -1875,6 +1892,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "windows"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
+dependencies = [
+ "windows-core 0.57.0",
+ "windows-targets 0.52.5",
+]
+
+[[package]]
 name = "windows-core"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1891,6 +1918,40 @@ checksum = "12661b9c89351d684a50a8a643ce5f608e20243b9fb84687800163429f161d65"
 dependencies = [
  "windows-result",
  "windows-targets 0.52.5",
+]
+
+[[package]]
+name = "windows-core"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
+dependencies = [
+ "windows-implement",
+ "windows-interface",
+ "windows-result",
+ "windows-targets 0.52.5",
+]
+
+[[package]]
+name = "windows-implement"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9107ddc059d5b6fbfbffdfa7a7fe3e22a226def0b2608f72e9d552763d3e1ad7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
+]
+
+[[package]]
+name = "windows-interface"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
 ]
 
 [[package]]

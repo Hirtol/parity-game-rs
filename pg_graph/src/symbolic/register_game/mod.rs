@@ -1,28 +1,35 @@
-use std::{collections::HashMap, marker::PhantomData, time::Duration};
+use std::{
+    fmt::{Debug, Formatter},
+    marker::PhantomData,
+    time::Duration,
+};
 
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
-    function::{BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst},
-    Manager,
-    ManagerRef, util::{AllocResult, Subst},
+    function::{BooleanFunction, Function, FunctionSubst},
+    HasApplyCache,
+    Manager, ManagerRef, util::{AllocResult, Subst}, WorkerManager,
 };
-use petgraph::prelude::EdgeRef;
+
+use variable_order::VariableAllocatorInfo;
 
 use crate::{
     explicit,
-    explicit::{ParityGame, ParityGraph, register_game::Rank, VertexId},
+    explicit::{ParityGame, ParityGraph, register_game::Rank},
     Owner,
     Priority,
     symbolic, symbolic::{
         BDD,
         helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef},
+        sat::DiscontiguousArrayIterator, SymbolicParityGame,
     },
 };
 
 mod test_helpers;
+mod variable_order;
 
 pub struct SymbolicRegisterGame<F: Function> {
     pub k: Rank,
@@ -46,6 +53,7 @@ pub struct SymbolicRegisterGame<F: Function> {
 }
 
 type F = BDD;
+
 impl SymbolicRegisterGame<BDD>
 // where
 // F: Function + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension + FunctionSubst,
@@ -55,6 +63,30 @@ impl SymbolicRegisterGame<BDD>
     /// See [crate::register_game::RegisterGame::construct]
     #[tracing::instrument(name = "Build Symbolic Register Game", skip_all)]
     pub fn from_symbolic(explicit: &ParityGame, k: Rank, controller: Owner) -> symbolic::Result<Self> {
+        let manager = F::new_manager(
+            explicit.vertex_count(),
+            (explicit.vertex_count().ilog2() * 4096 * (k as u32 + 1)) as usize,
+            12,
+        );
+
+        Self::from_manager(manager, explicit, k, controller, variable_order::default_alloc_vars)
+    }
+
+    pub fn from_manager<T>(
+        manager: BDDManagerRef,
+        explicit: &ParityGame,
+        k: Rank,
+        controller: Owner,
+        variable_provider: T,
+    ) -> symbolic::Result<Self>
+    where
+        T: for<'a> FnOnce(
+            &mut <F as Function>::Manager<'a>,
+            VariableAllocatorInfo,
+        ) -> symbolic::Result<(RegisterVertexVars<F>, RegisterVertexVars<F>)>,
+    {
+        manager.with_manager_exclusive(|man| man.set_threading_enabled(false));
+
         let k = k as usize;
         let num_registers = k + 1;
 
@@ -63,46 +95,23 @@ impl SymbolicRegisterGame<BDD>
         let register_bits_needed = (explicit.priority_max() as f64 + 1.).log2().ceil() as usize;
         // Calculate the amount of variables we'll need for the binary encodings of the registers and vertices.
         let n_register_vars = register_bits_needed * num_registers;
-        let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
+        let n_vertex_vars = (explicit.vertex_count() as f64).log2().ceil() as usize;
         let n_prio_vars = (max_reg_priority as f64 + 1.).log2().ceil() as usize;
-
-        let manager = F::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
 
         // Construct base building blocks for the BDD
         let base_true = manager.with_manager_exclusive(|man| F::t(man));
         let base_false = manager.with_manager_exclusive(|man| F::f(man));
 
         let (variables, edge_variables) = manager.with_manager_exclusive(|man| {
-            let next_move = F::new_var_layer_idx(man)?;
-            let next_move_edge = F::new_var_layer_idx(man)?;
-
-            let registers = (0..n_register_vars)
-                .flat_map(|_| F::new_var_layer_idx(man))
-                .collect_vec();
-            let registers_edge = (0..n_register_vars)
-                .flat_map(|_| F::new_var_layer_idx(man))
-                .collect_vec();
-
-            let vertex_vars = (0..n_variables).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-            let vertex_vars_edge = (0..n_variables).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-
-            let prio_vars = (0..n_prio_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-            let prio_vars_edge = (0..n_prio_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-
-            Ok::<_, symbolic::BddError>((
-                RegisterVertexVars::new(
-                    next_move,
-                    registers.into_iter(),
-                    prio_vars.into_iter(),
-                    vertex_vars.into_iter(),
-                ),
-                RegisterVertexVars::new(
-                    next_move_edge,
-                    registers_edge.into_iter(),
-                    prio_vars_edge.into_iter(),
-                    vertex_vars_edge.into_iter(),
-                ),
-            ))
+            variable_provider(
+                man,
+                VariableAllocatorInfo {
+                    n_register_vars,
+                    n_vertex_vars,
+                    n_priority_vars: n_prio_vars,
+                    n_next_move_vars: 1,
+                },
+            )
         })?;
 
         let sg = SymbolicParityGame::from_explicit_impl_vars(
@@ -171,17 +180,13 @@ impl SymbolicRegisterGame<BDD>
         let mut e_i_edges = vec![base_false.clone(); num_registers];
         let mut perm_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
             &manager,
-            &variables
-                .register_vars()
-                .into_iter()
-                .cloned()
-                .chunks(register_bits_needed),
+            &variables.register_vars().iter().cloned().chunks(register_bits_needed),
         );
         let mut next_encoder: MultiEncoder<Priority, _> = MultiEncoder::new(
             &manager,
             &edge_variables
                 .register_vars()
-                .into_iter()
+                .iter()
                 .cloned()
                 .chunks(register_bits_needed),
         );
@@ -253,7 +258,7 @@ impl SymbolicRegisterGame<BDD>
 
         // Add the additional conditions for each E_i relation.
         // From t=0 -> t=1
-        let base_edge = edge_variables.next_move_var().diff(&variables.next_move_var())?;
+        let base_edge = edge_variables.next_move_var().diff(variables.next_move_var())?;
         // Any E_i transition will have the same underlying vertex, so we should assert it doesn't change.
         let base_vertex = variables
             .vertex_vars()
@@ -265,6 +270,8 @@ impl SymbolicRegisterGame<BDD>
 
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
+
+        manager.with_manager_exclusive(|man| man.set_threading_enabled(true));
 
         Ok(Self {
             k: k as Rank,
@@ -310,6 +317,15 @@ impl SymbolicRegisterGame<BDD>
 
     pub fn bdd_node_count(&self) -> usize {
         self.manager.with_manager_exclusive(|m| m.num_inner_nodes())
+    }
+
+    #[cfg(feature = "statistics")]
+    pub fn print_statistics(&self) {
+        self.manager.with_manager_shared(|man| {
+            use oxidd_cache::StatisticsGenerator;
+            oxidd::bdd::print_stats();
+            man.apply_cache().print_stats()
+        });
     }
 
     /// Project the winning regions within the register game to the underlying symbolic parity game.
@@ -378,6 +394,16 @@ pub struct RegisterVertexVars<F: Function> {
     pub manager_layer_indices: ahash::HashMap<RegisterLayers, EcoVec<usize>>,
     n_register_vars: usize,
     n_priority_vars: usize,
+}
+
+impl<F: BooleanFunctionExtensions> Debug for RegisterVertexVars<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegisterVertexVars")
+            .field("n_register_vars", &self.n_register_vars)
+            .field("n_priority_vars", &self.n_priority_vars)
+            .field("manager_layer_indices", &self.manager_layer_indices)
+            .finish()
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Hash, Eq)]

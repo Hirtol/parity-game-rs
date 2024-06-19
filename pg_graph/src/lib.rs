@@ -27,4 +27,19 @@ pub mod tests {
             .unwrap()
             .join("game_examples")
     }
+
+    fn trivial_pg() -> eyre::Result<ParityGame> {
+        let mut pg = r#"parity 1;
+0 1 1 0 "0";"#;
+        let pg = pg_parser::parse_pg(&mut pg).unwrap();
+        ParityGame::new(pg)
+    }
+
+    pub fn trivial_pg_2() -> eyre::Result<ParityGame> {
+        let mut pg = r#"parity 2;
+0 0 0 0,1 "0";
+1 1 1 1,0 "1";"#;
+        let pg = pg_parser::parse_pg(&mut pg).unwrap();
+        ParityGame::new(pg)
+    }
 }
