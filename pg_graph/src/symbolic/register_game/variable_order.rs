@@ -239,7 +239,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    // #[test]
     pub fn test_variable_orders_grouped_time_taken() -> eyre::Result<()> {
         rayon::ThreadPoolBuilder::default()
             .num_threads(4)

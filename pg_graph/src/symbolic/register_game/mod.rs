@@ -6,11 +6,7 @@ use std::{
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
-use oxidd_core::{
-    function::{BooleanFunction, Function, FunctionSubst},
-    Manager,
-    ManagerRef, util::{AllocResult, Subst}, WorkerManager,
-};
+use oxidd_core::{function::{BooleanFunction, Function, FunctionSubst}, HasApplyCache, Manager, ManagerRef, util::{AllocResult, Subst}, WorkerManager};
 
 use variable_order::VariableAllocatorInfo;
 
@@ -321,6 +317,7 @@ impl SymbolicRegisterGame<BDD>
     pub fn print_statistics(&self) {
         self.manager.with_manager_shared(|man| {
             use oxidd_cache::StatisticsGenerator;
+            use oxidd_core::HasApplyCache;
             oxidd::bdd::print_stats();
             man.apply_cache().print_stats()
         });
