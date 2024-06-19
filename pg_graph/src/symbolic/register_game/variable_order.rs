@@ -1,8 +1,12 @@
 use itertools::Itertools;
 
-use crate::symbolic;
-use crate::symbolic::oxidd_extensions::BooleanFunctionExtensions;
-use crate::symbolic::register_game::{RegisterLayers, RegisterVertexVars};
+use crate::{
+    symbolic,
+    symbolic::{
+        oxidd_extensions::BooleanFunctionExtensions,
+        register_game::{RegisterLayers, RegisterVertexVars},
+    },
+};
 
 pub type VariableOrder = ahash::HashMap<RegisterLayers, Vec<usize>>;
 
@@ -92,20 +96,29 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-    use std::time::Instant;
+    use std::{
+        sync::{Arc, Mutex},
+        time::Instant,
+    };
 
     use itertools::Itertools;
     use oxidd_core::{Manager, ManagerRef};
     use rayon::prelude::*;
 
-    use crate::{Owner, symbolic};
-    use crate::explicit::register_game::Rank;
-    use crate::symbolic::BDD;
-    use crate::symbolic::oxidd_extensions::BooleanFunctionExtensions;
-    use crate::symbolic::register_game::{RegisterLayers, RegisterVertexVars, SymbolicRegisterGame, variable_order};
-    use crate::symbolic::register_game::variable_order::{VariableAllocatorInfo, VariableOrder};
-    use crate::symbolic::solvers::symbolic_zielonka::SymbolicZielonkaSolver;
+    use crate::{
+        explicit::register_game::Rank,
+        Owner,
+        symbolic,
+        symbolic::{
+            BDD,
+            oxidd_extensions::BooleanFunctionExtensions,
+            register_game::{
+                RegisterLayers,
+                RegisterVertexVars, SymbolicRegisterGame, variable_order::{VariableAllocatorInfo, VariableOrder},
+            },
+            solvers::symbolic_zielonka::SymbolicZielonkaSolver,
+        },
+    };
 
     // #[test]
     pub fn test_variable_orders() -> eyre::Result<()> {
@@ -139,7 +152,7 @@ mod tests {
 
                 alloc_var_with_order(man, n_variable, orders.into_iter().tuples().next().expect("Impossible"))
             })
-                .unwrap();
+            .unwrap();
             rg.gc();
             let nodes = rg.bdd_node_count();
             tracing::debug!(nodes, "Constructed RG `{i}`");
@@ -195,7 +208,7 @@ mod tests {
 
                 alloc_var_with_order(man, n_variable, orders.into_iter().tuples().next().expect("Impossible"))
             })
-                .unwrap();
+            .unwrap();
             rg.gc();
             let nodes = rg.bdd_node_count();
             tracing::debug!(nodes, "Constructed RG `{i}`");
@@ -252,7 +265,7 @@ mod tests {
 
                 alloc_var_with_order(man, n_variable, orders.into_iter().tuples().next().expect("Impossible"))
             })
-                .unwrap();
+            .unwrap();
 
             rg.gc();
             let nodes = rg.bdd_node_count();

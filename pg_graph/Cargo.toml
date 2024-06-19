@@ -22,13 +22,19 @@ tracing = { version = "0.1.40" }
 itertools.workspace = true
 
 petgraph = "0.6.4"
-# "multi-threading" feature is... weird. See `TODO_FIGURE_OUT`
 oxidd = { git = "https://github.com/Hirtol/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
 oxidd-rules-bdd = { git = "https://github.com/Hirtol/oxidd" }
 oxidd-core = { git = "https://github.com/Hirtol/oxidd" }
 oxidd-dump = { git = "https://github.com/Hirtol/oxidd" }
 oxidd-reorder = { git = "https://github.com/Hirtol/oxidd" }
 oxidd-cache = { git = "https://github.com/Hirtol/oxidd" }
+
+#oxidd = { path = "../../../Git-Projects/oxidd/crates/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
+#oxidd-rules-bdd = { path = "../../../Git-Projects/oxidd/crates/oxidd-rules-bdd" }
+#oxidd-core = { path = "../../../Git-Projects/oxidd/crates/oxidd-core" }
+#oxidd-dump = { path = "../../../Git-Projects/oxidd/crates/oxidd-dump" }
+#oxidd-reorder = { path = "../../../Git-Projects/oxidd/crates/oxidd-reorder" }
+#oxidd-cache = { path = "../../../Git-Projects/oxidd/crates/oxidd-cache" }
 
 windows = { version = "0.57.0", features = ["Win32_System_Threading"] }
 

@@ -1,6 +1,5 @@
 use std::{
     fmt::{Debug, Formatter},
-    marker::PhantomData,
     time::Duration,
 };
 
@@ -9,8 +8,8 @@ use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
     function::{BooleanFunction, Function, FunctionSubst},
-    HasApplyCache,
-    Manager, ManagerRef, util::{AllocResult, Subst}, WorkerManager,
+    Manager,
+    ManagerRef, util::{AllocResult, Subst}, WorkerManager,
 };
 
 use variable_order::VariableAllocatorInfo;
@@ -23,8 +22,7 @@ use crate::{
     symbolic, symbolic::{
         BDD,
         helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef},
-        sat::DiscontiguousArrayIterator, SymbolicParityGame,
+        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
     },
 };
 
@@ -157,7 +155,7 @@ impl SymbolicRegisterGame<BDD>
 
         // t = 1 && t' = 0 && (r0 <-> r0') && (p' = 0)
         let edge_priority_zero = prio_edge_encoder.encode(0)?;
-        let mut e_move = sg
+        let e_move = sg
             .edges
             .and(variables.next_move_var())?
             .diff(edge_variables.next_move_var())?
@@ -435,7 +433,7 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
         macro_rules! distribute {
             ($($itr:expr => $key:expr),*) => {
                 $(
-                    let mut entry = manager_indices.entry($key).or_insert_with(EcoVec::new);
+                    let entry = manager_indices.entry($key).or_insert_with(EcoVec::new);
                     for var_ref in $itr {
                         entry.push(var_ref.idx as usize);
                         all_variables.push(var_ref.func);

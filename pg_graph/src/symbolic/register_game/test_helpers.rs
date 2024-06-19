@@ -95,10 +95,6 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        time::Instant,
-    };
-
     use itertools::Itertools;
     use oxidd_core::ManagerRef;
 
@@ -109,13 +105,11 @@ mod tests {
         symbolic,
         symbolic::{
             BDD,
-            helpers::{CachedSymbolicEncoder, MultiEncoder},
-            oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
+            oxidd_extensions::BddExtensions,
             register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
-            sat::DiscontiguousArrayIterator,
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
-        tests::example_dir, visualize::{DotWriter, VisualRegisterGame},
+        visualize::{DotWriter, VisualRegisterGame},
     };
 
     #[test]

@@ -1,11 +1,5 @@
-use std::collections::HashMap;
-
 use ecow::EcoVec;
-use itertools::Itertools;
-use oxidd::{
-    bcdd::BCDDManagerRef,
-    bdd::{BDDFunction, BDDManagerRef},
-};
+use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst},
     Manager,
@@ -20,7 +14,6 @@ use crate::{
     symbolic,
     symbolic::{
         BDD,
-        helpers,
         helpers::CachedSymbolicEncoder,
         oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
     },

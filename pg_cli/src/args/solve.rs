@@ -4,7 +4,7 @@ use pg_graph::{
     explicit::{ParityGraph, register_game::RegisterGame},
     Owner,
     symbolic::{register_game::SymbolicRegisterGame, solvers::symbolic_zielonka::SymbolicZielonkaSolver},
-    visualize::{DotWriter, MermaidWriter},
+    visualize::DotWriter,
 };
 
 #[derive(clap::Args, Debug)]
@@ -283,7 +283,7 @@ impl SolveCommand {
             tracing::info!("Solution: {:?}", solution);
         }
 
-        if let Some((out_path, mut dot)) = dot_output {
+        if let Some((out_path, dot)) = dot_output {
             use std::fmt::Write;
             let mut new_dot = dot.strip_suffix("}").unwrap().to_string();
             for (v_id, winner) in solution.iter().enumerate() {

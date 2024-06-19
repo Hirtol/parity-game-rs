@@ -75,7 +75,7 @@ impl<'a> TangleSolver<'a> {
     fn search(
         &mut self,
         game: &SubGame<u32, ParityGame>,
-        mut tangles: Vec<Tangle>,
+        tangles: Vec<Tangle>,
         strategy: &mut Vec<Option<VertexId>>,
     ) -> (Vec<Tangle>, Tangle) {
         // loop {
