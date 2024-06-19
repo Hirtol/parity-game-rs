@@ -1,0 +1,260 @@
+Trivial_2() -> Best found: Mutex { data: Some(36), current best we had was 41, poisoned: false, .. } - Order: Mutex {
+    data: Some(
+        [
+            {
+                NextMove: [
+                    1,
+                ],
+                Priority: [
+                    0,
+                ],
+                Vertex: [
+                    3,
+                ],
+                Registers: [
+                    7,
+                ],
+            },
+            {
+                NextMove: [
+                    2,
+                ],
+                Priority: [
+                    6,
+                ],
+                Vertex: [
+                    5,
+                ],
+                Registers: [
+                    4,
+                ],
+            },
+        ],
+    ),
+    poisoned: false,
+    ..
+}
+
+small_pg(0 priority) -> Best found: Mutex { data: Some(52), was 64, poisoned: false, .. } - Order: Mutex {
+    data: Some(
+        [
+            {
+                Priority: [
+                    0,
+                ],
+                Vertex: [
+                    8,
+                    9,
+                ],
+                NextMove: [
+                    1,
+                ],
+                Registers: [
+                    4,
+                ],
+            },
+            {
+                Priority: [
+                    5,
+                ],
+                Vertex: [
+                    7,
+                    6,
+                ],
+                NextMove: [
+                    2,
+                ],
+                Registers: [
+                    3,
+                ],
+            },
+        ],
+    ),
+    poisoned: false,
+    ..
+}
+
+two_counters_1 -> 
+Levels: 32
+New found: Some(24883) - Order: Some([{Vertex: [10, 11, 12], Priority: [13, 14, 15], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {Vertex: [17, 18, 19], Priority: [20, 21, 22], NextMove: [16], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31]}])
+New found: Some(22795) - Order: Some([{Priority: [13, 14, 15], Vertex: [10, 11, 12], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {Priority: [29, 30, 31], Vertex: [26, 27, 28], NextMove: [16], Registers: [17, 18, 19, 20, 21, 22, 23, 24, 25]}])
+New found: Some(22790) - Order: Some([{NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [10, 11, 12], Priority: [13, 14, 15]}, {NextMove: [16], Registers: [17, 18, 19, 20, 21, 22, 23, 24, 25], Vertex: [29, 30, 31], Priority: [26, 27, 28]}])
+New found: Some(18884) - Order: Some([{Priority: [13, 14, 15], Vertex: [10, 11, 12], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {Priority: [26, 27, 28], Vertex: [29, 30, 31], Registers: [16, 17, 18, 19, 20, 21, 22, 23, 24], NextMove: [25]}])
+New found: Some(18854) - Order: Some([{Priority: [13, 14, 15], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [10, 11, 12]}, {Priority: [29, 30, 31], NextMove: [28], Registers: [16, 17, 18, 19, 20, 21, 22, 23, 24], Vertex: [25, 26, 27]}])
+New found: Some(18845) - Order: Some([{Priority: [13, 14, 15], Vertex: [10, 11, 12], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {Priority: [28, 29, 30], Vertex: [25, 26, 27], Registers: [16, 17, 18, 19, 20, 21, 22, 23, 24], NextMove: [31]}])
+New found: Some(7614) - Order: Some([{NextMove: [0], Priority: [10, 11, 12], Vertex: [23, 24, 25], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {NextMove: [13], Vertex: [26, 27, 28], Priority: [29, 30, 31], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22]}])
+New found: Some(7609) - Order: Some([{NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Priority: [10, 11, 12], Vertex: [23, 24, 25]}, {NextMove: [13], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Priority: [26, 27, 28], Vertex: [29, 30, 31]}])
+New found: Some(7602) - Order: Some([{Priority: [10, 11, 12], Vertex: [29, 30, 31], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {Vertex: [23, 24, 25], Priority: [26, 27, 28], NextMove: [13], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22]}])
+New found: Some(7469) - Order: Some([{Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], NextMove: [0], Vertex: [26, 27, 28], Priority: [10, 11, 12]}, {Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], NextMove: [13], Vertex: [29, 30, 31], Priority: [23, 24, 25]}])
+New found: Some(7460) - Order: Some([{Priority: [10, 11, 12], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [29, 30, 31]}, {Priority: [23, 24, 25], NextMove: [13], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Vertex: [26, 27, 28]}])
+New found: Some(6482) - Order: Some([{Priority: [10, 11, 12], Vertex: [22, 23, 24], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {Vertex: [26, 27, 28], Priority: [29, 30, 31], Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], NextMove: [25]}])
+New found: Some(6477) - Order: Some([{NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Priority: [10, 11, 12], Vertex: [22, 23, 24]}, {Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], NextMove: [25], Priority: [26, 27, 28], Vertex: [29, 30, 31]}])
+New found: Some(6438) - Order: Some([{Priority: [10, 11, 12], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], NextMove: [0], Vertex: [22, 23, 24]}, {Priority: [28, 29, 30], Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], Vertex: [25, 26, 27], NextMove: [31]}])
+New found: Some(6350) - Order: Some([{Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], NextMove: [0], Priority: [10, 11, 12], Vertex: [29, 30, 31]}, {Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], NextMove: [22], Priority: [23, 24, 25], Vertex: [26, 27, 28]}])
+New found: Some(6293) - Order: Some([{NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [25, 26, 27], Priority: [10, 11, 12]}, {Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], NextMove: [28], Vertex: [29, 30, 31], Priority: [22, 23, 24]}])
+New found: Some(6290) - Order: Some([{NextMove: [0], Priority: [10, 11, 12], Vertex: [25, 26, 27], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9]}, {NextMove: [31], Vertex: [28, 29, 30], Priority: [22, 23, 24], Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21]}])
+New found: Some(6287) - Order: Some([{Priority: [10, 11, 12], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [26, 27, 28], NextMove: [0]}, {Priority: [22, 23, 24], Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], Vertex: [29, 30, 31], NextMove: [25]}])
+New found: Some(6278) - Order: Some([{Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], NextMove: [0], Priority: [10, 11, 12], Vertex: [29, 30, 31]}, {Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], Priority: [22, 23, 24], NextMove: [25], Vertex: [26, 27, 28]}])
+New found: Some(5649) - Order: Some([{NextMove: [0], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19], Vertex: [1, 2, 3], Priority: [4, 5, 6]}, {NextMove: [7], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Vertex: [8, 9, 10], Priority: [20, 21, 22]}])
+New found: Some(5063) - Order: Some([{NextMove: [0], Priority: [4, 5, 6], Vertex: [1, 2, 3], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19]}, {NextMove: [7], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28], Vertex: [8, 9, 10], Priority: [29, 30, 31]}])
+New found: Some(2472) - Order: Some([{Vertex: [1, 2, 3], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Priority: [4, 5, 6], NextMove: [0]}, {Vertex: [8, 9, 10], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Priority: [11, 12, 13], NextMove: [7]}])
+test symbolic::register_game::test_helpers::tests::test_variable_orders_grouped has been running for over 60 seconds
+New found: Some(2462) - Order: Some([{Priority: [4, 5, 6], Vertex: [1, 2, 3], NextMove: [0], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22]}, {Priority: [11, 12, 13], Vertex: [7, 8, 9], NextMove: [10], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31]}])
+New found: Some(2397) - Order: Some([{Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], NextMove: [0], Priority: [1, 2, 3], Vertex: [4, 5, 6]}, {Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], NextMove: [7], Priority: [11, 12, 13], Vertex: [8, 9, 10]}])
+New found: Some(2387) - Order: Some([{Vertex: [4, 5, 6], Priority: [1, 2, 3], NextMove: [0], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22]}, {Vertex: [7, 8, 9], Priority: [11, 12, 13], NextMove: [10], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31]}])
+New found: Some(2363) - Order: Some([{Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], NextMove: [0], Vertex: [5, 6, 7], Priority: [1, 2, 3]}, {Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], NextMove: [4], Vertex: [8, 9, 10], Priority: [11, 12, 13]}])
+New found: Some(2362) - Order: Some([{NextMove: [0], Priority: [1, 2, 3], Vertex: [8, 9, 10], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22]}, {NextMove: [4], Priority: [11, 12, 13], Vertex: [5, 6, 7], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31]}])
+New found: Some(2302) - Order: Some([{Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Vertex: [8, 9, 10], NextMove: [0], Priority: [1, 2, 3]}, {Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Vertex: [11, 12, 13], NextMove: [4], Priority: [5, 6, 7]}])
+New found: Some(2301) - Order: Some([{Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Priority: [1, 2, 3], Vertex: [11, 12, 13], NextMove: [0]}, {Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Priority: [5, 6, 7], Vertex: [8, 9, 10], NextMove: [4]}])
+New found: Some(2299) - Order: Some([{NextMove: [3], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Vertex: [8, 9, 10], Priority: [0, 1, 2]}, {NextMove: [4], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Vertex: [11, 12, 13], Priority: [5, 6, 7]}])
+Best found: Mutex { data: Some(2298), was 6500ish, poisoned: false, .. } - Order: Mutex {
+    data: Some(
+        [
+            {
+                Priority: [
+                    0,
+                    1,
+                    2,
+                ],
+                Vertex: [
+                    11,
+                    12,
+                    13,
+                ],
+                NextMove: [
+                    3,
+                ],
+                Registers: [
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19,
+                    20,
+                    21,
+                    22,
+                ],
+            },
+            {
+                Priority: [
+                    5,
+                    6,
+                    7,
+                ],
+                Vertex: [
+                    8,
+                    9,
+                    10,
+                ],
+                NextMove: [
+                    4,
+                ],
+                Registers: [
+                    23,
+                    24,
+                    25,
+                    26,
+                    27,
+                    28,
+                    29,
+                    30,
+                    31,
+                ],
+            },
+        ],
+    ),
+    poisoned: false,
+    ..
+}
+test symbolic::register_game::test_helpers::tests::test_variable_orders_grouped ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 2336.20s
+
+two_counters_1 (SPEED FOCUS) ->
+Levels: 32
+New found: Some(511.9366ms) - Order: Some([{NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [10, 11, 12], Priority: [13, 14, 15]}, {NextMove: [16], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28], Vertex: [17, 18, 19], Priority: [29, 30, 31]}])
+New found: Some(454.3537ms) - Order: Some([{Priority: [10, 11, 12], NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [29, 30, 31]}, {Priority: [26, 27, 28], NextMove: [13], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Vertex: [23, 24, 25]}])
+New found: Some(437.8906ms) - Order: Some([{NextMove: [0], Registers: [1, 2, 3, 4, 5, 6, 7, 8, 9], Vertex: [29, 30, 31], Priority: [10, 11, 12]}, {NextMove: [22], Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], Vertex: [23, 24, 25], Priority: [26, 27, 28]}])
+New found: Some(431.2405ms) - Order: Some([{Registers: [4, 5, 6, 7, 8, 9, 10, 11, 12], Priority: [13, 14, 15], Vertex: [1, 2, 3], NextMove: [0]}, {Registers: [17, 18, 19, 20, 21, 22, 23, 24, 25], Priority: [29, 30, 31], Vertex: [26, 27, 28], NextMove: [16]}])
+New found: Some(430.1428ms) - Order: Some([{NextMove: [0], Priority: [13, 14, 15], Vertex: [1, 2, 3], Registers: [4, 5, 6, 7, 8, 9, 10, 11, 12]}, {NextMove: [16], Priority: [29, 30, 31], Vertex: [17, 18, 19], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28]}])
+New found: Some(401.8123ms) - Order: Some([{NextMove: [0], Registers: [4, 5, 6, 7, 8, 9, 10, 11, 12], Vertex: [1, 2, 3], Priority: [13, 14, 15]}, {NextMove: [25], Registers: [16, 17, 18, 19, 20, 21, 22, 23, 24], Vertex: [26, 27, 28], Priority: [29, 30, 31]}])
+New found: Some(395.3322ms) - Order: Some([{Vertex: [1, 2, 3], NextMove: [0], Registers: [4, 5, 6, 7, 8, 9, 10, 11, 12], Priority: [22, 23, 24]}, {Vertex: [25, 26, 27], NextMove: [28], Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], Priority: [29, 30, 31]}])
+New found: Some(391.6759ms) - Order: Some([{Registers: [4, 5, 6, 7, 8, 9, 10, 11, 12], Vertex: [1, 2, 3], Priority: [29, 30, 31], NextMove: [0]}, {Registers: [13, 14, 15, 16, 17, 18, 19, 20, 21], Vertex: [23, 24, 25], Priority: [26, 27, 28], NextMove: [22]}])
+New found: Some(340.7646ms) - Order: Some([{NextMove: [0], Vertex: [1, 2, 3], Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Priority: [4, 5, 6]}, {NextMove: [7], Vertex: [8, 9, 10], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Priority: [11, 12, 13]}])
+New found: Some(319.5537ms) - Order: Some([{Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Priority: [4, 5, 6], NextMove: [0], Vertex: [1, 2, 3]}, {Registers: [14, 15, 16, 17, 18, 19, 20, 21, 22], Priority: [11, 12, 13], Vertex: [7, 8, 9], NextMove: [10]}])
+New found: Some(261.132ms) - Order: Some([{Vertex: [1, 2, 3], NextMove: [0], Registers: [8, 9, 10, 11, 12, 13, 14, 15, 16], Priority: [17, 18, 19]}, {Vertex: [5, 6, 7], NextMove: [4], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28], Priority: [29, 30, 31]}])
+New found: Some(240.3666ms) - Order: Some([{NextMove: [0], Registers: [8, 9, 10, 11, 12, 13, 14, 15, 16], Vertex: [1, 2, 3], Priority: [26, 27, 28]}, {NextMove: [4], Registers: [17, 18, 19, 20, 21, 22, 23, 24, 25], Vertex: [5, 6, 7], Priority: [29, 30, 31]}])
+New found: Some(181.6646ms) - Order: Some([{Vertex: [1, 2, 3], Priority: [29, 30, 31], NextMove: [0], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28]}, {Vertex: [5, 6, 7], Priority: [17, 18, 19], NextMove: [4], Registers: [8, 9, 10, 11, 12, 13, 14, 15, 16]}])
+test symbolic::register_game::test_helpers::tests::test_variable_orders_grouped_time_taken has been running for over 60 seconds
+New found: Some(174.6444ms) - Order: Some([{Priority: [29, 30, 31], NextMove: [0], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19], Vertex: [1, 2, 3]}, {Priority: [5, 6, 7], NextMove: [4], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28], Vertex: [8, 9, 10]}])
+New found: Some(169.6536ms) - Order: Some([{Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19], Priority: [20, 21, 22], Vertex: [2, 3, 4], NextMove: [0]}, {Priority: [5, 6, 7], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Vertex: [8, 9, 10], NextMove: [1]}])
+New found: Some(169.4351ms) - Order: Some([{Vertex: [0, 1, 2], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Priority: [20, 21, 22], NextMove: [3]}, {Vertex: [5, 6, 7], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19], Priority: [8, 9, 10], NextMove: [4]}])
+New found: Some(168.331ms) - Order: Some([{NextMove: [4], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19], Priority: [20, 21, 22], Vertex: [0, 1, 2]}, {NextMove: [3], Priority: [8, 9, 10], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Vertex: [5, 6, 7]}])
+New found: Some(163.4747ms) - Order: Some([{NextMove: [4], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19], Priority: [20, 21, 22], Vertex: [0, 1, 2]}, {Priority: [5, 6, 7], NextMove: [3], Registers: [23, 24, 25, 26, 27, 28, 29, 30, 31], Vertex: [8, 9, 10]}])
+New found: Some(156.8182ms) - Order: Some([{Vertex: [0, 1, 2], Priority: [29, 30, 31], NextMove: [10], Registers: [20, 21, 22, 23, 24, 25, 26, 27, 28]}, {Vertex: [3, 4, 5], Priority: [7, 8, 9], NextMove: [6], Registers: [11, 12, 13, 14, 15, 16, 17, 18, 19]}])
+Best found: Mutex { data: Some(150.9862ms), poisoned: false, .. } - Order: Mutex {
+    data: Some(
+        [
+            {
+                Vertex: [
+                    1,
+                    2,
+                    3,
+                ],
+                Priority: [
+                    29,
+                    30,
+                    31,
+                ],
+                NextMove: [
+                    4,
+                ],
+                Registers: [
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25,
+                    26,
+                    27,
+                    28,
+                ],
+            },
+            {
+                Vertex: [
+                    5,
+                    6,
+                    7,
+                ],
+                Priority: [
+                    8,
+                    9,
+                    10,
+                ],
+                NextMove: [
+                    0,
+                ],
+                Registers: [
+                    11,
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                ],
+            },
+        ],
+    ),
+    poisoned: false,
+    ..
+}
+test symbolic::register_game::test_helpers::tests::test_variable_orders_grouped_time_taken ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 2565.16s
+
+
+

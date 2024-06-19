@@ -96,7 +96,6 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Mutex},
         time::Instant,
     };
 
@@ -105,7 +104,7 @@ mod tests {
 
     use crate::{
         explicit,
-        explicit::{ParityGame},
+        explicit::ParityGame,
         Owner,
         symbolic,
         symbolic::{
@@ -156,7 +155,7 @@ mod tests {
 
     #[tracing_test::traced_test]
     #[test]
-    pub fn test_convert_symb_to_pg() -> symbolic::Result<()> {
+    pub fn test_convert_symb_to_pg() -> eyre::Result<()> {
         // let game = crate::tests::load_example("amba_decomposed_decode.tlsf.ehoa.pg");
 
         let game = crate::tests::trivial_pg_2().unwrap();
@@ -165,7 +164,7 @@ mod tests {
 
         let rg = explicit::register_game::RegisterGame::construct_2021(&game, register_index, controller);
         let explicit_rg = DotWriter::write_dot(&VisualRegisterGame(&rg)).unwrap();
-        std::fs::write("explicit_rg.dot", &explicit_rg).unwrap();
+        std::fs::write("explicit_rg.dot", explicit_rg).unwrap();
 
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, register_index, controller)?;
         s_pg.gc();

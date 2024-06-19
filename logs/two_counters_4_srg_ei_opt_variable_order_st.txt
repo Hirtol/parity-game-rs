@@ -1,0 +1,15 @@
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:load_parity_game: pg_cli::utils: Loaded parity game size=68
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Using symbolic solver solver=Zielonka
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Constructing with register index k=2
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::parity_game: Starting edge BDD construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::parity_game: Starting priority/owner BDD construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Starting player vertex set construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Creating priority BDDs
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Starting E_move construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Starting E_i construction
+1.8s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Constructed Register Game elapsed=1.8839027s
+2.1s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Converted from parity game to symbolic register game from_vertex=68 rg_vertex=35651584 rg_bdd_nodes=108009 ratio=524288
+2723.8s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Solving done elapsed=2721.731217s
+2723.8s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Solved with recursive calls n=641
+2723.9s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Results even_wins=34 odd_wins=34
+2723.9s  INFO pg_cli: Runtime: 2723.91s - Peak Memory Usage: 300.2854 MB

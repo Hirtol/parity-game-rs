@@ -1,0 +1,20 @@
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:load_parity_game: pg_cli::utils: Loaded parity game size=68
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Using symbolic solver solver=Zielonka
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Constructing with register index k=2
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::parity_game: Starting edge BDD construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::parity_game: Starting priority/owner BDD construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Starting player vertex set construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Creating priority BDDs
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Starting E_move construction
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Starting E_i construction
+3.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Current permutation: `947/6859`, rate: `315.62/s`, ETA: `18.73`s
+6.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Current permutation: `2260/6859`, rate: `376.48/s`, ETA: `12.22`s
+9.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Current permutation: `3564/6859`, rate: `395.80/s`, ETA: `8.32`s
+12.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Current permutation: `4868/6859`, rate: `405.49/s`, ETA: `4.91`s
+15.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}:Build Symbolic Register Game: pg_graph::symbolic::register_game: Current permutation: `6162/6859`, rate: `410.60/s`, ETA: `1.70`s
+16.7s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Constructed Register Game elapsed=16.7321891s
+17.1s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Converted from parity game to symbolic register game from_vertex=68 rg_vertex=35651584 rg_bdd_nodes=108009 ratio=524288
+2056.9s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Solving done elapsed=2039.7929605s
+2056.9s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Solved with recursive calls n=641
+2056.9s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_4.pg"}: pg_cli::args::solve: Results even_wins=34 odd_wins=34
+2056.9s  INFO pg_cli: Runtime: 2056.96s - Peak Memory Usage: 302.61096 MB
