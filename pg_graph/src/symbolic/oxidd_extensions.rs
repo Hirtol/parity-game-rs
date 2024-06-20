@@ -5,7 +5,7 @@ use oxidd_core::{
     util::{AllocResult, SatCountCache},
 };
 
-use crate::symbolic::sat::TruthAssignmentsIterator;
+use crate::symbolic::sat::{TruthAssignmentsIterator, TruthIteratorHelper};
 
 #[derive(Clone)]
 pub struct FunctionVarRef<F> {
@@ -13,7 +13,7 @@ pub struct FunctionVarRef<F> {
     pub idx: u32,
 }
 
-pub trait BddExtensions: Function {
+pub trait BddExtensions: Function + TruthIteratorHelper {
     /// Returns an [Iterator] which results in all possible satisfying assignments of the variables.
     fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, Self>;
 
@@ -39,8 +39,8 @@ pub trait BooleanFunctionExtensions: BooleanFunction {
 
 impl<F: BooleanFunction> BooleanFunctionExtensions for F {}
 
-impl BddExtensions for BDDFunction {
-    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, BDDFunction> {
+impl<F: TruthIteratorHelper + BooleanFunction> BddExtensions for F {
+    fn sat_assignments<'b, 'a>(&self, manager: &'b Self::Manager<'a>) -> TruthAssignmentsIterator<'b, 'a, F> {
         TruthAssignmentsIterator::new(manager, self)
     }
 

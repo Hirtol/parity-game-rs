@@ -1,12 +1,17 @@
 use std::collections::VecDeque;
 
-use oxidd::bdd::BDDFunction;
+use oxidd::{bcdd::BCDDFunction, bdd::BDDFunction};
+use oxidd::zbdd::ZBDDFunction;
 use oxidd_core::{
+    DiagramRules,
     Edge,
-    function::{EdgeOfFunc, Function},
-    HasLevel, InnerNode, Manager, Node, util::{Borrowed, OptBool},
+    function::{EdgeOfFunc, Function}, HasLevel, InnerNode, Manager, Node, util::{Borrowed, OptBool},
 };
-use oxidd_rules_bdd::simple::BDDTerminal;
+use oxidd_rules_bdd::{
+    complement_edge::{BCDDRules, EdgeTag},
+    simple::BDDTerminal,
+};
+use oxidd_rules_zbdd::ZBDDTerminal;
 
 use crate::explicit::VertexId;
 
@@ -17,6 +22,15 @@ fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<E>, Borrowe
     let f_then = it.next().unwrap();
     let f_else = it.next().unwrap();
     (f_then, f_else)
+}
+
+#[inline]
+#[must_use]
+fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(tag: EdgeTag, node: &N) -> (Borrowed<E>, Borrowed<E>) {
+    let mut it = BCDDRules::cofactors(tag, node);
+    let ft = it.next().unwrap();
+    let fe = it.next().unwrap();
+    (ft, fe)
 }
 
 pub struct MidAssignment<'a, F: Function> {
@@ -30,17 +44,56 @@ pub struct TruthAssignmentsIterator<'b, 'a, F: Function> {
     counter: usize,
 }
 
-impl<'b, 'a> TruthAssignmentsIterator<'b, 'a, BDDFunction> {
-    pub fn new(manager: &'b <BDDFunction as Function>::Manager<'a>, bdd: &BDDFunction) -> Self {
-        let base_edge = bdd.as_edge(manager);
-        let begin = match manager.get_node(base_edge) {
+pub trait TruthIteratorHelper: Function {
+    fn start_assignment(&self, manager: &Self::Manager<'_>) -> Option<Vec<OptBool>>;
+}
+
+impl TruthIteratorHelper for BDDFunction {
+    fn start_assignment(&self, manager: &Self::Manager<'_>) -> Option<Vec<OptBool>> {
+        let base_edge = self.as_edge(manager);
+        match manager.get_node(base_edge) {
             Node::Inner(_) => Some(vec![OptBool::None; manager.num_levels() as usize]),
             Node::Terminal(t) => match t {
                 BDDTerminal::False => None,
                 BDDTerminal::True => Some(vec![OptBool::None; manager.num_levels() as usize]),
             },
         }
-        .map(|start_valuation| MidAssignment {
+    }
+}
+
+impl TruthIteratorHelper for BCDDFunction {
+    fn start_assignment(&self, manager: &Self::Manager<'_>) -> Option<Vec<OptBool>> {
+        let base_edge = self.as_edge(manager);
+        if manager.get_node(base_edge).is_any_terminal() {
+            match base_edge.tag() {
+                EdgeTag::None => Some(vec![OptBool::None; manager.num_levels() as usize]),
+                EdgeTag::Complemented => None,
+            }
+        } else {
+            Some(vec![OptBool::None; manager.num_levels() as usize])
+        }
+    }
+}
+
+impl TruthIteratorHelper for ZBDDFunction {
+    fn start_assignment(&self, manager: &Self::Manager<'_>) -> Option<Vec<OptBool>> {
+        let base_edge = self.as_edge(manager);
+        match manager.get_node(base_edge) {
+            Node::Inner(_) => Some(vec![OptBool::None; manager.num_levels() as usize]),
+            Node::Terminal(t) => {
+                match t {
+                    ZBDDTerminal::Empty => None,
+                    ZBDDTerminal::Base => Some(vec![OptBool::False; manager.num_levels() as usize]),
+                }
+            }
+        }
+    }
+}
+
+impl<'b, 'a, F: TruthIteratorHelper> TruthAssignmentsIterator<'b, 'a, F> {
+    pub fn new(manager: &'b <F as Function>::Manager<'a>, bdd: &F) -> Self {
+        let base_edge = bdd.as_edge(manager);
+        let begin = bdd.start_assignment(manager).map(|start_valuation| MidAssignment {
             next_edge: manager.clone_edge(base_edge),
             valuation_progress: start_valuation,
         });
@@ -86,6 +139,96 @@ impl<'b, 'a> Iterator for TruthAssignmentsIterator<'b, 'a, BDDFunction> {
 
             next_evaluate.valuation_progress[node.level() as usize] = OptBool::from(next_edge);
             next_cube = Some(if next_edge { true_edge } else { false_edge })
+        }
+
+        self.manager.drop_edge(next_evaluate.next_edge);
+
+        Some(next_evaluate.valuation_progress)
+    }
+}
+
+impl<'b, 'a> Iterator for TruthAssignmentsIterator<'b, 'a, BCDDFunction> {
+    type Item = Vec<OptBool>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut next_evaluate = self.queue.pop_back()?;
+
+        let mut next_cube = Some(next_evaluate.next_edge.borrowed());
+
+        while let Some(next_edge) = &next_cube {
+            let Node::Inner(node) = self.manager.get_node(next_edge) else {
+                break;
+            };
+
+            let tag = next_edge.tag();
+            let (true_edge, false_edge) = collect_cofactors(tag, node);
+            let next_edge = if self.manager.get_node(&true_edge).is_any_terminal()
+                && true_edge.tag() == EdgeTag::Complemented
+            {
+                false
+            } else if self.manager.get_node(&false_edge).is_any_terminal() && false_edge.tag() == EdgeTag::Complemented
+            {
+                true
+            } else {
+                // First queue up the next item (`true`)
+                let mut queued_val = MidAssignment {
+                    next_edge: self.manager.clone_edge(&true_edge),
+                    valuation_progress: next_evaluate.valuation_progress.clone(),
+                };
+                queued_val.valuation_progress[node.level() as usize] = OptBool::True;
+                self.queue.push_back(queued_val);
+
+                // Always take the `false` edge first
+                false
+            };
+
+            next_evaluate.valuation_progress[node.level() as usize] = OptBool::from(next_edge);
+            next_cube = Some(if next_edge { true_edge } else { false_edge })
+        }
+
+        self.manager.drop_edge(next_evaluate.next_edge);
+
+        Some(next_evaluate.valuation_progress)
+    }
+}
+
+impl<'b, 'a> Iterator for TruthAssignmentsIterator<'b, 'a, ZBDDFunction> {
+    type Item = Vec<OptBool>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut next_evaluate = self.queue.pop_back()?;
+
+        let mut next_cube = Some(next_evaluate.next_edge.borrowed());
+
+        while let Some(next_edge) = &next_cube {
+            let Node::Inner(node) = self.manager.get_node(next_edge) else {
+                break;
+            };
+
+            let (high_edge, low_edge) = collect_children(node);
+
+            let (val, next_edge) = if high_edge == low_edge {
+                (OptBool::None, high_edge)
+            } else {
+                let next_edge = if self.manager.get_node(&low_edge).is_terminal(&ZBDDTerminal::Empty) {
+                    true
+                } else {
+                    // First queue up the next item (`true`)
+                    let mut queued_val = MidAssignment {
+                        next_edge: self.manager.clone_edge(&high_edge),
+                        valuation_progress: next_evaluate.valuation_progress.clone(),
+                    };
+                    queued_val.valuation_progress[node.level() as usize] = OptBool::True;
+                    self.queue.push_back(queued_val);
+
+                    // Always take the `false` edge first
+                    false
+                };
+                (OptBool::from(next_edge), if next_edge { high_edge } else { low_edge })
+            };
+
+            next_evaluate.valuation_progress[node.level() as usize] = val;
+            next_cube = Some(next_edge)
         }
 
         self.manager.drop_edge(next_evaluate.next_edge);

@@ -1124,6 +1124,7 @@ dependencies = [
  "oxidd-dump",
  "oxidd-reorder",
  "oxidd-rules-bdd",
+ "oxidd-rules-zbdd",
  "petgraph",
  "pg_parser",
  "profiling",

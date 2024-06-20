@@ -95,6 +95,7 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
 
 #[cfg(test)]
 mod tests {
+    use ahash::{HashMap, HashSet};
     use itertools::Itertools;
     use oxidd_core::ManagerRef;
 
@@ -140,9 +141,9 @@ mod tests {
         let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
 
         let _ = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
-
-        assert_eq!(wp_even, vec![2, 0, 5, 3]);
-        assert_eq!(wp_odd, vec![6, 4, 1]);
+        
+        assert_eq!(wp_even.into_iter().collect::<HashSet<_>>(), vec![2, 0, 5, 3].into_iter().collect::<HashSet<_>>());
+        assert_eq!(wp_odd.into_iter().collect::<HashSet<_>>(), vec![6, 4, 1].into_iter().collect::<HashSet<_>>());
 
         Ok(())
     }
