@@ -1,4 +1,3 @@
-use oxidd::bdd::BDDFunction;
 use oxidd_core::util::OutOfMemory;
 
 pub use parity_game::SymbolicParityGame;

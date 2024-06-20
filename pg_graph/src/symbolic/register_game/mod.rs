@@ -28,6 +28,7 @@ use crate::symbolic::sat::TruthAssignmentsIterator;
 
 mod test_helpers;
 mod variable_order;
+pub mod helpers;
 
 pub struct SymbolicRegisterGame<F: Function> {
     pub k: Rank,
@@ -324,8 +325,8 @@ where
     }
 
     #[cfg(feature = "statistics")]
-    pub fn print_statistics<'a, O: Copy>(&self) 
-        where F::Manager<'a>: HasApplyCache<F::Manager<'a>, O, ApplyCache: StatisticsGenerator> {
+    pub fn print_statistics<O: Copy>(&self) 
+        where for<'id> F::Manager<'id>: HasApplyCache<F::Manager<'id>, O, ApplyCache: StatisticsGenerator> {
         self.manager.with_manager_shared(|man| {
             use oxidd_cache::StatisticsGenerator;
             use oxidd_core::HasApplyCache;
