@@ -6,6 +6,7 @@ use pg_graph::{
     symbolic::{register_game::SymbolicRegisterGame, solvers::symbolic_zielonka::SymbolicZielonkaSolver},
     visualize::DotWriter,
 };
+use pg_graph::symbolic::BDD;
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {
@@ -184,7 +185,7 @@ impl SolveCommand {
                     };
 
                     let symbolic_game = timed_solve!(
-                        pg_graph::symbolic::SymbolicParityGame::from_explicit(game_to_solve),
+                        pg_graph::symbolic::SymbolicParityGame::<BDD>::from_explicit(game_to_solve),
                         "Constructed Symbolic PG"
                     )?;
                     symbolic_game.gc();
@@ -215,7 +216,7 @@ impl SolveCommand {
 
                         tracing::debug!(k, "Constructing with register index");
                         let register_game = timed_solve!(
-                            SymbolicRegisterGame::from_symbolic(&parity_game, k, Owner::Even),
+                            SymbolicRegisterGame::<BDD>::from_symbolic(&parity_game, k, Owner::Even),
                             "Constructed Register Game"
                         )?;
                         let game_to_solve = register_game.to_symbolic_parity_game();
@@ -247,7 +248,7 @@ impl SolveCommand {
                         winners
                     } else {
                         let game_to_solve = timed_solve!(
-                            pg_graph::symbolic::SymbolicParityGame::from_explicit(&parity_game),
+                            pg_graph::symbolic::SymbolicParityGame::<BDD>::from_explicit(&parity_game),
                             "Constructed Symbolic PG"
                         )?;
                         game_to_solve.gc();

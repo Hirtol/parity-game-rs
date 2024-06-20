@@ -10,7 +10,8 @@ pub mod register_game;
 pub mod sat;
 pub mod solvers;
 
-pub type BDD = BDDFunction;
+pub type BDD = oxidd::bdd::BDDFunction;
+pub type BCDD = oxidd::bcdd::BCDDFunction;
 pub type Result<T> = std::result::Result<T, BddError>;
 
 #[derive(Debug, Clone, thiserror::Error)]

@@ -1,4 +1,6 @@
-use oxidd_core::function::BooleanFunction;
+use oxidd_core::function::{BooleanFunction, Function};
+use oxidd_core::util::OptBool;
+use oxidd_core::WorkerManager;
 
 use crate::{
     explicit::solvers::SolverOutput,
@@ -6,14 +8,18 @@ use crate::{
     symbolic,
     symbolic::{BDD, parity_game::SymbolicParityGame},
 };
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
+use crate::symbolic::sat::TruthAssignmentsIterator;
 
-pub struct SymbolicZielonkaSolver<'a> {
+pub struct SymbolicZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,
-    game: &'a SymbolicParityGame,
+    game: &'a SymbolicParityGame<F>,
 }
 
-impl<'a> SymbolicZielonkaSolver<'a> {
-    pub fn new(game: &'a SymbolicParityGame) -> Self {
+impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
+    where for<'id> F::Manager<'id>: WorkerManager,
+          for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>> {
+    pub fn new(game: &'a SymbolicParityGame<F>) -> Self {
         SymbolicZielonkaSolver {
             game,
             recursive_calls: 0,
@@ -41,11 +47,11 @@ impl<'a> SymbolicZielonkaSolver<'a> {
 
     /// Run the symbolic solver algorithm and return (W_even, W_odd) (the winning regions of even and odd respectively).
     #[tracing::instrument(name = "Run Symbolic Zielonka", skip(self))]
-    pub fn run_symbolic(&mut self) -> (BDD, BDD) {
+    pub fn run_symbolic(&mut self) -> (F, F) {
         self.zielonka(self.game).expect("Failed to compute solution")
     }
 
-    fn zielonka(&mut self, game: &SymbolicParityGame) -> symbolic::Result<(BDD, BDD)> {
+    fn zielonka(&mut self, game: &SymbolicParityGame<F>) -> symbolic::Result<(F, F)> {
         self.recursive_calls += 1;
 
         // If all the vertices are ignord
@@ -102,7 +108,7 @@ pub mod test {
         let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
-        let s_pg = SymbolicParityGame::from_explicit(&game).unwrap();
+        let s_pg = SymbolicParityGame::from_explicit_bdd(&game).unwrap();
         let mut solver = SymbolicZielonkaSolver::new(&s_pg);
 
         let solution = solver.run().winners;
@@ -117,7 +123,7 @@ pub mod test {
         let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
         let pg = parse_pg(&mut input.as_str()).unwrap();
         let game = ParityGame::new(pg).unwrap();
-        let s_pg = SymbolicParityGame::from_explicit(&game).unwrap();
+        let s_pg = SymbolicParityGame::from_explicit_bdd(&game).unwrap();
         let mut solver = SymbolicZielonkaSolver::new(&s_pg);
 
         let now = Instant::now();

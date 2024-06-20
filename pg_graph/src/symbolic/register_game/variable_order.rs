@@ -34,50 +34,62 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
 ) -> symbolic::Result<(RegisterVertexVars<F>, RegisterVertexVars<F>)> {
     // Note that this variable ordering will give _small_ BDDs, but will solve the overall game slower, as the Zielonka algorithm takes longer
     // with this ordering... for some reason. The total memory usage will remain lower though.
-    let next_move = F::new_var_layer_idx(man)?;
-    let prio_vars = (0..alloc.n_priority_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-
-    let next_move_edge = F::new_var_layer_idx(man)?;
-    let prio_vars_edge = (0..alloc.n_priority_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-
-    let vertex_vars = (0..alloc.n_vertex_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-    let vertex_vars_edge = (0..alloc.n_vertex_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-
-    let registers = (0..alloc.n_register_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-    let registers_edge = (0..alloc.n_register_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-
+    // let next_move = F::new_var_layer_idx(man)?;
+    // let mut prio_vars = (0..alloc.n_priority_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // 
+    // let next_move_edge = F::new_var_layer_idx(man)?;
+    // let mut prio_vars_edge = (0..alloc.n_priority_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // 
+    // let mut vertex_vars = (0..alloc.n_vertex_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // let mut vertex_vars_edge = (0..alloc.n_vertex_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // 
+    // let mut registers = (0..alloc.n_register_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // let mut registers_edge = (0..alloc.n_register_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // prio_vars.reverse();
+    // prio_vars_edge.reverse();
+    // vertex_vars.reverse();
+    // vertex_vars_edge.reverse();
+    // registers.reverse();
+    // registers_edge.reverse();
+    
     // This variable ordering is optimised for speed on two_counters, but not memory usage!
     // This order: 10.3s solver (19631 nodes), memory efficient order: 28.6s solver (14773 nodes)
     // It seems slower on `amba_decomposed`
-    // let next_move_edge = F::new_var_layer_idx(man)?;
-    //
-    // let vertex_vars = (0..n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-    // let next_move = F::new_var_layer_idx(man)?;
-    // let vertex_vars_edge = (0..n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-    // let prio_vars_edge = (0..n_prio_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-    //
-    // let registers_edge = (0..n_register_vars)
-    //     .flat_map(|_| F::new_var_layer_idx(man))
-    //     .collect_vec();
-    //
-    // let registers = (0..n_register_vars)
-    //     .flat_map(|_| F::new_var_layer_idx(man))
-    //     .collect_vec();
-    //
-    // let prio_vars = (0..n_prio_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+    let next_move_edge = F::new_var_layer_idx(man)?;
+    
+    let mut vertex_vars = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+    let next_move = F::new_var_layer_idx(man)?;
+    
+    let mut vertex_vars_edge = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+    let mut prio_vars_edge = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
+    
+    let mut registers_edge = (0..alloc.n_register_vars)
+        .flat_map(|_| F::new_var_layer_idx(man))
+        .collect_vec();
+    let mut registers = (0..alloc.n_register_vars)
+        .flat_map(|_| F::new_var_layer_idx(man))
+        .collect_vec();
+    
+    let mut prio_vars = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
+    vertex_vars.reverse();
+    vertex_vars_edge.reverse();
+    prio_vars_edge.reverse();
+    registers_edge.reverse();
+    registers.reverse();
+    prio_vars.reverse();
     Ok((
         RegisterVertexVars::new(
             next_move,
@@ -129,8 +141,9 @@ mod tests {
 
         let k = 0usize;
         let controller = Owner::Even;
-        let game = crate::tests::trivial_pg_2()?;
-
+        // let game = crate::tests::trivial_pg_2()?;
+        let game = crate::tests::load_example("ActionConverter.tlsf.ehoa.pg");
+        
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, k as Rank, controller).unwrap();
         let total_variables = srg.manager.with_manager_shared(|man| man.num_levels());
 
@@ -146,7 +159,7 @@ mod tests {
             let manager = oxidd::bdd::new_manager(0, 12, 12);
             let mut current_order = None;
 
-            let rg = SymbolicRegisterGame::from_manager(manager, &game, k as Rank, controller, |man, n_variable| {
+            let rg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_manager(manager, &game, k as Rank, controller, |man, n_variable| {
                 let orders = permutation_to_order(n_variable, &perm);
                 current_order = Some(orders.clone());
 
@@ -202,7 +215,7 @@ mod tests {
             let manager = oxidd::bdd::new_manager(0, 12, 12);
             let mut current_order = None;
 
-            let rg = SymbolicRegisterGame::from_manager(manager, &game, k as Rank, controller, |man, n_variable| {
+            let rg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_manager(manager, &game, k as Rank, controller, |man, n_variable| {
                 let orders = permutation_to_order_grouped(n_variable, &perm);
                 current_order = Some(orders.clone());
 
@@ -259,7 +272,7 @@ mod tests {
             let manager = oxidd::bdd::new_manager(0, 12, 12);
 
             let mut current_order = None;
-            let rg = SymbolicRegisterGame::from_manager(manager, &game, k as Rank, controller, |man, n_variable| {
+            let rg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_manager(manager, &game, k as Rank, controller, |man, n_variable| {
                 let orders = permutation_to_order_grouped(n_variable, &perm);
                 current_order = Some(orders.clone());
 

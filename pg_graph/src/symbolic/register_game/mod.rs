@@ -6,7 +6,10 @@ use std::{
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd::bdd::BDDManagerRef;
+use oxidd_cache::StatisticsGenerator;
 use oxidd_core::{function::{BooleanFunction, Function, FunctionSubst}, HasApplyCache, Manager, ManagerRef, util::{AllocResult, Subst}, WorkerManager};
+use oxidd_core::function::BooleanFunctionQuant;
+use oxidd_core::util::OptBool;
 
 use variable_order::VariableAllocatorInfo;
 
@@ -21,6 +24,7 @@ use crate::{
         oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
     },
 };
+use crate::symbolic::sat::TruthAssignmentsIterator;
 
 mod test_helpers;
 mod variable_order;
@@ -39,6 +43,7 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub v_odd: F,
     pub edges: F,
     pub e_move: F,
+    pub e_i_all: F,
     pub e_i: Vec<F>,
     pub priorities: ahash::HashMap<Priority, F>,
 
@@ -46,11 +51,13 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub base_false: F,
 }
 
-type F = BDD;
+// type F = BDD;
 
-impl SymbolicRegisterGame<BDD>
-// where
-// F: Function + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension + FunctionSubst,
+impl<F> SymbolicRegisterGame<F>
+where
+    F: BddExtensions + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension + FunctionSubst,
+    for<'id> F::Manager<'id>: WorkerManager,
+    for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>>
 {
     /// Construct a new symbolic register game straight from an explicit parity game.
     ///
@@ -67,7 +74,7 @@ impl SymbolicRegisterGame<BDD>
     }
 
     pub fn from_manager<T>(
-        manager: BDDManagerRef,
+        manager: F::ManagerRef,
         explicit: &ParityGame,
         k: Rank,
         controller: Owner,
@@ -212,6 +219,7 @@ impl SymbolicRegisterGame<BDD>
 
                 for (&priority, prio_bdd) in &sg.priorities {
                     let starting_vertices = prio_bdd.and(&used_permutation)?;
+                    
                     let mut next_registers = permutation.clone();
                     let rg_priority = explicit::register_game::reset_to_priority_2021(
                         i as Rank,
@@ -261,7 +269,8 @@ impl SymbolicRegisterGame<BDD>
             .try_fold(base_edge.clone(), |acc, (v, v_next)| acc.and(&v.equiv(v_next)?))?;
 
         e_i_edges = e_i_edges.into_iter().flat_map(|e_i| e_i.and(&base_vertex)).collect();
-
+        let e_i_joined = e_i_edges.iter().try_fold(base_false.clone(), |acc, bdd| acc.or(bdd))?;
+        
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
 
@@ -278,8 +287,9 @@ impl SymbolicRegisterGame<BDD>
             vertices: s_even.or(&s_odd)?,
             v_even: s_even,
             v_odd: s_odd,
-            edges: e_move.or(&e_i_edges.iter().try_fold(base_false.clone(), |acc, bdd| acc.or(bdd))?)?,
+            edges: e_move.or(&e_i_joined)?,
             e_move,
+            e_i_all: e_i_joined,
             e_i: e_i_edges,
             priorities,
             base_true,
@@ -287,7 +297,7 @@ impl SymbolicRegisterGame<BDD>
         })
     }
 
-    pub fn to_symbolic_parity_game(&self) -> SymbolicParityGame {
+    pub fn to_symbolic_parity_game(&self) -> SymbolicParityGame<F> {
         SymbolicParityGame {
             pg_vertex_count: self.vertices.sat_quick_count(self.variables.all_variables.len() as u32) as usize,
             manager: self.manager.clone(),
@@ -314,7 +324,8 @@ impl SymbolicRegisterGame<BDD>
     }
 
     #[cfg(feature = "statistics")]
-    pub fn print_statistics(&self) {
+    pub fn print_statistics<'a, O: Copy>(&self) 
+        where F::Manager<'a>: HasApplyCache<F::Manager<'a>, O, ApplyCache: StatisticsGenerator> {
         self.manager.with_manager_shared(|man| {
             use oxidd_cache::StatisticsGenerator;
             use oxidd_core::HasApplyCache;
@@ -334,7 +345,7 @@ impl SymbolicRegisterGame<BDD>
         let zero_registers = self
             .variables
             .register_vars()
-            .into_iter()
+            .iter()
             .try_fold(self.base_true.clone(), |acc, next| acc.and(&next.not()?))?;
         let zero_prio = CachedSymbolicEncoder::encode_impl(self.variables.priority_vars(), 0u32)?;
 

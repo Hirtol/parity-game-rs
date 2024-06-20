@@ -5,6 +5,8 @@ use oxidd_core::{
     Manager,
     ManagerRef, util::Subst, WorkerManager,
 };
+use oxidd_core::function::Function;
+use oxidd_core::util::OptBool;
 use petgraph::prelude::EdgeRef;
 
 use crate::{
@@ -18,27 +20,45 @@ use crate::{
         oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
     },
 };
+use crate::symbolic::BCDD;
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
+use crate::symbolic::sat::TruthAssignmentsIterator;
 
-pub struct SymbolicParityGame {
+pub struct SymbolicParityGame<F: Function> {
     pub pg_vertex_count: usize,
-    pub manager: BDDManagerRef,
-    pub variables: EcoVec<BDD>,
-    pub variables_edges: EcoVec<BDD>,
-    pub conjugated_variables: BDD,
-    pub conjugated_v_edges: BDD,
+    pub manager: F::ManagerRef,
+    pub variables: EcoVec<F>,
+    pub variables_edges: EcoVec<F>,
+    pub conjugated_variables: F,
+    pub conjugated_v_edges: F,
 
-    pub vertices: BDD,
-    pub vertices_even: BDD,
-    pub vertices_odd: BDD,
-    pub priorities: ahash::HashMap<Priority, BDD>,
+    pub vertices: F,
+    pub vertices_even: F,
+    pub vertices_odd: F,
+    pub priorities: ahash::HashMap<Priority, F>,
 
-    pub edges: BDD,
+    pub edges: F,
 
-    pub base_true: BDD,
-    pub base_false: BDD,
+    pub base_true: F,
+    pub base_false: F,
 }
 
-impl SymbolicParityGame {
+impl SymbolicParityGame<BDD> {
+    pub fn from_explicit_bdd(explicit: &ParityGame) -> eyre::Result<SymbolicParityGame<BDD>> {
+        Self::from_explicit(explicit)
+    }
+}
+
+impl SymbolicParityGame<BCDD> {
+    pub fn from_explicit_bcdd(explicit: &ParityGame) -> eyre::Result<SymbolicParityGame<BCDD>> {
+        Self::from_explicit(explicit)
+    }
+}
+
+impl<F: GeneralBooleanFunction> SymbolicParityGame<F> 
+    where for<'id> F::Manager<'id>: WorkerManager,
+          for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>> {
+    
     /// For now, mostly translated from [here](https://github.com/olijzenga/bdd-parity-game-solver/blob/master/src/pg.py).
     ///
     /// Constructs the following BDDs:
@@ -52,17 +72,18 @@ impl SymbolicParityGame {
 
     fn from_explicit_impl(explicit: &ParityGame) -> symbolic::Result<Self> {
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
-        let manager = oxidd::bdd::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
+        let manager = F::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
+        
         // Construction is _much_ faster single-threaded.
         manager.with_manager_exclusive(|man| {
             man.set_threading_enabled(false);
         });
 
         // Construct base building blocks for the BDD
-        let variables: EcoVec<BDD> =
-            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDD::new_var(man)).collect());
-        let edge_variables: EcoVec<BDD> =
-            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| BDD::new_var(man)).collect());
+        let variables: EcoVec<F> =
+            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| F::new_var(man)).collect());
+        let edge_variables: EcoVec<F> =
+            manager.with_manager_exclusive(|man| (0..n_variables).flat_map(|_| F::new_var(man)).collect());
 
         Self::from_explicit_impl_vars(explicit, manager, variables, edge_variables)
     }
@@ -71,12 +92,12 @@ impl SymbolicParityGame {
     /// It is assumed that the amount of variables matches the size of the binary encoding of the max vertex id.
     pub(crate) fn from_explicit_impl_vars(
         explicit: &ParityGame,
-        manager: BDDManagerRef,
-        variables: EcoVec<BDD>,
-        edge_variables: EcoVec<BDD>,
+        manager: F::ManagerRef,
+        variables: EcoVec<F>,
+        edge_variables: EcoVec<F>,
     ) -> symbolic::Result<Self> {
-        let base_true = manager.with_manager_exclusive(|man| BDD::t(man));
-        let base_false = manager.with_manager_exclusive(|man| BDD::f(man));
+        let base_true = manager.with_manager_exclusive(|man| F::t(man));
+        let base_false = manager.with_manager_exclusive(|man| F::f(man));
 
         let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.clone());
         let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
@@ -162,25 +183,25 @@ impl SymbolicParityGame {
         (self.variables.len() + self.variables_edges.len()) as u32
     }
 
-    pub fn encode_vertex(&self, v_idx: VertexId) -> symbolic::Result<BDD> {
-        CachedSymbolicEncoder::<_, BDD>::encode_impl(&self.variables, v_idx.index())
+    pub fn encode_vertex(&self, v_idx: VertexId) -> symbolic::Result<F> {
+        CachedSymbolicEncoder::<_, F>::encode_impl(&self.variables, v_idx.index())
     }
 
-    pub fn encode_edge_vertex(&self, v_idx: VertexId) -> symbolic::Result<BDD> {
-        CachedSymbolicEncoder::<_, BDD>::encode_impl(&self.variables_edges, v_idx.index())
+    pub fn encode_edge_vertex(&self, v_idx: VertexId) -> symbolic::Result<F> {
+        CachedSymbolicEncoder::<_, F>::encode_impl(&self.variables_edges, v_idx.index())
     }
 
     /// Calculate all vertex ids which belong to the set represented by the `bdd`.
     ///
     /// Inefficient, and should only be used for debugging.
-    pub fn vertices_of_bdd(&self, bdd: &BDD) -> Vec<VertexId> {
+    pub fn vertices_of_bdd(&self, bdd: &F) -> Vec<VertexId> {
         self.manager.with_manager_shared(|man| {
             let valuations = bdd.sat_assignments(man);
             crate::symbolic::sat::decode_assignments(valuations, self.variables.len())
         })
     }
 
-    pub fn create_subgame(&self, ignored: &BDD) -> symbolic::Result<Self> {
+    pub fn create_subgame(&self, ignored: &F) -> symbolic::Result<Self> {
         let ignored_edge = self.edge_substitute(ignored)?;
 
         let priorities = self
@@ -219,7 +240,7 @@ impl SymbolicParityGame {
     }
 
     /// Calculate the predecessors of the set of vertices `of`.
-    pub fn predecessors(&self, of: &BDD) -> symbolic::Result<BDD> {
+    pub fn predecessors(&self, of: &F) -> symbolic::Result<F> {
         let of_subs = self.edge_substitute(of)?;
 
         Ok(self.edges.and(&of_subs)?)
@@ -231,7 +252,7 @@ impl SymbolicParityGame {
     /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
     /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
     #[tracing::instrument(level = "trace", skip_all, fields(player))]
-    pub fn attractor_set(&self, player: Owner, starting_set: &BDD) -> symbolic::Result<BDD> {
+    pub fn attractor_set(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
         let (player_set, opponent_set) = self.get_player_sets(player);
         let mut output = starting_set.clone();
         let edge_player_set = self.edges.and(player_set)?;
@@ -262,14 +283,14 @@ impl SymbolicParityGame {
 
     /// Substitute all vertex variables `x0..xn` with the edge variable `x0'..xn'`.
     #[inline]
-    fn edge_substitute(&self, bdd: &BDD) -> symbolic::Result<BDD> {
+    fn edge_substitute(&self, bdd: &F) -> symbolic::Result<F> {
         let subs = Subst::new(&self.variables, &self.variables_edges);
         Ok(bdd.substitute(subs)?)
     }
 
     /// Return both sets of vertices, with the first element of the returned tuple matching the `player`.
     #[inline(always)]
-    pub(crate) fn get_player_sets(&self, player: Owner) -> (&BDD, &BDD) {
+    pub(crate) fn get_player_sets(&self, player: Owner) -> (&F, &F) {
         match player {
             Owner::Even => (&self.vertices_even, &self.vertices_odd),
             Owner::Odd => (&self.vertices_odd, &self.vertices_even),
@@ -290,6 +311,7 @@ mod tests {
         tests::load_example,
         visualize::DotWriter,
     };
+    use crate::symbolic::BDD;
 
     fn small_pg() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 3;
@@ -438,7 +460,7 @@ mod tests {
     }
 
     struct SymbolicTest {
-        pg: SymbolicParityGame,
+        pg: SymbolicParityGame<BDD>,
         original: ParityGame,
         vertices: Vec<BDDFunction>,
         edge_vertices: Vec<BDDFunction>,

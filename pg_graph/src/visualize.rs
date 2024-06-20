@@ -1,5 +1,9 @@
-use std::fmt::Write;
+use std::fmt;
+use std::fmt::{Debug, Display, Write};
 
+use oxidd_core::{Edge, HasLevel, Manager};
+use oxidd_core::function::Function;
+use oxidd_dump::dot::DotStyle;
 use petgraph::graph::IndexType;
 
 use crate::{
@@ -7,8 +11,8 @@ use crate::{
         register_game::{ChosenAction, RegisterGame},
         VertexId,
     },
-    symbolic::BDD,
     Owner,
+    symbolic::BDD,
 };
 
 /// An abstraction to allow for generic writing of the underlying graphs.
@@ -62,10 +66,14 @@ impl DotWriter {
         Ok(output)
     }
 
-    pub fn write_dot_symbolic<'a>(
-        graph: &'a crate::symbolic::SymbolicParityGame,
-        additional_funcs: impl IntoIterator<Item = (&'a crate::symbolic::BDD, String)>,
-    ) -> eyre::Result<String> {
+    pub fn write_dot_symbolic<'a, F>(
+        graph: &'a crate::symbolic::SymbolicParityGame<F>,
+        additional_funcs: impl IntoIterator<Item = (&'a F, String)>,
+    ) -> eyre::Result<String>
+        where for<'id> F: 'a + Function + DotStyle<<<F::Manager<'id> as Manager>::Edge as Edge>::Tag>,
+              for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+              for<'id> <<F::Manager<'id> as Manager>::Edge as Edge>::Tag: fmt::Debug,
+              for<'id> <F::Manager<'id> as Manager>::Terminal: fmt::Display, {
         use oxidd_core::ManagerRef;
 
         let mut out = Vec::new();

@@ -1,11 +1,13 @@
 use oxidd::{bcdd::BCDDFunction, bdd::BDDFunction, zbdd::ZBDDFunction};
-use oxidd_core::{
-    function::{BooleanFunction, Function},
-    Manager,
-    util::{AllocResult, SatCountCache},
-};
+use oxidd_core::{function::{BooleanFunction, Function}, Manager, util::{AllocResult, SatCountCache}, WorkerManager};
+use oxidd_core::function::{BooleanFunctionQuant, FunctionSubst};
 
 use crate::symbolic::sat::{TruthAssignmentsIterator, TruthIteratorHelper};
+
+pub trait GeneralBooleanFunction: BddExtensions + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionSubst + FunctionManagerExtension {}
+
+impl<F: BddExtensions + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionSubst + FunctionManagerExtension> GeneralBooleanFunction for F
+    where for<'id> F::Manager<'id>: WorkerManager {}
 
 #[derive(Clone)]
 pub struct FunctionVarRef<F> {

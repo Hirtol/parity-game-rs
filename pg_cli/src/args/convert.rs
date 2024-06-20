@@ -6,6 +6,7 @@ use pg_graph::{
     symbolic::{register_game::SymbolicRegisterGame, SymbolicParityGame},
     visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
 };
+use pg_graph::symbolic::BDD;
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {
@@ -142,7 +143,7 @@ impl ConvertCommand {
                 }
             }
             ConversionGoal::SymbolicParityGame => {
-                let s_pg = SymbolicParityGame::from_explicit(&parity_game)?;
+                let s_pg = SymbolicParityGame::<BDD>::from_explicit(&parity_game)?;
                 s_pg.gc();
 
                 tracing::info!(
