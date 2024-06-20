@@ -7,6 +7,7 @@ use pg_graph::{
     visualize::DotWriter,
 };
 use pg_graph::symbolic::BDD;
+use pg_graph::symbolic::solvers::symbolic_register_zielonka::SymbolicRegisterZielonkaSolver;
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {
@@ -231,7 +232,7 @@ impl SolveCommand {
 
                         let (w_even, w_odd) = match solver {
                             SymbolicSolvers::Zielonka => {
-                                let mut solver = SymbolicZielonkaSolver::new(&game_to_solve);
+                                let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);
 
                                 let solution = timed_solve!(solver.run_symbolic());
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");

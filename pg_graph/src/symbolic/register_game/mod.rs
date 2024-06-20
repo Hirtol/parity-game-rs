@@ -316,14 +316,6 @@ where
         }
     }
 
-    pub fn gc(&self) -> usize {
-        self.manager.with_manager_exclusive(|m| m.gc())
-    }
-
-    pub fn bdd_node_count(&self) -> usize {
-        self.manager.with_manager_exclusive(|m| m.num_inner_nodes())
-    }
-
     #[cfg(feature = "statistics")]
     pub fn print_statistics<O: Copy>(&self) 
         where for<'id> F::Manager<'id>: HasApplyCache<F::Manager<'id>, O, ApplyCache: StatisticsGenerator> {
@@ -383,20 +375,9 @@ where
     fn n_registers(&self) -> usize {
         (self.k + 1) as usize
     }
-
-    #[inline]
-    fn edge_substitute(&self, bdd: &F) -> symbolic::Result<F> {
-        let subs = Subst::new(&self.variables.all_variables, &self.variables_edges.all_variables);
-        Ok(bdd.substitute(subs)?)
-    }
-
-    #[inline]
-    fn rev_edge_substitute(&self, bdd: &F) -> symbolic::Result<F> {
-        let subs = Subst::new(&self.variables_edges.all_variables, &self.variables.all_variables);
-        Ok(bdd.substitute(subs)?)
-    }
 }
 
+#[derive(Clone)]
 pub struct RegisterVertexVars<F: Function> {
     pub all_variables: EcoVec<F>,
     pub manager_layer_indices: ahash::HashMap<RegisterLayers, EcoVec<usize>>,

@@ -1,6 +1,6 @@
 use ecow::EcoVec;
 use oxidd_core::{
-    function::{Function},
+    function::Function,
     Manager,
     ManagerRef, util::{OptBool, Subst}, WorkerManager,
 };
@@ -15,7 +15,7 @@ use crate::{
         BCDD,
         BDD,
         helpers::CachedSymbolicEncoder,
-        oxidd_extensions::{GeneralBooleanFunction}, sat::TruthAssignmentsIterator,
+        oxidd_extensions::GeneralBooleanFunction, sat::TruthAssignmentsIterator,
     },
 };
 
@@ -203,7 +203,7 @@ where
         let priorities = self
             .priorities
             .iter()
-            .flat_map(|(priority, bdd)| Ok::<_, symbolic::BddError>((*priority, bdd.diff(&ignored)?)))
+            .flat_map(|(priority, bdd)| Ok::<_, symbolic::BddError>((*priority, bdd.diff(ignored)?)))
             .collect();
 
         Ok(Self {
@@ -213,10 +213,10 @@ where
             variables_edges: self.variables_edges.clone(),
             conjugated_variables: self.conjugated_variables.clone(),
             conjugated_v_edges: self.conjugated_v_edges.clone(),
-            vertices: self.vertices.diff(&ignored)?,
-            vertices_even: self.vertices_even.diff(&ignored)?,
-            vertices_odd: self.vertices_odd.diff(&ignored)?,
-            edges: self.edges.diff(&ignored)?.diff(&ignored_edge)?,
+            vertices: self.vertices.diff(ignored)?,
+            vertices_even: self.vertices_even.diff(ignored)?,
+            vertices_odd: self.vertices_odd.diff(ignored)?,
+            edges: self.edges.diff(ignored)?.diff(&ignored_edge)?,
             base_true: self.base_true.clone(),
             priorities,
             base_false: self.base_false.clone(),

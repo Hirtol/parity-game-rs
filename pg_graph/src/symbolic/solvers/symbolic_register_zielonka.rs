@@ -1,26 +1,26 @@
-use oxidd_core::function::{BooleanFunction, Function};
 use oxidd_core::util::OptBool;
 use oxidd_core::WorkerManager;
 
 use crate::{
     explicit::solvers::SolverOutput,
     Owner,
-    symbolic,
-    symbolic::parity_game::SymbolicParityGame,
+    symbolic
+    ,
 };
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
+use crate::symbolic::register_game::SymbolicRegisterGame;
 use crate::symbolic::sat::TruthAssignmentsIterator;
 
-pub struct SymbolicZielonkaSolver<'a, F: GeneralBooleanFunction> {
+pub struct SymbolicRegisterZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,
-    game: &'a SymbolicParityGame<F>,
+    game: &'a SymbolicRegisterGame<F>,
 }
 
-impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
+impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
     where for<'id> F::Manager<'id>: WorkerManager,
           for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>> {
-    pub fn new(game: &'a SymbolicParityGame<F>) -> Self {
-        SymbolicZielonkaSolver {
+    pub fn new(game: &'a SymbolicRegisterGame<F>) -> Self {
+        SymbolicRegisterZielonkaSolver {
             game,
             recursive_calls: 0,
         }
@@ -31,12 +31,12 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game).expect("Failed to compute solution");
 
-        let even = self.game.vertices_of_bdd(&even);
+        let (w_even, w_odd) = self.game.project_winning_regions(&even, &odd).expect("Impossible");
 
-        let mut winners = vec![Owner::Odd; self.game.vertex_count()];
+        let mut winners = vec![Owner::Odd; w_odd.len() + w_even.len()];
 
-        for idx in even {
-            winners[idx.index()] = Owner::Even;
+        for idx in w_even {
+            winners[idx as usize] = Owner::Even;
         }
 
         SolverOutput {
@@ -51,7 +51,7 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
         self.zielonka(self.game).expect("Failed to compute solution")
     }
 
-    fn zielonka(&mut self, game: &SymbolicParityGame<F>) -> symbolic::Result<(F, F)> {
+    fn zielonka(&mut self, game: &SymbolicRegisterGame<F>) -> symbolic::Result<(F, F)> {
         self.recursive_calls += 1;
 
         // If all the vertices are ignord
@@ -61,7 +61,8 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.priorities.get(&d).expect("Impossible");
-            let attraction_set = game.attractor_set(attraction_owner, starting_set)?;
+            let attraction_set = game.attractor_priority_set(attraction_owner, starting_set, d)?;
+            // let attraction_set = game.attractor_set(attraction_owner, starting_set)?;
 
             let sub_game = game.create_subgame(&attraction_set)?;
 
@@ -97,15 +98,17 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
 pub mod test {
     use std::time::Instant;
 
-    use crate::{Owner, symbolic::parity_game::SymbolicParityGame};
+    use crate::Owner;
+    use crate::symbolic::BDD;
+    use crate::symbolic::register_game::SymbolicRegisterGame;
 
-    use super::SymbolicZielonkaSolver;
+    use super::SymbolicRegisterZielonkaSolver;
 
     #[test]
     pub fn test_solve_tue_example() {
         let game = crate::tests::load_example("tue_example.pg");
-        let s_pg = SymbolicParityGame::from_explicit_bdd(&game).unwrap();
-        let mut solver = SymbolicZielonkaSolver::new(&s_pg);
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
+        let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
 
         let solution = solver.run().winners;
 
@@ -115,10 +118,23 @@ pub mod test {
     }
 
     #[test]
+    pub fn test_solve_two_counters_1_example() {
+        let game = crate::tests::load_example("two_counters_1.pg");
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 2, Owner::Even).unwrap();
+        let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
+
+        let solution = solver.run().winners;
+
+        println!("Solution: {:#?}", solution);
+
+        // assert!(solution.iter().all(|win| *win == Owner::Odd));
+    }
+
+    #[test]
     pub fn test_solve_action_converter() {
         let game = crate::tests::load_example("ActionConverter.tlsf.ehoa.pg");
-        let s_pg = SymbolicParityGame::from_explicit_bdd(&game).unwrap();
-        let mut solver = SymbolicZielonkaSolver::new(&s_pg);
+        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
+        let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
 
         let now = Instant::now();
         let solution = solver.run().winners;
