@@ -331,6 +331,7 @@ where
             use oxidd_cache::StatisticsGenerator;
             use oxidd_core::HasApplyCache;
             oxidd::bdd::print_stats();
+            oxidd::bcdd::print_stats();
             man.apply_cache().print_stats()
         });
     }

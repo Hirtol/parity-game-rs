@@ -1,12 +1,9 @@
 use ecow::EcoVec;
-use oxidd::bdd::BDDManagerRef;
 use oxidd_core::{
-    function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst},
+    function::{Function},
     Manager,
-    ManagerRef, util::Subst, WorkerManager,
+    ManagerRef, util::{OptBool, Subst}, WorkerManager,
 };
-use oxidd_core::function::Function;
-use oxidd_core::util::OptBool;
 use petgraph::prelude::EdgeRef;
 
 use crate::{
@@ -15,14 +12,12 @@ use crate::{
     Owner,
     symbolic,
     symbolic::{
+        BCDD,
         BDD,
         helpers::CachedSymbolicEncoder,
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions},
+        oxidd_extensions::{GeneralBooleanFunction}, sat::TruthAssignmentsIterator,
     },
 };
-use crate::symbolic::BCDD;
-use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
-use crate::symbolic::sat::TruthAssignmentsIterator;
 
 pub struct SymbolicParityGame<F: Function> {
     pub pg_vertex_count: usize,
@@ -55,10 +50,11 @@ impl SymbolicParityGame<BCDD> {
     }
 }
 
-impl<F: GeneralBooleanFunction> SymbolicParityGame<F> 
-    where for<'id> F::Manager<'id>: WorkerManager,
-          for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>> {
-    
+impl<F: GeneralBooleanFunction> SymbolicParityGame<F>
+where
+    for<'id> F::Manager<'id>: WorkerManager,
+    for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item = Vec<OptBool>>,
+{
     /// For now, mostly translated from [here](https://github.com/olijzenga/bdd-parity-game-solver/blob/master/src/pg.py).
     ///
     /// Constructs the following BDDs:
@@ -73,7 +69,7 @@ impl<F: GeneralBooleanFunction> SymbolicParityGame<F>
     fn from_explicit_impl(explicit: &ParityGame) -> symbolic::Result<Self> {
         let n_variables = (explicit.vertex_count() as f64).log2().ceil() as usize;
         let manager = F::new_manager(explicit.vertex_count(), explicit.vertex_count(), 12);
-        
+
         // Construction is _much_ faster single-threaded.
         manager.with_manager_exclusive(|man| {
             man.set_threading_enabled(false);
@@ -307,11 +303,10 @@ mod tests {
     use crate::{
         explicit::{ParityGame, ParityGraph, solvers::AttractionComputer},
         Owner,
-        symbolic::{oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame},
+        symbolic::{BDD, oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame},
         tests::load_example,
         visualize::DotWriter,
     };
-    use crate::symbolic::BDD;
 
     fn small_pg() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 3;
