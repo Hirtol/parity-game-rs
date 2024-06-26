@@ -10,19 +10,53 @@ static GAMES: [&str; 2] = ["ActionConverter.tlsf.ehoa.pg", "amba_decomposed_arbi
 
 #[divan::bench_group(max_time = 5)]
 mod solver_benches {
-    use pg_graph::{
-        explicit::solvers::{small_progress::SmallProgressSolver, zielonka::ZielonkaSolver},
-        symbolic::{parity_game::SymbolicParityGame, solvers::symbolic_zielonka::SymbolicZielonkaSolver},
-    };
+    use pg_graph::{explicit::solvers::{small_progress::SmallProgressSolver, zielonka::ZielonkaSolver}, Owner, symbolic::{parity_game::SymbolicParityGame, solvers::symbolic_zielonka::SymbolicZielonkaSolver}};
+    use pg_graph::symbolic::BDD;
+    use pg_graph::symbolic::register_game::SymbolicRegisterGame;
+    use pg_graph::symbolic::solvers::symbolic_register_zielonka::SymbolicRegisterZielonkaSolver;
 
     #[divan::bench(args = super::GAMES)]
-    fn bench_symbolic_zielonka(bencher: divan::Bencher, game: &str) {
+    fn bench_symbolic_zielonka_bdd(bencher: divan::Bencher, game: &str) {
         let pg = super::load_pg(game);
-        let s_pg = SymbolicParityGame::from_explicit(&pg).unwrap();
+        let s_pg = SymbolicParityGame::from_explicit_bdd(&pg).unwrap();
         bencher.bench(|| {
             let mut game = SymbolicZielonkaSolver::new(&s_pg);
 
             game.run();
+        });
+    }
+
+    #[divan::bench(args = super::GAMES)]
+    fn bench_symbolic_zielonka_bcdd(bencher: divan::Bencher, game: &str) {
+        let pg = super::load_pg(game);
+        let s_pg = SymbolicParityGame::from_explicit_bcdd(&pg).unwrap();
+        bencher.bench(|| {
+            let mut game = SymbolicZielonkaSolver::new(&s_pg);
+
+            game.run();
+        });
+    }
+
+    #[divan::bench(args = super::GAMES)]
+    fn bench_register_symbolic_register_zielonka(bencher: divan::Bencher, game: &str) {
+        let pg = super::load_pg(game);
+        let rg = SymbolicRegisterGame::<BDD>::from_symbolic(&pg, 1, Owner::Even).unwrap();
+        bencher.bench(|| {
+            let mut game = SymbolicRegisterZielonkaSolver::new(&rg);
+
+            game.run_symbolic();
+        });
+    }
+
+    #[divan::bench(args = super::GAMES)]
+    fn bench_register_symbolic_zielonka(bencher: divan::Bencher, game: &str) {
+        let pg = super::load_pg(game);
+        let rg = SymbolicRegisterGame::<BDD>::from_symbolic(&pg, 1, Owner::Even).unwrap();
+        let s_rg = rg.to_symbolic_parity_game().unwrap();
+        bencher.bench(|| {
+            let mut game = SymbolicZielonkaSolver::new(&s_rg);
+
+            game.run_symbolic();
         });
     }
 
@@ -53,7 +87,7 @@ mod solver_benches {
         bencher
             .with_inputs(|| super::load_pg(game))
             .bench_values(|parity_game| {
-                let s_pg = SymbolicParityGame::from_explicit(&parity_game);
+                let _ = SymbolicParityGame::from_explicit_bdd(&parity_game);
             });
     }
 }

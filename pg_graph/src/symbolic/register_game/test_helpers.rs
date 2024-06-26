@@ -8,7 +8,7 @@ use crate::{
     Owner,
     symbolic,
     symbolic::{
-        BDD, helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions,
+        helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions,
         register_game::SymbolicRegisterGame, sat::decode_split_assignments,
     }, Vertex,
 };
@@ -113,10 +113,10 @@ mod tests {
         symbolic::{
             BDD,
             oxidd_extensions::BddExtensions,
-            register_game::{RegisterLayers, SymbolicRegisterGame, test_helpers},
+            register_game::{RegisterLayers, SymbolicRegisterGame},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
-        visualize::{DotWriter, VisualRegisterGame},
+        visualize::{DotWriter},
     };
 
     #[test]

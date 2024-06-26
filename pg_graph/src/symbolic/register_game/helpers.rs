@@ -1,4 +1,4 @@
-use oxidd_core::{HasLevel, Manager, ManagerRef};
+use oxidd_core::{Manager, ManagerRef};
 use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst};
 use oxidd_core::util::Subst;
 

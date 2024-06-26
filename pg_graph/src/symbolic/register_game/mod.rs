@@ -5,10 +5,7 @@ use std::{
 
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
-use oxidd::bdd::BDDManagerRef;
-use oxidd_cache::StatisticsGenerator;
-use oxidd_core::{function::{BooleanFunction, Function, FunctionSubst}, HasApplyCache, Manager, ManagerRef, util::{AllocResult, Subst}, WorkerManager};
-use oxidd_core::function::BooleanFunctionQuant;
+use oxidd_core::{function::{BooleanFunction, Function}, Manager, ManagerRef, util::{AllocResult}, WorkerManager};
 use oxidd_core::util::OptBool;
 
 use variable_order::VariableAllocatorInfo;
@@ -19,7 +16,6 @@ use crate::{
     Owner,
     Priority,
     symbolic, symbolic::{
-        BDD,
         helpers::{CachedSymbolicEncoder, MultiEncoder},
         oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
     },
