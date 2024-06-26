@@ -310,7 +310,7 @@ mod tests {
             let nodes = rg.bdd_node_count();
             tracing::debug!(nodes, "Constructed RG `{i}`");
 
-            let spg = rg.to_symbolic_parity_game();
+            let spg = rg.to_symbolic_parity_game().unwrap();
             let mut solver = SymbolicZielonkaSolver::new(&spg);
             let now = Instant::now();
             let _ = solver.run_symbolic();

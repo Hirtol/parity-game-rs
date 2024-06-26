@@ -43,7 +43,6 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub vertices: F,
     pub v_even: F,
     pub v_odd: F,
-    pub edges: F,
     pub e_move: F,
     pub e_i_all: F,
     pub e_i: Vec<F>,
@@ -52,8 +51,6 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub base_true: F,
     pub base_false: F,
 }
-
-// type F = BDD;
 
 impl<F> SymbolicRegisterGame<F>
 where
@@ -289,7 +286,6 @@ where
             vertices: s_even.or(&s_odd)?,
             v_even: s_even,
             v_odd: s_odd,
-            edges: e_move.or(&e_i_joined)?,
             e_move,
             e_i_all: e_i_joined,
             e_i: e_i_edges,
@@ -299,8 +295,8 @@ where
         })
     }
 
-    pub fn to_symbolic_parity_game(&self) -> SymbolicParityGame<F> {
-        SymbolicParityGame {
+    pub fn to_symbolic_parity_game(&self) -> symbolic::Result<SymbolicParityGame<F>> {
+        Ok(SymbolicParityGame {
             pg_vertex_count: self.vertices.sat_quick_count(self.variables.all_variables.len() as u32) as usize,
             manager: self.manager.clone(),
             variables: self.variables.all_variables.clone(),
@@ -311,10 +307,10 @@ where
             vertices_even: self.v_even.clone(),
             vertices_odd: self.v_odd.clone(),
             priorities: self.priorities.clone(),
-            edges: self.edges.clone(),
+            edges: self.edges()?,
             base_true: self.base_true.clone(),
             base_false: self.base_false.clone(),
-        }
+        })
     }
 
     #[cfg(feature = "statistics")]

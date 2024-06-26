@@ -3,13 +3,10 @@ use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst}
 use oxidd_core::util::Subst;
 
 use crate::{Owner, Priority, symbolic};
-use crate::symbolic::BDD;
 use crate::symbolic::oxidd_extensions::{BooleanFunctionExtensions, GeneralBooleanFunction};
 use crate::symbolic::register_game::SymbolicRegisterGame;
 
-type F = BDD;
-// impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
-impl SymbolicRegisterGame<F>
+impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
 {
     pub fn gc(&self) -> usize {
         self.manager.with_manager_exclusive(|m| m.gc())
@@ -17,6 +14,10 @@ impl SymbolicRegisterGame<F>
 
     pub fn bdd_node_count(&self) -> usize {
         self.manager.with_manager_exclusive(|m| m.num_inner_nodes())
+    }
+    
+    pub fn edges(&self) -> symbolic::Result<F> {
+        Ok(self.e_move.or(&self.e_i_all)?)
     }
     
     /// Return the maximal priority found in the given game.
@@ -31,9 +32,7 @@ impl SymbolicRegisterGame<F>
     }
 
     pub fn create_subgame(&self, ignored: &F) -> symbolic::Result<Self> {
-        // .and(ignored)?
         let ignored_edge = self.edge_substitute(ignored)?;
-        // let ig = ignored.diff(&ignored_edge)?;
 
         let priorities = self
             .priorities
@@ -53,7 +52,6 @@ impl SymbolicRegisterGame<F>
             v_even: self.v_even.diff(ignored)?,
             v_odd: self.v_odd.diff(ignored)?,
             priorities,
-            edges: self.edges.diff(ignored)?.diff(&ignored_edge)?,
             e_move: self.e_move.diff(ignored)?.diff(&ignored_edge)?,
             e_i_all: self.e_i_all.diff(ignored)?.diff(&ignored_edge)?,
             e_i: self.e_i.iter().flat_map(|e_i| Ok::<_, symbolic::BddError>(e_i.diff(ignored)?.diff(&ignored_edge)?)).collect(),
@@ -133,7 +131,7 @@ impl SymbolicRegisterGame<F>
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let e_i_attracted_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
             let e_i_attracted_set = e_i_attracted_set.and(&self.variables.next_move_var().not()?)?;
-            
+
             // The E_move vertices can be owned by either player, so we'll need to do the whole procedure.
             let next_edge_starting_set = self.edge_substitute(&e_i_attracted_set)?.or(&edge_starting_set)?;
 
@@ -179,35 +177,17 @@ impl SymbolicRegisterGame<F>
             Owner::Odd => (&self.v_odd, &self.v_even),
         }
     }
-
-    // pub fn encode_vertex(&self, v_idx: VertexId) -> symbolic::Result<F> {
-    //     CachedSymbolicEncoder::<_, F>::encode_impl(&self.variables., v_idx.index())
-    // }
-    //
-    // pub fn encode_edge_vertex(&self, v_idx: VertexId) -> symbolic::Result<F> {
-    //     CachedSymbolicEncoder::<_, F>::encode_impl(&self.variables_edges, v_idx.index())
-    // }
-    //
-    // /// Calculate all vertex ids which belong to the set represented by the `bdd`.
-    // ///
-    // /// Inefficient, and should only be used for debugging.
-    // pub fn vertices_of_bdd(&self, bdd: &F) -> Vec<VertexId> {
-    //     self.manager.with_manager_shared(|man| {
-    //         let valuations = bdd.sat_assignments(man);
-    //         crate::symbolic::sat::decode_assignments(valuations, self.variables.len())
-    //     })
-    // }
 }
 
 pub mod further_investigation {
     use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant};
 
     use crate::{Owner, symbolic};
+    use crate::symbolic::BDD;
     use crate::symbolic::oxidd_extensions::BooleanFunctionExtensions;
-    use crate::symbolic::register_game::helpers::F;
     use crate::symbolic::register_game::SymbolicRegisterGame;
 
-    impl SymbolicRegisterGame<F>
+    impl SymbolicRegisterGame<BDD>
     {
         /// This needs further investigation.
         ///
@@ -219,7 +199,7 @@ pub mod further_investigation {
         /// Intuitively this just means that the last set of `e_i` vertices aren't in the returned attractor set, making for more
         /// situations where the `!controller` player has a set with _just_ `E_move` vertices, making for fewer recursive calls?
         /// Why this still results in correct results in the (projected!) game is a mystery pending further investigation.
-        pub fn attractor_set_early_stop(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
+        pub fn attractor_set_early_stop(&self, player: Owner, starting_set: &BDD) -> symbolic::Result<BDD> {
             let (player_set, opponent_set) = self.get_player_sets(player);
             let mut output = starting_set.clone();
             let edge_move_set = self.e_move.and(player_set)?;
@@ -249,7 +229,7 @@ pub mod further_investigation {
 
         /// Attractor set computation which works as a general replacement to the original one.
         #[tracing::instrument(level = "trace", skip_all, fields(player))]
-        pub fn attractor_set_general(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
+        pub fn attractor_set_general(&self, player: Owner, starting_set: &BDD) -> symbolic::Result<BDD> {
             let (player_set, opponent_set) = self.get_player_sets(player);
             let mut output = starting_set.clone();
             let edge_move_set = self.e_move.and(player_set)?;
@@ -278,7 +258,7 @@ pub mod further_investigation {
             Ok(output)
         }
 
-        fn small_attractor(&self, edge_set: &F, edge_player_set: &F, opponent: &F, targets: &F) -> symbolic::Result<F> {
+        fn small_attractor(&self, edge_set: &BDD, edge_player_set: &BDD, opponent: &BDD, targets: &BDD) -> symbolic::Result<BDD> {
             // Set of elements which have _any_ edge leading to our `starting_set` and are owned by `player`.
             let any_edge_set = edge_player_set
                 .and(targets)?

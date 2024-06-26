@@ -65,7 +65,7 @@ pub fn symbolic_to_explicit_alt<F: GeneralBooleanFunction>(symb: &SymbolicRegist
                         });
 
                         let encoded = cached_encoder.encode(vertex)?;
-                        let edges_from = encoded.and(&symb.edges)?;
+                        let edges_from = encoded.and(&symb.edges()?)?;
                         let targets =
                             decode_split_assignments(edges_from.sat_assignments(man), &[&r_next_vertex_window])
                                 .pop()
@@ -124,7 +124,7 @@ mod tests {
         let game = crate::tests::trivial_pg_2()?;
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
 
-        let spg = srg.to_symbolic_parity_game();
+        let spg = srg.to_symbolic_parity_game()?;
         let mut solver = SymbolicZielonkaSolver::new(&spg);
         let (w_even, w_odd) = solver.run_symbolic();
         let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
@@ -141,7 +141,7 @@ mod tests {
         let (game, compare) = crate::tests::load_and_compare_example("amba_decomposed_decode.tlsf.ehoa.pg");
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
 
-        let spg = srg.to_symbolic_parity_game();
+        let spg = srg.to_symbolic_parity_game()?;
         let mut solver = SymbolicZielonkaSolver::new(&spg);
         let (w_even, w_odd) = solver.run_symbolic();
         let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
@@ -172,7 +172,7 @@ mod tests {
             s_pg.bdd_node_count()
         );
 
-        let spg = s_pg.to_symbolic_parity_game();
+        let spg = s_pg.to_symbolic_parity_game()?;
         let mut solver = SymbolicZielonkaSolver::new(&spg);
         let (w_even, w_odd) = solver.run_symbolic();
 

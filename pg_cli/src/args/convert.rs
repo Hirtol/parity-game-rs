@@ -160,7 +160,7 @@ impl ConvertCommand {
             }
             ConversionGoal::SymbolicRegisterGame { k } => {
                 let k = k.unwrap_or_else(|| 1 + parity_game.vertex_count().ilog2()) as u8;
-                let s_rg = SymbolicRegisterGame::from_symbolic(&parity_game, k, Owner::Even)?;
+                let s_rg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&parity_game, k, Owner::Even)?;
                 s_rg.gc();
 
                 tracing::info!(

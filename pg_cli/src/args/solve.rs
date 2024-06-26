@@ -220,7 +220,7 @@ impl SolveCommand {
                             SymbolicRegisterGame::<BDD>::from_symbolic(&parity_game, k, Owner::Even),
                             "Constructed Register Game"
                         )?;
-                        let game_to_solve = register_game.to_symbolic_parity_game();
+                        let game_to_solve = register_game.to_symbolic_parity_game()?;
                         game_to_solve.gc();
                         tracing::debug!(
                             from_vertex = parity_game.vertex_count(),

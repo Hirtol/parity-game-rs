@@ -1,4 +1,4 @@
-use oxidd_core::function::BooleanFunction;
+use oxidd_core::util::OptBool;
 use oxidd_core::WorkerManager;
 
 use crate::{
@@ -7,19 +7,18 @@ use crate::{
     symbolic
     ,
 };
-use crate::symbolic::BDD;
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::symbolic::register_game::SymbolicRegisterGame;
+use crate::symbolic::sat::TruthAssignmentsIterator;
 
 pub struct SymbolicRegisterZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,
     game: &'a SymbolicRegisterGame<F>,
 }
-type F = BDD;
-// impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
-    // where for<'id> F::Manager<'id>: WorkerManager,
-    //       for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>>
-impl<'a> SymbolicRegisterZielonkaSolver<'a, F>
+
+impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
+    where for<'id> F::Manager<'id>: WorkerManager,
+          for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>>
 {
     pub fn new(game: &'a SymbolicRegisterGame<F>) -> Self {
         SymbolicRegisterZielonkaSolver {
@@ -29,7 +28,6 @@ impl<'a> SymbolicRegisterZielonkaSolver<'a, F>
     }
 
     #[tracing::instrument(name = "Run Symbolic Zielonka", skip(self))]
-    // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game).expect("Failed to compute solution");
 
@@ -55,8 +53,6 @@ impl<'a> SymbolicRegisterZielonkaSolver<'a, F>
 
     fn zielonka(&mut self, game: &SymbolicRegisterGame<F>) -> symbolic::Result<(F, F)> {
         self.recursive_calls += 1;
-        // let pg = crate::symbolic::register_game::test_helpers::symbolic_to_explicit_alt(game);
-        // std::fs::write(format!("game_{}.dot", self.recursive_calls), DotWriter::write_dot(&pg).unwrap());
 
         // If all the vertices are ignord
         if game.vertices == game.base_false {
@@ -66,7 +62,6 @@ impl<'a> SymbolicRegisterZielonkaSolver<'a, F>
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.priorities.get(&d).expect("Impossible");
             let attraction_set = game.attractor_priority_set(attraction_owner, starting_set, d)?;
-            // let attraction_set = game.attractor_set(attraction_owner, starting_set)?;
 
             let sub_game = game.create_subgame(&attraction_set)?;
 
@@ -110,11 +105,9 @@ pub mod test {
     pub fn test_solve_tue_example() {
         let (game, compare) = crate::tests::load_and_compare_example("tue_example.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
+        
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
-
         let solution = solver.run();
-
-        println!("Solution: {:#?}", solution);
 
         compare(solution);
     }
@@ -123,11 +116,9 @@ pub mod test {
     pub fn test_solve_two_counters_1_example() {
         let (game, compare) = crate::tests::load_and_compare_example("two_counters_1.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 2, Owner::Even).unwrap();
+        
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
-
         let solution = solver.run();
-
-        println!("Solution: {:#?}", solution.winners);
 
         compare(solution);
     }

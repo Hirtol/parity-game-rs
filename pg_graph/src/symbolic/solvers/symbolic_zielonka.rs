@@ -1,4 +1,3 @@
-use oxidd_core::function::{BooleanFunction, Function};
 use oxidd_core::util::OptBool;
 use oxidd_core::WorkerManager;
 
@@ -29,7 +28,7 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
     #[tracing::instrument(name = "Run Symbolic Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.zielonka(self.game).expect("Failed to compute solution");
+        let (even, _odd) = self.zielonka(self.game).expect("Failed to compute solution");
 
         let even = self.game.vertices_of_bdd(&even);
 
@@ -95,8 +94,6 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
 
 #[cfg(test)]
 pub mod test {
-    use std::time::Instant;
-
     use crate::symbolic::parity_game::SymbolicParityGame;
 
     use super::SymbolicZielonkaSolver;
