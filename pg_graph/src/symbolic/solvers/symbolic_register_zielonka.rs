@@ -1,4 +1,4 @@
-use oxidd_core::util::OptBool;
+use oxidd_core::function::BooleanFunction;
 use oxidd_core::WorkerManager;
 
 use crate::{
@@ -7,18 +7,20 @@ use crate::{
     symbolic
     ,
 };
+use crate::symbolic::BDD;
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::symbolic::register_game::SymbolicRegisterGame;
-use crate::symbolic::sat::TruthAssignmentsIterator;
 
 pub struct SymbolicRegisterZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,
     game: &'a SymbolicRegisterGame<F>,
 }
-
-impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
-    where for<'id> F::Manager<'id>: WorkerManager,
-          for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>> {
+type F = BDD;
+// impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
+    // where for<'id> F::Manager<'id>: WorkerManager,
+    //       for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>>
+impl<'a> SymbolicRegisterZielonkaSolver<'a, F>
+{
     pub fn new(game: &'a SymbolicRegisterGame<F>) -> Self {
         SymbolicRegisterZielonkaSolver {
             game,
@@ -53,6 +55,8 @@ impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
 
     fn zielonka(&mut self, game: &SymbolicRegisterGame<F>) -> symbolic::Result<(F, F)> {
         self.recursive_calls += 1;
+        // let pg = crate::symbolic::register_game::test_helpers::symbolic_to_explicit_alt(game);
+        // std::fs::write(format!("game_{}.dot", self.recursive_calls), DotWriter::write_dot(&pg).unwrap());
 
         // If all the vertices are ignord
         if game.vertices == game.base_false {
@@ -96,8 +100,6 @@ impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
 
 #[cfg(test)]
 pub mod test {
-    use std::time::Instant;
-
     use crate::Owner;
     use crate::symbolic::BDD;
     use crate::symbolic::register_game::SymbolicRegisterGame;
@@ -106,54 +108,38 @@ pub mod test {
 
     #[test]
     pub fn test_solve_tue_example() {
-        let game = crate::tests::load_example("tue_example.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("tue_example.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
 
-        let solution = solver.run().winners;
+        let solution = solver.run();
 
         println!("Solution: {:#?}", solution);
 
-        assert!(solution.iter().all(|win| *win == Owner::Odd));
+        compare(solution);
     }
 
     #[test]
     pub fn test_solve_two_counters_1_example() {
-        let game = crate::tests::load_example("two_counters_1.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("two_counters_1.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 2, Owner::Even).unwrap();
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
 
-        let solution = solver.run().winners;
+        let solution = solver.run();
 
-        println!("Solution: {:#?}", solution);
+        println!("Solution: {:#?}", solution.winners);
 
-        // assert!(solution.iter().all(|win| *win == Owner::Odd));
+        compare(solution);
     }
 
     #[test]
     pub fn test_solve_action_converter() {
-        let game = crate::tests::load_example("ActionConverter.tlsf.ehoa.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("ActionConverter.tlsf.ehoa.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
+
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
+        let solution = solver.run();
 
-        let now = Instant::now();
-        let solution = solver.run().winners;
-
-        println!("Solution: {:#?}", solution);
-        println!("Took: {:?}", now.elapsed());
-        assert_eq!(
-            solution,
-            vec![
-                Owner::Even,
-                Owner::Odd,
-                Owner::Even,
-                Owner::Even,
-                Owner::Even,
-                Owner::Even,
-                Owner::Odd,
-                Owner::Odd,
-                Owner::Even,
-            ]
-        )
+        compare(solution)
     }
 }

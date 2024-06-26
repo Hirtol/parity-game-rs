@@ -1,6 +1,7 @@
 use ahash::{HashSet, HashSetExt};
 use itertools::Itertools;
-use oxidd_core::{function::BooleanFunction, ManagerRef};
+use oxidd_core::{ManagerRef, WorkerManager};
+use oxidd_core::util::OptBool;
 
 use crate::{
     explicit::ParityGame,
@@ -11,8 +12,12 @@ use crate::{
         register_game::SymbolicRegisterGame, sat::decode_split_assignments,
     }, Vertex,
 };
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
+use crate::symbolic::sat::TruthAssignmentsIterator;
 
-pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityGame {
+pub fn symbolic_to_explicit_alt<F: GeneralBooleanFunction>(symb: &SymbolicRegisterGame<F>) -> ParityGame
+    where for<'id> F::Manager<'id>: WorkerManager,
+          for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>> {
     let mut pg = ParityGame::empty();
     let mut reg_v_index = ahash::HashMap::default();
     let mut edges = ahash::HashMap::default();
@@ -47,6 +52,7 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
                     let register_vertices = decode_split_assignments(&vertex_contents, &[&r_vertex_window])
                         .pop()
                         .unwrap();
+
                     let mut cached_encoder =
                         CachedSymbolicEncoder::new(&symb.manager, symb.variables.all_variables.clone());
 
@@ -95,7 +101,7 @@ pub fn symbolic_to_explicit_alt<'a>(symb: &SymbolicRegisterGame<BDD>) -> ParityG
 
 #[cfg(test)]
 mod tests {
-    use ahash::{HashMap, HashSet};
+    use ahash::HashSet;
     use itertools::Itertools;
     use oxidd_core::ManagerRef;
 
@@ -132,7 +138,7 @@ mod tests {
     #[test]
     pub fn test_amba_decomposed() -> eyre::Result<()> {
         // Register-index=1, but also gets correct results for Owner::Even as the controller and k=0.
-        let game = crate::tests::load_example("amba_decomposed_decode.tlsf.ehoa.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("amba_decomposed_decode.tlsf.ehoa.pg");
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
 
         let spg = srg.to_symbolic_parity_game();
@@ -150,36 +156,9 @@ mod tests {
 
     #[tracing_test::traced_test]
     #[test]
-    pub fn test_convert_symb_to_pg() -> eyre::Result<()> {
-        // let game = crate::tests::load_example("amba_decomposed_decode.tlsf.ehoa.pg");
-
-        let game = crate::tests::trivial_pg_2().unwrap();
-        let register_index = 0;
-        let controller = Owner::Even;
-
-        let rg = explicit::register_game::RegisterGame::construct_2021(&game, register_index, controller);
-        let explicit_rg = DotWriter::write_dot(&VisualRegisterGame(&rg)).unwrap();
-        std::fs::write("explicit_rg.dot", explicit_rg).unwrap();
-
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, register_index, controller)?;
-        s_pg.gc();
-        std::fs::write(
-            "symbolic_rg.dot",
-            DotWriter::write_dot_symbolic_register(&s_pg, None).unwrap(),
-        )
-        .unwrap();
-
-        let converted_to_pg = test_helpers::symbolic_to_explicit_alt(&s_pg);
-        std::fs::write("converted_rg.dot", DotWriter::write_dot(&converted_to_pg).unwrap()).unwrap();
-        Ok(())
-    }
-
-    #[tracing_test::traced_test]
-    #[test]
     pub fn test_small() -> symbolic::Result<()> {
-        let game = crate::tests::load_example("amba_decomposed_arbiter_6.tlsf.ehoa.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("amba_decomposed_arbiter_6.tlsf.ehoa.pg");
 
-        // let game = small_pg().unwrap();
         let normal_sol = explicit::solvers::zielonka::ZielonkaSolver::new(&game).run();
         println!("Expected: {normal_sol:#?}");
 

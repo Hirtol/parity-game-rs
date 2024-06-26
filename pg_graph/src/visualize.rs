@@ -1,4 +1,3 @@
-use std::fmt;
 use std::fmt::{Debug, Display, Write};
 
 use oxidd_core::{Edge, HasLevel, Manager};
@@ -11,9 +10,10 @@ use crate::{
         register_game::{ChosenAction, RegisterGame},
         VertexId,
     },
-    Owner,
-    symbolic::BDD,
+    Owner
+    ,
 };
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 
 /// An abstraction to allow for generic writing of the underlying graphs.
 ///
@@ -72,8 +72,8 @@ impl DotWriter {
     ) -> eyre::Result<String>
         where for<'id> F: 'a + Function + DotStyle<<<F::Manager<'id> as Manager>::Edge as Edge>::Tag>,
               for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-              for<'id> <<F::Manager<'id> as Manager>::Edge as Edge>::Tag: fmt::Debug,
-              for<'id> <F::Manager<'id> as Manager>::Terminal: fmt::Display, {
+              for<'id> <<F::Manager<'id> as Manager>::Edge as Edge>::Tag: Debug,
+              for<'id> <F::Manager<'id> as Manager>::Terminal: Display, {
         use oxidd_core::ManagerRef;
 
         let mut out = Vec::new();
@@ -116,10 +116,14 @@ impl DotWriter {
         Ok(String::from_utf8(out).expect("Invalid UTF-8"))
     }
 
-    pub fn write_dot_symbolic_register<'a>(
-        graph: &'a crate::symbolic::register_game::SymbolicRegisterGame<BDD>,
-        additional_funcs: impl IntoIterator<Item = (&'a crate::symbolic::BDD, String)>,
-    ) -> eyre::Result<String> {
+    pub fn write_dot_symbolic_register<'a, F>(
+        graph: &'a crate::symbolic::register_game::SymbolicRegisterGame<F>,
+        additional_funcs: impl IntoIterator<Item = (&'a F, String)>,
+    ) -> eyre::Result<String>
+        where for<'id> F: 'a + GeneralBooleanFunction + DotStyle<<<F::Manager<'id> as Manager>::Edge as Edge>::Tag>,
+              for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+              for<'id> <<F::Manager<'id> as Manager>::Edge as Edge>::Tag: Debug,
+              for<'id> <F::Manager<'id> as Manager>::Terminal: Display,{
         use oxidd_core::ManagerRef;
 
         let mut out = Vec::new();

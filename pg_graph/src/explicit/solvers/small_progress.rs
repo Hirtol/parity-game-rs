@@ -297,77 +297,33 @@ impl ProgressMeasure {
 
 #[cfg(test)]
 mod tests {
-    use std::{cmp::Ordering, time::Instant};
-
-    use pg_parser::parse_pg;
+    use std::cmp::Ordering;
 
     use crate::{
-        explicit::{
-            ParityGame,
-            solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver},
-        },
-        Owner,
-        tests::example_dir,
+        explicit::solvers::small_progress::{Progress, ProgressMeasure, SmallProgressSolver},
+        Owner
+        ,
     };
 
     #[test]
     pub fn test_solve_tue_example() {
-        let input = std::fs::read_to_string(example_dir().join("tue_example.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
+        let (game, compare) = crate::tests::load_and_compare_example("tue_example.pg");
         let mut solver = SmallProgressSolver::new(&game);
 
         let solution = solver.run();
 
-        println!("Solution: {:#?}", solution);
-
-        println!("Parity Game: {:#?}", solver);
-
-        assert_eq!(solution.winners, vec![Owner::Odd; 7]);
+        println!("Prog Count: {}", solver.prog_count);
+        compare(solution);
     }
 
     #[test]
     pub fn test_solve_action_converter() {
-        let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
+        let (game, compare) = crate::tests::load_and_compare_example("ActionConverter.tlsf.ehoa.pg");
         let mut solver = SmallProgressSolver::new(&game);
-
-        let now = Instant::now();
-        let solution = solver.run();
-
-        println!("Solution: {:#?}", solution);
-        println!("Prog Count: {}", solver.prog_count);
-        println!("Took: {:?}", now.elapsed());
-        assert_eq!(
-            solution.winners,
-            vec![
-                Owner::Even,
-                Owner::Odd,
-                Owner::Even,
-                Owner::Even,
-                Owner::Even,
-                Owner::Even,
-                Owner::Odd,
-                Owner::Odd,
-                Owner::Even,
-            ]
-        )
-    }
-
-    #[test]
-    pub fn perf_test() {
-        let input = std::fs::read_to_string(example_dir().join("amba_decomposed_arbiter_6.tlsf.ehoa.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
-        let mut solver = SmallProgressSolver::new(&game);
-
-        let now = Instant::now();
         let solution = solver.run();
 
         println!("Prog Count: {}", solver.prog_count);
-        println!("Took: {:?}", now.elapsed());
-        println!("Solution: {:#?}", solution);
+        compare(solution);
     }
 
     #[test]

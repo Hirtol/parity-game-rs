@@ -97,47 +97,29 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
 pub mod test {
     use std::time::Instant;
 
-    use crate::{Owner, symbolic::parity_game::SymbolicParityGame};
+    use crate::symbolic::parity_game::SymbolicParityGame;
 
     use super::SymbolicZielonkaSolver;
 
     #[test]
     pub fn test_solve_tue_example() {
-        let game = crate::tests::load_example("tue_example.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("tue_example.pg");
         let s_pg = SymbolicParityGame::from_explicit_bdd(&game).unwrap();
         let mut solver = SymbolicZielonkaSolver::new(&s_pg);
 
-        let solution = solver.run().winners;
+        let solution = solver.run();
 
-        println!("Solution: {:#?}", solution);
-
-        assert!(solution.iter().all(|win| *win == Owner::Odd));
+        compare(solution)
     }
 
     #[test]
     pub fn test_solve_action_converter() {
-        let game = crate::tests::load_example("ActionConverter.tlsf.ehoa.pg");
+        let (game, compare) = crate::tests::load_and_compare_example("ActionConverter.tlsf.ehoa.pg");
         let s_pg = SymbolicParityGame::from_explicit_bdd(&game).unwrap();
         let mut solver = SymbolicZielonkaSolver::new(&s_pg);
 
-        let now = Instant::now();
-        let solution = solver.run().winners;
+        let solution = solver.run();
 
-        println!("Solution: {:#?}", solution);
-        println!("Took: {:?}", now.elapsed());
-        assert_eq!(
-            solution,
-            vec![
-                Owner::Even,
-                Owner::Odd,
-                Owner::Even,
-                Owner::Even,
-                Owner::Even,
-                Owner::Even,
-                Owner::Odd,
-                Owner::Odd,
-                Owner::Even,
-            ]
-        )
+        compare(solution)
     }
 }

@@ -32,6 +32,32 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
     man: &mut F::Manager<'_>,
     alloc: VariableAllocatorInfo,
 ) -> symbolic::Result<(RegisterVertexVars<F>, RegisterVertexVars<F>)> {
+    // For converting from symbolic to explicit:
+    // let next_move = F::new_var_layer_idx(man)?;
+    // let next_move_edge = F::new_var_layer_idx(man)?;
+    // 
+    // let mut vertex_vars = (0..alloc.n_vertex_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // 
+    // let mut registers = (0..alloc.n_register_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // 
+    // let mut prio_vars = (0..alloc.n_priority_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // 
+    // let mut vertex_vars_edge = (0..alloc.n_vertex_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // let mut registers_edge = (0..alloc.n_register_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // let mut prio_vars_edge = (0..alloc.n_priority_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    
     // Note that this variable ordering will give _small_ BDDs, but will solve the overall game slower, as the Zielonka algorithm takes longer
     // with this ordering... for some reason. The total memory usage will remain lower though.
     // let next_move = F::new_var_layer_idx(man)?;
@@ -68,20 +94,20 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
     // This order: 10.3s solver (19631 nodes), memory efficient order: 28.6s solver (14773 nodes)
     // It seems slower on `amba_decomposed`
     let next_move_edge = F::new_var_layer_idx(man)?;
-    
+
     let mut vertex_vars = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
     let next_move = F::new_var_layer_idx(man)?;
-    
+
     let mut vertex_vars_edge = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
     let mut prio_vars_edge = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
-    
+
     let mut registers_edge = (0..alloc.n_register_vars)
         .flat_map(|_| F::new_var_layer_idx(man))
         .collect_vec();
     let mut registers = (0..alloc.n_register_vars)
         .flat_map(|_| F::new_var_layer_idx(man))
         .collect_vec();
-    
+
     let mut prio_vars = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
     vertex_vars.reverse();

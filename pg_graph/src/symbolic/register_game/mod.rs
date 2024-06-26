@@ -24,9 +24,10 @@ use crate::{
         oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
     },
 };
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::symbolic::sat::TruthAssignmentsIterator;
 
-mod test_helpers;
+pub(crate) mod test_helpers;
 mod variable_order;
 pub mod helpers;
 
@@ -56,7 +57,7 @@ pub struct SymbolicRegisterGame<F: Function> {
 
 impl<F> SymbolicRegisterGame<F>
 where
-    F: BddExtensions + BooleanFunctionExtensions + BooleanFunctionQuant + FunctionManagerExtension + FunctionSubst,
+    F: GeneralBooleanFunction,
     for<'id> F::Manager<'id>: WorkerManager,
     for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>>
 {

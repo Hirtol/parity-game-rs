@@ -1,11 +1,15 @@
-use oxidd_core::{Manager, ManagerRef};
+use oxidd_core::{HasLevel, Manager, ManagerRef};
+use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst};
 use oxidd_core::util::Subst;
 
 use crate::{Owner, Priority, symbolic};
-use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
+use crate::symbolic::BDD;
+use crate::symbolic::oxidd_extensions::{BooleanFunctionExtensions, GeneralBooleanFunction};
 use crate::symbolic::register_game::SymbolicRegisterGame;
 
-impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
+type F = BDD;
+// impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
+impl SymbolicRegisterGame<F>
 {
     pub fn gc(&self) -> usize {
         self.manager.with_manager_exclusive(|m| m.gc())
@@ -61,29 +65,19 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
     pub fn attractor_priority_set(&self, player: Owner, starting_set: &F, priority: Priority) -> symbolic::Result<F> {
         // Due to the structure of the register game _all_ vertices in the game will be part of the attractor set when the
         // target priority is 0, as all E_i vertices have 0 priority.
-        // println!("Custom Attractor: {priority}");
         if priority == 0 {
             Ok(self.vertices.clone())
         } else {
-            // We know that any non-zero priority will _only_ include E_move vertices, thus we can attract two iterations
-            // of vertices in one go when the controller is aligned.
-            if player == self.controller {
-                // println!("Running controller attractor");
-                // self.gc();
-                // let now = std::time::Instant::now();
-                // let out = self.attractor_set_controller(starting_set);
-                // tracing::debug!(priority, "Controller set took: {:?}", now.elapsed());
-                // drop(out);
-                // self.gc();
-                // let now = std::time::Instant::now();
-                // let out = self.attractor_set(player, starting_set);
-                // tracing::debug!(priority, "Normal set took: {:?}", now.elapsed());
-                // out
-                self.attractor_set_controller(starting_set)
-            } else {
-                self.attractor_set(player, starting_set)
-                // self.attractor_set_opposite_controller(starting_set)
-            }
+            self.attractor_set(player, starting_set)
+        }
+    }
+
+    #[tracing::instrument(level = "trace", skip_all, fields(player))]
+    pub fn attractor_set(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
+        if player == self.controller {
+            self.attractor_set_controller(starting_set)
+        } else {
+            self.attractor_set_opposite_controller(starting_set)
         }
     }
 
@@ -92,11 +86,11 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
         let (player_set, opponent_set) = self.get_player_sets(self.controller);
         let mut output = starting_set.clone();
         let e_move_player_set = self.e_move.and(player_set)?;
-
+        
         loop {
             let edge_starting_set = self.edge_substitute(&output)?;
             // Set of elements which have _any_ E_i edge leading to our `starting_set` of E_move.
-            // We know that all `e_i` vertices are owned by the controller
+            // We know that all `e_i` vertices are owned by the controller, so no need to check for opponent vertices.
             let e_i_attracted_set = self.e_i_all
                 .and(&edge_starting_set)?
                 .exist(&self.conjugated_v_edges)?;
@@ -138,6 +132,7 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             let edges_to_outside = self.e_i_all.diff(&edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let e_i_attracted_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            let e_i_attracted_set = e_i_attracted_set.and(&self.variables.next_move_var().not()?)?;
             
             // The E_move vertices can be owned by either player, so we'll need to do the whole procedure.
             let next_edge_starting_set = self.edge_substitute(&e_i_attracted_set)?.or(&edge_starting_set)?;
@@ -150,8 +145,9 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             let edges_to_outside = self.e_move.diff(&next_edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            let e_move_attracted_set = self.variables.next_move_var().and(&all_edge_set)?.or(&any_edge_set)?;
 
-            let new_output = output.or(&e_i_attracted_set)?.or(&any_edge_set)?.or(&all_edge_set)?;
+            let new_output = output.or(&e_i_attracted_set)?.or(&e_move_attracted_set)?;
 
             if new_output == output {
                 break;
@@ -160,41 +156,6 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             }
         }
         
-        Ok(output)
-    }
-
-    /// Calculate the attraction set for the given starting set.
-    ///
-    /// This resulting set will contain all vertices which, after a fixed-point iteration:
-    /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
-    /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
-    #[tracing::instrument(level = "trace", skip_all, fields(player))]
-    pub fn attractor_set(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
-        let (player_set, opponent_set) = self.get_player_sets(player);
-        let mut output = starting_set.clone();
-        let edge_player_set = self.edges.and(player_set)?;
-
-        loop {
-            let edge_starting_set = self.edge_substitute(&output)?;
-            // Set of elements which have _any_ edge leading to our `starting_set` and are owned by `player`.
-            let any_edge_set = edge_player_set
-                .and(&edge_starting_set)?
-                .exist(&self.conjugated_v_edges)?;
-
-            // !edge_starting_set & self.edges
-            let edges_to_outside = self.edges.diff(&edge_starting_set)?;
-            // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
-            let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
-
-            let new_output = output.or(&any_edge_set)?.or(&all_edge_set)?;
-
-            if new_output == output {
-                break;
-            } else {
-                output = new_output;
-            }
-        }
-
         Ok(output)
     }
 
@@ -236,6 +197,102 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
     //         crate::symbolic::sat::decode_assignments(valuations, self.variables.len())
     //     })
     // }
+}
+
+pub mod further_investigation {
+    use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant};
+
+    use crate::{Owner, symbolic};
+    use crate::symbolic::oxidd_extensions::BooleanFunctionExtensions;
+    use crate::symbolic::register_game::helpers::F;
+    use crate::symbolic::register_game::SymbolicRegisterGame;
+
+    impl SymbolicRegisterGame<F>
+    {
+        /// This needs further investigation.
+        ///
+        /// Using the early stopping criterion of `e_move` not attracting any new vertices works, but by default we
+        /// (mistakenly) initially didn't return the disjunction of `output || e_i_attracted_vertices`. However,
+        /// this not only seemed to produce correct results for all (two_counters/amba_decomposed) games that we tried,
+        /// it also reduced the quantity of recursive Zielonka calls considerably, reducing computation time as a result!
+        ///
+        /// Intuitively this just means that the last set of `e_i` vertices aren't in the returned attractor set, making for more
+        /// situations where the `!controller` player has a set with _just_ `E_move` vertices, making for fewer recursive calls?
+        /// Why this still results in correct results in the (projected!) game is a mystery pending further investigation.
+        pub fn attractor_set_early_stop(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
+            let (player_set, opponent_set) = self.get_player_sets(player);
+            let mut output = starting_set.clone();
+            let edge_move_set = self.e_move.and(player_set)?;
+            let edge_i_set = self.e_i_all.and(player_set)?;
+
+            loop {
+                let edge_starting_set = self.edge_substitute(&output)?;
+                let e_i_attracted_vertices = self.small_attractor(&self.e_i_all, &edge_i_set, opponent_set, &edge_starting_set)?;
+                let e_i_attracted_vertices = e_i_attracted_vertices.and(&self.variables.next_move_var().not()?)?;
+
+                let e_i_starting_set = self.edge_substitute(&e_i_attracted_vertices)?.or(&edge_starting_set)?;
+                let e_move_attracted_vertices = self.small_attractor(&self.e_move, &edge_move_set, opponent_set, &e_i_starting_set)?;
+                let e_move_attracted_vertices = e_move_attracted_vertices.and(self.variables.next_move_var())?;
+
+                // Since we know these two sets alternate, if neither has made any changes we don't need to do another full iteration.
+                if e_move_attracted_vertices.diff(&output)? == self.base_false {
+                    // Uncomment the below for a normal attractor return.
+                    // output = output.or(&e_i_attracted_vertices)?;
+                    break;
+                } else {
+                    output = output.or(&e_move_attracted_vertices)?.or(&e_i_attracted_vertices)?;
+                }
+            }
+
+            Ok(output)
+        }
+
+        /// Attractor set computation which works as a general replacement to the original one.
+        #[tracing::instrument(level = "trace", skip_all, fields(player))]
+        pub fn attractor_set_general(&self, player: Owner, starting_set: &F) -> symbolic::Result<F> {
+            let (player_set, opponent_set) = self.get_player_sets(player);
+            let mut output = starting_set.clone();
+            let edge_move_set = self.e_move.and(player_set)?;
+            let edge_i_set = self.e_i_all.and(player_set)?;
+
+            loop {
+                let edge_starting_set = self.edge_substitute(&output)?;
+                let e_i_attracted_vertices = self.small_attractor(&self.e_i_all, &edge_i_set, opponent_set, &edge_starting_set)?;
+                let e_i_attracted_vertices = e_i_attracted_vertices.and(&self.variables.next_move_var().not()?)?;
+
+                let e_i_starting_set = self.edge_substitute(&e_i_attracted_vertices)?.or(&edge_starting_set)?;
+                let e_move_attracted_vertices = self.small_attractor(&self.e_move, &edge_move_set, opponent_set, &e_i_starting_set)?;
+                // The above can return a tautology when `next_move_var` is not set due to inversions, leading to incorrect attractor sets
+                // We need the below to re-assert
+                let e_move_attracted_vertices = e_move_attracted_vertices.and(self.variables.next_move_var())?;
+
+                let new_output = output.or(&e_move_attracted_vertices)?.or(&e_i_attracted_vertices)?;
+
+                if new_output == output {
+                    break;
+                } else {
+                    output = new_output;
+                }
+            }
+
+            Ok(output)
+        }
+
+        fn small_attractor(&self, edge_set: &F, edge_player_set: &F, opponent: &F, targets: &F) -> symbolic::Result<F> {
+            // Set of elements which have _any_ edge leading to our `starting_set` and are owned by `player`.
+            let any_edge_set = edge_player_set
+                .and(targets)?
+                .exist(&self.conjugated_v_edges)?;
+
+            // !edge_starting_set & self.edges
+            let edges_to_outside = edge_set.diff(targets)?;
+
+            // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
+            let all_edge_set = opponent.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+
+            Ok(any_edge_set.or(&all_edge_set)?)
+        }
+    }
 }
 
 #[cfg(test)]
