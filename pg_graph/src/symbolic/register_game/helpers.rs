@@ -84,6 +84,7 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
         let (player_set, opponent_set) = self.get_player_sets(self.controller);
         let mut output = starting_set.clone();
         let e_move_player_set = self.e_move.and(player_set)?;
+        let mut last_e_i = None;
         
         loop {
             let edge_starting_set = self.edge_substitute(&output)?;
@@ -92,6 +93,16 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             let e_i_attracted_set = self.e_i_all
                 .and(&edge_starting_set)?
                 .exist(&self.conjugated_v_edges)?;
+            
+            if let Some(e_i) = last_e_i {
+                if e_i == e_i_attracted_set {
+                    break;
+                } else {
+                    last_e_i = Some(e_i_attracted_set.clone());
+                }
+            } else {
+                last_e_i = Some(e_i_attracted_set.clone());
+            }
 
             // The E_move vertices can be owned by either player, so we'll need to do the whole procedure.
             let next_edge_starting_set = self.edge_substitute(&e_i_attracted_set)?.or(&edge_starting_set)?;
@@ -104,9 +115,10 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             let edges_to_outside = self.e_move.diff(&next_edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
-
-            let new_output = output.or(&e_i_attracted_set)?.or(&any_edge_set)?.or(&all_edge_set)?;
-
+            let e_move_attracted_set = all_edge_set.or(&any_edge_set)?;
+            
+            let new_output = output.or(&e_i_attracted_set)?.or(&e_move_attracted_set)?;
+            
             if new_output == output {
                 break;
             } else {
@@ -122,6 +134,7 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
         let (player_set, opponent_set) = self.get_player_sets(self.controller.other());
         let mut output = starting_set.clone();
         let e_move_player_set = self.e_move.and(player_set)?;
+        let mut last_e_i = None;
 
         loop {
             let edge_starting_set = self.edge_substitute(&output)?;
@@ -131,7 +144,17 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let e_i_attracted_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
             let e_i_attracted_set = e_i_attracted_set.and(&self.variables.next_move_var().not()?)?;
-
+            
+            if let Some(e_i) = last_e_i {
+                if e_i == e_i_attracted_set {
+                    break;
+                } else {
+                    last_e_i = Some(e_i_attracted_set.clone());
+                }
+            } else {
+                last_e_i = Some(e_i_attracted_set.clone());
+            }
+            
             // The E_move vertices can be owned by either player, so we'll need to do the whole procedure.
             let next_edge_starting_set = self.edge_substitute(&e_i_attracted_set)?.or(&edge_starting_set)?;
 
@@ -144,9 +167,9 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
             let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
             let e_move_attracted_set = self.variables.next_move_var().and(&all_edge_set)?.or(&any_edge_set)?;
-
+            
             let new_output = output.or(&e_i_attracted_set)?.or(&e_move_attracted_set)?;
-
+            
             if new_output == output {
                 break;
             } else {
