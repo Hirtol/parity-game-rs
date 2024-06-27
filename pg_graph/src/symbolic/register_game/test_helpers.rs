@@ -8,7 +8,7 @@ use crate::{
     Owner,
     symbolic,
     symbolic::{
-        helpers::CachedSymbolicEncoder, oxidd_extensions::BddExtensions,
+        helpers::CachedBinaryEncoder, oxidd_extensions::BddExtensions,
         register_game::SymbolicRegisterGame, sat::decode_split_assignments,
     }, Vertex,
 };
@@ -54,7 +54,7 @@ pub fn symbolic_to_explicit_alt<F: GeneralBooleanFunction>(symb: &SymbolicRegist
                         .unwrap();
 
                     let mut cached_encoder =
-                        CachedSymbolicEncoder::new(&symb.manager, symb.variables.all_variables.clone());
+                        CachedBinaryEncoder::new(&symb.manager, symb.variables.all_variables.clone());
 
                     for vertex in register_vertices {
                         let _ = reg_v_index.entry(vertex).or_insert_with(|| {
@@ -116,7 +116,7 @@ mod tests {
             register_game::{RegisterLayers, SymbolicRegisterGame},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
-        visualize::{DotWriter},
+        visualize::DotWriter,
     };
 
     #[test]

@@ -5,8 +5,12 @@ use std::{
 
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
-use oxidd_core::{function::{BooleanFunction, Function}, Manager, ManagerRef, util::{AllocResult}, WorkerManager};
-use oxidd_core::util::OptBool;
+use oxidd_cache::StatisticsGenerator;
+use oxidd_core::{
+    function::Function,
+    HasApplyCache,
+    ManagerRef, util::{AllocResult, OptBool}, WorkerManager,
+};
 
 use variable_order::VariableAllocatorInfo;
 
@@ -16,16 +20,16 @@ use crate::{
     Owner,
     Priority,
     symbolic, symbolic::{
-        helpers::{CachedSymbolicEncoder, MultiEncoder},
-        oxidd_extensions::{BddExtensions, BooleanFunctionExtensions, FunctionManagerExtension, FunctionVarRef}, SymbolicParityGame,
+        helpers::{CachedBinaryEncoder, MultiEncoder},
+        oxidd_extensions::{BooleanFunctionExtensions, FunctionVarRef, GeneralBooleanFunction},
+        sat::TruthAssignmentsIterator,
+        SymbolicParityGame,
     },
 };
-use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
-use crate::symbolic::sat::TruthAssignmentsIterator;
 
+pub mod helpers;
 pub(crate) mod test_helpers;
 mod variable_order;
-pub mod helpers;
 
 pub struct SymbolicRegisterGame<F: Function> {
     pub k: Rank,
@@ -52,7 +56,7 @@ impl<F> SymbolicRegisterGame<F>
 where
     F: GeneralBooleanFunction,
     for<'id> F::Manager<'id>: WorkerManager,
-    for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>>
+    for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item = Vec<OptBool>>,
 {
     /// Construct a new symbolic register game straight from an explicit parity game.
     ///
@@ -134,13 +138,12 @@ where
         tracing::debug!("Creating priority BDDs");
         let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
         let mut priorities: ahash::HashMap<_, _> = (0..=2 * k + extra_priorities)
-            .into_iter()
             .map(|val| (val as Priority, base_false.clone()))
             .collect();
         let mut prio_encoder =
-            CachedSymbolicEncoder::new(&manager, variables.priority_vars().into_iter().cloned().collect());
+            CachedBinaryEncoder::new(&manager, variables.priority_vars().iter().cloned().collect());
         let mut prio_edge_encoder =
-            CachedSymbolicEncoder::new(&manager, edge_variables.priority_vars().into_iter().cloned().collect());
+            CachedBinaryEncoder::new(&manager, edge_variables.priority_vars().iter().cloned().collect());
 
         tracing::debug!("Starting E_move construction");
 
@@ -165,7 +168,7 @@ where
         let _ = priorities.entry(0).and_modify(|pri| {
             *pri = sg
                 .vertices
-                .and(&priority_zero)
+                .and(priority_zero)
                 .unwrap()
                 .and(&variables.next_move_var().not().unwrap())
                 .unwrap()
@@ -213,8 +216,8 @@ where
                 let used_permutation = &permutation_encoding[index_to_use];
 
                 for (&priority, prio_bdd) in &sg.priorities {
-                    let starting_vertices = prio_bdd.and(&used_permutation)?;
-                    
+                    let starting_vertices = prio_bdd.and(used_permutation)?;
+
                     let mut next_registers = permutation.clone();
                     let rg_priority = explicit::register_game::reset_to_priority_2021(
                         i as Rank,
@@ -265,7 +268,7 @@ where
 
         e_i_edges = e_i_edges.into_iter().flat_map(|e_i| e_i.and(&base_vertex)).collect();
         let e_i_joined = e_i_edges.iter().try_fold(base_false.clone(), |acc, bdd| acc.or(bdd))?;
-        
+
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
 
@@ -310,8 +313,10 @@ where
     }
 
     #[cfg(feature = "statistics")]
-    pub fn print_statistics<O: Copy>(&self) 
-        where for<'id> F::Manager<'id>: HasApplyCache<F::Manager<'id>, O, ApplyCache: StatisticsGenerator> {
+    pub fn print_statistics<O: Copy>(&self)
+    where
+        for<'id> F::Manager<'id>: HasApplyCache<F::Manager<'id>, O, ApplyCache: StatisticsGenerator>,
+    {
         self.manager.with_manager_shared(|man| {
             use oxidd_cache::StatisticsGenerator;
             use oxidd_core::HasApplyCache;
@@ -334,7 +339,7 @@ where
             .register_vars()
             .iter()
             .try_fold(self.base_true.clone(), |acc, next| acc.and(&next.not()?))?;
-        let zero_prio = CachedSymbolicEncoder::encode_impl(self.variables.priority_vars(), 0u32)?;
+        let zero_prio = CachedBinaryEncoder::encode_impl(self.variables.priority_vars(), 0u32)?;
 
         let projector_func = zero_registers
             .and(&zero_prio)?

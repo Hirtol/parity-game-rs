@@ -14,7 +14,7 @@ use crate::{
     symbolic::{
         BCDD,
         BDD,
-        helpers::CachedSymbolicEncoder,
+        helpers::CachedBinaryEncoder,
         oxidd_extensions::GeneralBooleanFunction, sat::TruthAssignmentsIterator,
     },
 };
@@ -95,8 +95,8 @@ where
         let base_true = manager.with_manager_exclusive(|man| F::t(man));
         let base_false = manager.with_manager_exclusive(|man| F::f(man));
 
-        let mut var_encoder = CachedSymbolicEncoder::new(&manager, variables.clone());
-        let mut e_var_encoder = CachedSymbolicEncoder::new(&manager, edge_variables.clone());
+        let mut var_encoder = CachedBinaryEncoder::new(&manager, variables.clone());
+        let mut e_var_encoder = CachedBinaryEncoder::new(&manager, edge_variables.clone());
 
         tracing::debug!("Starting edge BDD construction");
         // Edges
@@ -180,11 +180,11 @@ where
     }
 
     pub fn encode_vertex(&self, v_idx: VertexId) -> symbolic::Result<F> {
-        CachedSymbolicEncoder::<_, F>::encode_impl(&self.variables, v_idx.index())
+        CachedBinaryEncoder::<_, F>::encode_impl(&self.variables, v_idx.index())
     }
 
     pub fn encode_edge_vertex(&self, v_idx: VertexId) -> symbolic::Result<F> {
-        CachedSymbolicEncoder::<_, F>::encode_impl(&self.variables_edges, v_idx.index())
+        CachedBinaryEncoder::<_, F>::encode_impl(&self.variables_edges, v_idx.index())
     }
 
     /// Calculate all vertex ids which belong to the set represented by the `bdd`.

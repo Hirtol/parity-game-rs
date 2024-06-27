@@ -6,13 +6,13 @@ use oxidd_core::{function::Function, ManagerRef};
 use crate::symbolic::{BddError, oxidd_extensions::BooleanFunctionExtensions};
 
 /// Bit-wise encoder of given values
-pub struct CachedSymbolicEncoder<T, F> {
+pub struct CachedBinaryEncoder<T, F> {
     cache: ahash::HashMap<T, F>,
     variables: EcoVec<F>,
     leading_zeros: EcoVec<F>,
 }
 
-impl<T, F> CachedSymbolicEncoder<T, F>
+impl<T, F> CachedBinaryEncoder<T, F>
 where
     T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
     T: Eq + Hash + Debug,
@@ -114,7 +114,7 @@ where
 }
 
 pub struct MultiEncoder<T, F> {
-    encoders: Vec<CachedSymbolicEncoder<T, F>>,
+    encoders: Vec<CachedBinaryEncoder<T, F>>,
 }
 
 impl<T, F> MultiEncoder<T, F>
@@ -131,7 +131,7 @@ where
         Self {
             encoders: variable_slices
                 .into_iter()
-                .map(|slice| CachedSymbolicEncoder::new(manager, slice.into_iter().collect()))
+                .map(|slice| CachedBinaryEncoder::new(manager, slice.into_iter().collect()))
                 .collect(),
         }
     }
