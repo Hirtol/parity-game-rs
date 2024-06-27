@@ -18,6 +18,7 @@ use crate::{
         oxidd_extensions::GeneralBooleanFunction, sat::TruthAssignmentsIterator,
     },
 };
+use crate::symbolic::helpers::SymbolicEncoder;
 
 pub struct SymbolicParityGame<F: Function> {
     pub pg_vertex_count: usize,

@@ -157,6 +157,48 @@ impl DotWriter {
 
         Ok(String::from_utf8(out).expect("Invalid UTF-8"))
     }
+
+    pub fn write_dot_symbolic_register_hot<'a, F>(
+        graph: &'a crate::symbolic::register_game_one_hot::OneHotRegisterGame<F>,
+        additional_funcs: impl IntoIterator<Item = (&'a F, String)>,
+    ) -> eyre::Result<String>
+        where for<'id> F: 'a + GeneralBooleanFunction + DotStyle<<<F::Manager<'id> as Manager>::Edge as Edge>::Tag>,
+              for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+              for<'id> <<F::Manager<'id> as Manager>::Edge as Edge>::Tag: Debug,
+              for<'id> <F::Manager<'id> as Manager>::Terminal: Display,{
+        use oxidd_core::ManagerRef;
+
+        let mut out = Vec::new();
+
+        graph
+            .manager
+            .with_manager_exclusive(|man| {
+                let variables = graph
+                    .variables
+                    .iter_names("")
+                    .chain(graph.variables_edges.iter_names("_"));
+
+                let prio = graph.priorities.iter().map(|(p, bdd)| (bdd, format!("Priority {p}")));
+                let e_is = graph.e_i.iter().enumerate().map(|(i, bdd)| (bdd, format!("E_{i}")));
+
+                let functions = [
+                    (&graph.vertices, "vertices".into()),
+                    (&graph.v_even, "vertices_even".into()),
+                    (&graph.v_odd, "vertices_odd".into()),
+                    (&graph.e_move, "E_move".into()),
+                    (&graph.e_i_all, "E_i_all".into())
+                ]
+                    .into_iter()
+                    .chain(prio)
+                    .chain(e_is)
+                    .chain(additional_funcs);
+
+                oxidd_dump::dot::dump_all(&mut out, man, variables, functions)
+            })
+            .expect("Failed to lock");
+
+        Ok(String::from_utf8(out).expect("Invalid UTF-8"))
+    }
 }
 
 pub struct MermaidWriter;

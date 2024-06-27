@@ -6,6 +6,7 @@ pub mod helpers;
 pub mod oxidd_extensions;
 pub mod parity_game;
 pub mod register_game;
+pub mod register_game_one_hot;
 pub mod sat;
 pub mod solvers;
 
@@ -17,6 +18,8 @@ pub type Result<T> = std::result::Result<T, BddError>;
 pub enum BddError {
     #[error("Failed to allocate memory")]
     AllocError(OutOfMemory),
+    #[error("Given input was not mapped before hand")]
+    NoMatchingInput,
     #[error("No input was provided")]
     NoInput,
 }

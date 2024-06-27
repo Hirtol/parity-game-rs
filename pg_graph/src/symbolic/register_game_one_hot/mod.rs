@@ -27,12 +27,13 @@ use crate::{
     },
 };
 use crate::symbolic::helpers::SymbolicEncoder;
+use crate::symbolic::register_game_one_hot::helpers::OneHotEncoder;
 
 pub mod helpers;
 pub(crate) mod test_helpers;
 mod variable_order;
 
-pub struct SymbolicRegisterGame<F: Function> {
+pub struct OneHotRegisterGame<F: Function> {
     pub k: Rank,
     pub controller: Owner,
     pub manager: F::ManagerRef,
@@ -53,7 +54,7 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub base_false: F,
 }
 
-impl<F> SymbolicRegisterGame<F>
+impl<F> OneHotRegisterGame<F>
 where
     F: GeneralBooleanFunction,
     for<'id> F::Manager<'id>: WorkerManager,
@@ -93,8 +94,10 @@ where
 
         let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
         let max_reg_priority = 2 * k + extra_priorities;
-        let register_bits_needed = (explicit.priority_max() as f64 + 1.).log2().ceil() as usize;
-        // Calculate the amount of variables we'll need for the binary encodings of the registers and vertices.
+        // We use a one-hot encoding scheme, so we simply need all unique priorities.
+        let unique_priorities = explicit.priorities_unique().sorted().collect_vec();
+        let register_bits_needed = unique_priorities.len();
+        // Calculate the amount of variables we'll need for the one-hot encoding of the registers and binary encoding of the vertices.
         let n_register_vars = register_bits_needed * num_registers;
         let n_vertex_vars = (explicit.vertex_count() as f64).log2().ceil() as usize;
         let n_prio_vars = (max_reg_priority as f64 + 1.).log2().ceil() as usize;
@@ -178,17 +181,15 @@ where
         tracing::debug!("Starting E_i construction");
 
         let mut e_i_edges = vec![base_false.clone(); num_registers];
-        let mut perm_encoder: MultiEncoder<Priority, _, _> = MultiEncoder::new(
-            &manager,
-            &variables.register_vars().iter().cloned().chunks(register_bits_needed),
+        let mut base_permutation_encoder: MultiEncoder<Priority, _, _> = MultiEncoder::new_collection(
+            (&variables.register_vars().iter().cloned().chunks(register_bits_needed))
+                .into_iter()
+                .flat_map(|reg_vars| OneHotEncoder::new(unique_priorities.iter().copied(), reg_vars.collect())),
         );
-        let mut next_encoder: MultiEncoder<Priority, _, _> = MultiEncoder::new(
-            &manager,
-            &edge_variables
-                .register_vars()
-                .iter()
-                .cloned()
-                .chunks(register_bits_needed),
+        let mut next_permutation_encoder: MultiEncoder<Priority, _,_> = MultiEncoder::new_collection(
+            (&edge_variables.register_vars().iter().cloned().chunks(register_bits_needed))
+                .into_iter()
+                .flat_map(|reg_vars| OneHotEncoder::new(unique_priorities.iter().copied(), reg_vars.collect())),
         );
 
         // Calculate all possible next register sets based on a current set of registers and priorities.
@@ -201,7 +202,7 @@ where
 
         for (n_th_permutation, permutation) in unique_register_contents.enumerate() {
             logger.tick(n_th_permutation);
-            let permutation_encoding = perm_encoder.encode_many_partial_rev(&permutation)?;
+            let permutation_encoding = base_permutation_encoder.encode_many_partial_rev(&permutation)?;
 
             // Calculate the `e_i` reset
             for i in 0..=k {
@@ -228,7 +229,7 @@ where
                     );
                     explicit::register_game::next_registers_2021(&mut next_registers, priority, num_registers, i);
 
-                    let next_encoding = next_encoder.encode_many(&next_registers)?;
+                    let next_encoding = next_permutation_encoder.encode_many(&next_registers)?;
                     let next_with_priority = next_encoding.and(prio_edge_encoder.encode(rg_priority)?)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
 
@@ -236,7 +237,7 @@ where
                     *e_i = e_i.or(&all_vertices)?;
 
                     // Update the priority set as well
-                    let next_base_encoding = perm_encoder.encode_many(&next_registers)?;
+                    let next_base_encoding = base_permutation_encoder.encode_many(&next_registers)?;
                     let next_base_with_priority = next_base_encoding.and(prio_encoder.encode(rg_priority)?)?;
                     let vertices_with_priority =
                         prio_bdd.and(&next_base_with_priority)?.and(variables.next_move_var())?;
@@ -244,15 +245,15 @@ where
                         .entry(rg_priority)
                         .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
 
-                    // tracing::debug!(
-                    //     n_th_permutation,
-                    //     "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
-                    //     permutation,
-                    //     next_registers,
-                    //     priority,
-                    //     i,
-                    //     rg_priority
-                    // );
+                    tracing::debug!(
+                        n_th_permutation,
+                        "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
+                        permutation,
+                        next_registers,
+                        priority,
+                        i,
+                        rg_priority
+                    );
                 }
             }
         }
@@ -335,11 +336,13 @@ where
         // Every vertex with zeroed registers, zero priority, and next move `reset`, is implicitly a 'starting' vertice in the register game.
         // Only one such vertex would exist for every vertex in the underlying parity game, so we can safely use their result
         // for the desired effect.
-        let zero_registers = self
-            .variables
-            .register_vars()
-            .iter()
-            .try_fold(self.base_true.clone(), |acc, next| acc.and(&next.not()?))?;
+        let zero_registers = self.variables.chunked_register_vars(self.n_registers())
+            .flat_map(|reg_vars| {
+                println!("CHUNK SIZE: {}", reg_vars.len());
+                let first = reg_vars[0].clone();
+                reg_vars.iter().skip(1).flat_map(|f| f.not()).try_fold(first, |acc, next| acc.and(&next))
+            })
+            .try_fold(self.base_true.clone(), |acc, next| acc.and(&next))?;
         let zero_prio = CachedBinaryEncoder::encode_impl(self.variables.priority_vars(), 0u32)?;
 
         let projector_func = zero_registers
@@ -355,6 +358,10 @@ where
 
         let result = self.manager.with_manager_shared(|man| {
             let (vals_even, vals_odd) = (wp_even.sat_assignments(man), wp_odd.sat_assignments(man));
+            let (vals_even, vals_odd) = (vals_even.collect_vec(), vals_odd.collect_vec());
+            
+            println!("VALUES: {vals_even:?}\n{vals_odd:?}");
+            
             let variable_indices = [self.variables.var_indices(RegisterLayers::Vertex).as_slice()];
 
             (
@@ -376,24 +383,6 @@ where
     }
 }
 
-#[derive(Clone)]
-pub struct RegisterVertexVars<F: Function> {
-    pub all_variables: EcoVec<F>,
-    pub manager_layer_indices: ahash::HashMap<RegisterLayers, EcoVec<usize>>,
-    n_register_vars: usize,
-    n_priority_vars: usize,
-}
-
-impl<F: BooleanFunctionExtensions> Debug for RegisterVertexVars<F> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RegisterVertexVars")
-            .field("n_register_vars", &self.n_register_vars)
-            .field("n_priority_vars", &self.n_priority_vars)
-            .field("manager_layer_indices", &self.manager_layer_indices)
-            .finish()
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Hash, Eq)]
 pub enum RegisterLayers {
     /// The variable related to the next move of each register game vertex.
@@ -404,6 +393,14 @@ pub enum RegisterLayers {
     Vertex,
     /// The variables related to the register game priority of each register game vertex.
     Priority,
+}
+
+#[derive(Clone)]
+pub struct RegisterVertexVars<F: Function> {
+    pub all_variables: EcoVec<F>,
+    pub manager_layer_indices: ahash::HashMap<RegisterLayers, EcoVec<usize>>,
+    n_register_vars: usize,
+    n_priority_vars: usize,
 }
 
 impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
@@ -456,6 +453,17 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
         &self.all_variables[1..self.n_register_vars + 1]
     }
 
+    pub fn chunked_register_vars(&self, chunks: usize) -> impl Iterator<Item=&[F]> {
+        let registers = self.register_vars();
+        let chunk_size = registers.len() / chunks;
+
+        (0..chunks)
+            .map(move |i| {
+            let start = chunk_size * i;
+            &registers[start..start + chunk_size]
+        })
+    }
+
     #[inline(always)]
     pub fn vertex_vars(&self) -> &[F] {
         let start = self.n_register_vars + 1;
@@ -499,6 +507,16 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
                     .enumerate()
                     .map(move |(i, r)| (r, format!("p{i}{suffix}"))),
             )
+    }
+}
+
+impl<F: BooleanFunctionExtensions> Debug for RegisterVertexVars<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegisterVertexVars")
+            .field("n_register_vars", &self.n_register_vars)
+            .field("n_priority_vars", &self.n_priority_vars)
+            .field("manager_layer_indices", &self.manager_layer_indices)
+            .finish()
     }
 }
 

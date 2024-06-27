@@ -8,15 +8,15 @@ use crate::{
     Owner,
     symbolic,
     symbolic::{
-        helpers::CachedBinaryEncoder,
-        register_game::SymbolicRegisterGame, sat::decode_split_assignments,
+        helpers::CachedBinaryEncoder, oxidd_extensions::BddExtensions,
+        register_game_one_hot::OneHotRegisterGame, sat::decode_split_assignments,
     }, Vertex,
 };
 use crate::symbolic::helpers::SymbolicEncoder;
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::symbolic::sat::TruthAssignmentsIterator;
 
-pub fn symbolic_to_explicit_alt<F: GeneralBooleanFunction>(symb: &SymbolicRegisterGame<F>) -> ParityGame
+pub fn symbolic_to_explicit_alt<F: GeneralBooleanFunction>(symb: &OneHotRegisterGame<F>) -> ParityGame
     where for<'id> F::Manager<'id>: WorkerManager,
           for<'a, 'b> TruthAssignmentsIterator<'b, 'a, F>: Iterator<Item=Vec<OptBool>> {
     let mut pg = ParityGame::empty();
@@ -114,34 +114,64 @@ mod tests {
         symbolic::{
             BDD,
             oxidd_extensions::BddExtensions,
-            register_game::{RegisterLayers, SymbolicRegisterGame},
+            register_game_one_hot::{OneHotRegisterGame, RegisterLayers},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
         },
         visualize::DotWriter,
     };
+    use crate::explicit::ParityGraph;
+    use crate::symbolic::register_game_one_hot::helpers::OneHotEncoder;
 
     #[test]
     pub fn test_trivial_2() -> eyre::Result<()> {
         let game = crate::tests::trivial_pg_2()?;
-        let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
+        let srg: OneHotRegisterGame<BDD> = OneHotRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
+        let encod = OneHotEncoder::new(game.priorities_unique().sorted(), srg.variables.register_vars().into_iter().cloned().collect())?;
 
         let spg = srg.to_symbolic_parity_game()?;
         let mut solver = SymbolicZielonkaSolver::new(&spg);
         let (w_even, w_odd) = solver.run_symbolic();
-        let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
+        let (wp_even, wp_odd) = srg.projected_winning_regions(&w_even, &w_odd)?;
 
+        spg.gc();
+        std::fs::write(
+            "out.dot",
+            DotWriter::write_dot_symbolic_register_hot(
+                &srg,
+                [
+                    (encod.mapping.get(&1).unwrap(), "prio 1 register".to_string()),
+                    (encod.mapping.get(&0).unwrap(), "prio 0 register".to_string()),
+                    (&w_odd, "won_odd".to_string()),
+                    (&w_even, "won_even".to_string()),
+                    (&wp_odd, "won_projected_odd".to_string()),
+                    (&wp_even, "won_projected_even".to_string()),
+                ],
+            )
+                .unwrap(),
+        )
+            .unwrap();
+        
+        let (wp_even, wp_odd) = srg.project_winning_regions(&w_even, &w_odd)?;
         assert_eq!(wp_even, vec![0]);
         assert_eq!(wp_odd, vec![1]);
 
         Ok(())
     }
 
+    #[tracing_test::traced_test]
     #[test]
     pub fn test_amba_decomposed() -> eyre::Result<()> {
         // Register-index=1, but also gets correct results for Owner::Even as the controller and k=0.
         let (game, compare) = crate::tests::load_and_compare_example("amba_decomposed_decode.tlsf.ehoa.pg");
-        let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
+        let srg: OneHotRegisterGame<BDD> = OneHotRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
 
+        srg.gc();
+        println!(
+            "RVars: {:#?} - BDD Size: {:#?}",
+            srg.variables.register_vars().len(),
+            srg.bdd_node_count()
+        );
+        
         let spg = srg.to_symbolic_parity_game()?;
         let mut solver = SymbolicZielonkaSolver::new(&spg);
         let (w_even, w_odd) = solver.run_symbolic();
@@ -164,7 +194,7 @@ mod tests {
         println!("Expected: {normal_sol:#?}");
 
         let k = 2;
-        let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, k, Owner::Even)?;
+        let s_pg: OneHotRegisterGame<BDD> = OneHotRegisterGame::from_symbolic(&game, k, Owner::Even)?;
         s_pg.gc();
 
         println!(
@@ -197,7 +227,7 @@ mod tests {
 
         std::fs::write(
             "out.dot",
-            DotWriter::write_dot_symbolic_register(
+            DotWriter::write_dot_symbolic_register_hot(
                 &s_pg,
                 [
                     (&wp_odd, "won_projected_odd".to_string()),

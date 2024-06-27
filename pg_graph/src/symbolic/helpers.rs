@@ -1,15 +1,47 @@
 use std::{borrow::Borrow, collections::hash_map::Entry, fmt::Debug, hash::Hash};
+use std::marker::PhantomData;
 
 use ecow::EcoVec;
 use oxidd_core::{function::Function, ManagerRef};
 
 use crate::symbolic::{BddError, oxidd_extensions::BooleanFunctionExtensions};
 
+pub trait SymbolicEncoder<T, F> 
+    where F: Function {
+
+    /// Encode the given value as a [BDDFunction].
+    fn encode(&mut self, value: T) -> super::Result<&F>;
+}
+
 /// Bit-wise encoder of given values
 pub struct CachedBinaryEncoder<T, F> {
     cache: ahash::HashMap<T, F>,
     variables: EcoVec<F>,
     leading_zeros: EcoVec<F>,
+}
+
+impl<T, F> SymbolicEncoder<T, F> for CachedBinaryEncoder<T, F>
+    where
+        T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
+        T: Eq + Hash + Debug,
+        <T as std::ops::BitAnd>::Output: PartialEq<T>,
+        F: Function + BooleanFunctionExtensions {
+    
+    /// Encode the given value as a [BDDFunction], caching it for future use.
+    ///
+    /// If `value` was already provided once the previously created [BDDFunction] will be returned.
+    fn encode(&mut self, value: T) -> crate::symbolic::Result<&F> {
+        let out = match self.cache.entry(value) {
+            Entry::Occupied(val) => val.into_mut(),
+            Entry::Vacant(val) => val.insert(Self::efficient_encode_impl(
+                &self.leading_zeros,
+                &self.variables,
+                value,
+            )?),
+        };
+
+        Ok(out)
+    }
 }
 
 impl<T, F> CachedBinaryEncoder<T, F>
@@ -40,22 +72,6 @@ where
             variables,
             leading_zeros: leading_zeros_bdds,
         }
-    }
-
-    /// Encode the given value as a [BDDFunction], caching it for future use.
-    ///
-    /// If `value` was already provided once the previously created [BDDFunction] will be returned.
-    pub fn encode(&mut self, value: T) -> super::Result<&F> {
-        let out = match self.cache.entry(value) {
-            Entry::Occupied(val) => val.into_mut(),
-            Entry::Vacant(val) => val.insert(Self::efficient_encode_impl(
-                &self.leading_zeros,
-                &self.variables,
-                value,
-            )?),
-        };
-
-        Ok(out)
     }
 
     /// Perform a binary encoding of the given value.
@@ -113,17 +129,19 @@ where
     }
 }
 
-pub struct MultiEncoder<T, F> {
-    encoders: Vec<CachedBinaryEncoder<T, F>>,
+pub struct MultiEncoder<T, F: Function, E: SymbolicEncoder<T, F>> {
+    encoders: Vec<E>,
+    _ph: PhantomData<T>,
+    __ph: PhantomData<F>
 }
 
-impl<T, F> MultiEncoder<T, F>
-where
-    T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
-    T: Eq + Hash + Debug,
-    <T as std::ops::BitAnd>::Output: PartialEq<T>,
-    F: Function + BooleanFunctionExtensions,
-{
+impl<T, F> MultiEncoder<T, F, CachedBinaryEncoder<T, F>>
+    where
+        T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
+        T: Eq + Hash + Debug,
+        <T as std::ops::BitAnd>::Output: PartialEq<T>,
+        F: Function + BooleanFunctionExtensions {
+    
     pub fn new<I: IntoIterator<Item = F>>(
         manager: &F::ManagerRef,
         variable_slices: impl IntoIterator<Item = I>,
@@ -133,6 +151,27 @@ where
                 .into_iter()
                 .map(|slice| CachedBinaryEncoder::new(manager, slice.into_iter().collect()))
                 .collect(),
+            _ph: Default::default(),
+            __ph: Default::default(),
+        }
+    }
+}
+
+impl<T, F, E> MultiEncoder<T, F, E>
+where
+    T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
+    T: Eq + Hash + Debug,
+    <T as std::ops::BitAnd>::Output: PartialEq<T>,
+    F: Function + BooleanFunctionExtensions,
+    E: SymbolicEncoder<T, F>
+{
+    pub fn new_collection(
+        encoders: impl IntoIterator<Item = E>,
+    ) -> Self {
+        Self {
+            encoders: encoders.into_iter().collect(),
+            _ph: Default::default(),
+            __ph: Default::default(),
         }
     }
 
@@ -160,7 +199,7 @@ where
     /// The last item in the array is the same as the result of [Self::encode_many].
     pub fn encode_many_partial_rev(&mut self, value: &[T]) -> super::Result<Vec<F>> {
         let mut result = Vec::with_capacity(value.len());
-        let mut it = value.into_iter().enumerate().rev();
+        let mut it = value.iter().enumerate().rev();
         let (i, last_item) = it.next().ok_or(BddError::NoInput)?;
         let mut first_encoding = self.encoders[i].encode(*last_item.borrow())?.clone();
         result.push(first_encoding.clone());
