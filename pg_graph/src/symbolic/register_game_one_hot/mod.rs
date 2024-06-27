@@ -244,16 +244,6 @@ where
                     priorities
                         .entry(rg_priority)
                         .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
-
-                    tracing::debug!(
-                        n_th_permutation,
-                        "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
-                        permutation,
-                        next_registers,
-                        priority,
-                        i,
-                        rg_priority
-                    );
                 }
             }
         }
@@ -338,7 +328,6 @@ where
         // for the desired effect.
         let zero_registers = self.variables.chunked_register_vars(self.n_registers())
             .flat_map(|reg_vars| {
-                println!("CHUNK SIZE: {}", reg_vars.len());
                 let first = reg_vars[0].clone();
                 reg_vars.iter().skip(1).flat_map(|f| f.not()).try_fold(first, |acc, next| acc.and(&next))
             })
@@ -359,9 +348,6 @@ where
         let result = self.manager.with_manager_shared(|man| {
             let (vals_even, vals_odd) = (wp_even.sat_assignments(man), wp_odd.sat_assignments(man));
             let (vals_even, vals_odd) = (vals_even.collect_vec(), vals_odd.collect_vec());
-            
-            println!("VALUES: {vals_even:?}\n{vals_odd:?}");
-            
             let variable_indices = [self.variables.var_indices(RegisterLayers::Vertex).as_slice()];
 
             (

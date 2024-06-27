@@ -222,6 +222,7 @@ mod tests {
         Ok(())
     }
 
+    // #[tracing_test::traced_test]
     // #[test]
     pub fn test_variable_orders_grouped() -> eyre::Result<()> {
         rayon::ThreadPoolBuilder::default()
@@ -259,16 +260,15 @@ mod tests {
             match (*best_node_lock, best_order.as_ref()) {
                 (Some(best_nodes), Some(_)) => {
                     if best_nodes > nodes {
-                        println!("New found: {:?} - Order: {:?}", best_node_lock, best_order);
                         *best_node_lock = Some(nodes);
                         *best_order = current_order;
+                        println!("New found: {:?} - Order: {:?}", best_node_lock, best_order);
                     }
                 }
                 (None, None) => {
-                    println!("New found: {:?} - Order: {:?}", best_node_lock, best_order);
-
                     *best_node_lock = Some(nodes);
                     *best_order = current_order;
+                    println!("New found: {:?} - Order: {:?}", best_node_lock, best_order);
                 }
                 _ => panic!("Impossible"),
             }
