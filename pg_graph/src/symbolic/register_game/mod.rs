@@ -6,11 +6,7 @@ use std::{
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd_cache::StatisticsGenerator;
-use oxidd_core::{
-    function::Function,
-    HasApplyCache,
-    ManagerRef, util::{AllocResult, OptBool}, WorkerManager,
-};
+use oxidd_core::{function::Function, HasApplyCache, Manager, ManagerRef, util::{AllocResult, OptBool}, WorkerManager};
 
 use variable_order::VariableAllocatorInfo;
 
@@ -202,6 +198,15 @@ where
         for (n_th_permutation, permutation) in unique_register_contents.enumerate() {
             logger.tick(n_th_permutation);
             let permutation_encoding = perm_encoder.encode_many_partial_rev(&permutation)?;
+
+            // For large (e.g., two_counters_14) cases intermediate GCs are required.
+            if n_th_permutation > 0 && n_th_permutation % 40_000 == 0 {
+                manager.with_manager_exclusive(|man| {
+                    tracing::debug!(nodes=man.num_inner_nodes(), "Running GC");
+                    man.gc();
+                    tracing::debug!(nodes=man.num_inner_nodes(), "Post GC node count");
+                });
+            }
 
             // Calculate the `e_i` reset
             for i in 0..=k {

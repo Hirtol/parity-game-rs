@@ -101,12 +101,21 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
     let mut vertex_vars_edge = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
     let mut prio_vars_edge = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
-    let mut registers_edge = (0..alloc.n_register_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
-    let mut registers = (0..alloc.n_register_vars)
-        .flat_map(|_| F::new_var_layer_idx(man))
-        .collect_vec();
+    // This substantially decreases the size and computation time of BDDs
+    let mut registers_edge = Vec::new();
+    let mut registers = Vec::new();
+
+    for _ in 0..alloc.n_register_vars {
+        registers_edge.push(F::new_var_layer_idx(man)?);
+        registers.push(F::new_var_layer_idx(man)?);
+    }
+    
+    // let mut registers_edge = (0..alloc.n_register_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
+    // let mut registers = (0..alloc.n_register_vars)
+    //     .flat_map(|_| F::new_var_layer_idx(man))
+    //     .collect_vec();
 
     let mut prio_vars = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
