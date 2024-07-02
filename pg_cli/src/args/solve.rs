@@ -1,13 +1,18 @@
 use std::path::PathBuf;
 
 use pg_graph::{
-    explicit::{ParityGraph, register_game::RegisterGame},
+    explicit::{ParityGame, ParityGraph, register_game::RegisterGame},
     Owner,
-    symbolic::{register_game::SymbolicRegisterGame, solvers::symbolic_zielonka::SymbolicZielonkaSolver},
+    symbolic::{
+        BDD,
+        register_game::SymbolicRegisterGame,
+        register_game_one_hot::OneHotRegisterGame,
+        solvers::{
+            symbolic_register_zielonka::SymbolicRegisterZielonkaSolver, symbolic_zielonka::SymbolicZielonkaSolver,
+        },
+    },
     visualize::DotWriter,
 };
-use pg_graph::symbolic::BDD;
-use pg_graph::symbolic::solvers::symbolic_register_zielonka::SymbolicRegisterZielonkaSolver;
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {
@@ -53,6 +58,8 @@ pub struct SymbolicSolveCommand {
     /// Using `Symbolic` directly constructs the symbolic register game, and converts that to a symbolic parity game.
     #[clap(short = 't', global = true, value_enum, default_value_t)]
     register_game_type: RegisterGameType,
+    #[clap(short = 'o', global = true, default_value = "false")]
+    one_hot: bool,
     /// Which solver to use, by default will use Zielonka
     #[clap(subcommand)]
     solver: Option<SymbolicSolvers>,
@@ -216,37 +223,12 @@ impl SolveCommand {
                         let k = k as u8;
 
                         tracing::debug!(k, "Constructing with register index");
-                        let register_game = timed_solve!(
-                            SymbolicRegisterGame::<BDD>::from_symbolic(&parity_game, k, Owner::Even),
-                            "Constructed Register Game"
-                        )?;
-                        let game_to_solve = register_game.to_symbolic_parity_game()?;
-                        game_to_solve.gc();
-                        tracing::debug!(
-                            from_vertex = parity_game.vertex_count(),
-                            rg_vertex = game_to_solve.vertex_count(),
-                            rg_bdd_nodes = register_game.bdd_node_count(),
-                            ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
-                            "Converted from parity game to symbolic register game"
-                        );
 
-                        let (w_even, w_odd) = match solver {
-                            SymbolicSolvers::Zielonka => {
-                                let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);
-
-                                let solution = timed_solve!(solver.run_symbolic());
-                                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
-                                solution
-                            }
-                        };
-
-                        let (_, odd) = register_game.project_winning_regions(&w_even, &w_odd)?;
-                        let mut winners = vec![Owner::Even; parity_game.vertex_count()];
-                        for v_idx in odd {
-                            winners[v_idx as usize] = Owner::Odd;
+                        if symbolic.one_hot {
+                            Self::run_srg_one_hot(&parity_game, &solver, k)?
+                        } else {
+                            Self::run_srg(&parity_game, &solver, k)?
                         }
-
-                        winners
                     } else {
                         let game_to_solve = timed_solve!(
                             pg_graph::symbolic::SymbolicParityGame::<BDD>::from_explicit(&parity_game),
@@ -301,5 +283,72 @@ impl SolveCommand {
         }
 
         Ok(())
+    }
+
+    fn run_srg(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8) -> eyre::Result<Vec<Owner>> {
+        let register_game = timed_solve!(
+                                SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, Owner::Even),
+                                "Constructed Register Game"
+                            )?;
+        let game_to_solve = register_game.to_symbolic_parity_game()?;
+        game_to_solve.gc();
+        tracing::debug!(
+                                from_vertex = parity_game.vertex_count(),
+                                rg_vertex = game_to_solve.vertex_count(),
+                                rg_bdd_nodes = register_game.bdd_node_count(),
+                                ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
+                                "Converted from parity game to symbolic register game"
+                            );
+        let (w_even, w_odd) = match solver {
+            SymbolicSolvers::Zielonka => {
+                let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);
+
+                let solution = timed_solve!(solver.run_symbolic());
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                solution
+            }
+        };
+
+        let (_, odd) = register_game.project_winning_regions(&w_even, &w_odd)?;
+        let mut winners = vec![Owner::Even; parity_game.vertex_count()];
+        for v_idx in odd {
+            winners[v_idx as usize] = Owner::Odd;
+        }
+
+        Ok(winners)
+    }
+
+    fn run_srg_one_hot(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8) -> eyre::Result<Vec<Owner>> {
+        let register_game = timed_solve!(
+            OneHotRegisterGame::<BDD>::from_symbolic(&parity_game, k, Owner::Even),
+            "Constructed Register Game"
+        )?;
+        let game_to_solve = register_game.to_symbolic_parity_game()?;
+        game_to_solve.gc();
+        tracing::debug!(
+            from_vertex = parity_game.vertex_count(),
+            rg_vertex = game_to_solve.vertex_count(),
+            rg_bdd_nodes = register_game.bdd_node_count(),
+            ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
+            "Converted from parity game to one-hot symbolic register game"
+        );
+
+        let (w_even, w_odd) = match solver {
+            SymbolicSolvers::Zielonka => {
+                let mut solver = SymbolicZielonkaSolver::new(&game_to_solve);
+
+                let solution = timed_solve!(solver.run_symbolic());
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                solution
+            }
+        };
+
+        let (_, odd) = register_game.project_winning_regions(&w_even, &w_odd)?;
+        let mut winners = vec![Owner::Even; parity_game.vertex_count()];
+        for v_idx in odd {
+            winners[v_idx as usize] = Owner::Odd;
+        }
+
+        Ok(winners)
     }
 }

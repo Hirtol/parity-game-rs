@@ -127,12 +127,12 @@ where
             // Fill priority
             s_priorities
                 .entry(priority)
-                .and_modify(|bdd| *bdd = bdd.or(&expr).expect("Out of memory"));
+                .and_modify(|bdd| *bdd = bdd.or(expr).expect("Out of memory"));
 
             // Set owners
             match vertex.owner {
-                Owner::Even => s_even = s_even.or(&expr)?,
-                Owner::Odd => s_odd = s_odd.or(&expr)?,
+                Owner::Even => s_even = s_even.or(expr)?,
+                Owner::Odd => s_odd = s_odd.or(expr)?,
             }
         }
 
