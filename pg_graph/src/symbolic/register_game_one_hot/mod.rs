@@ -63,7 +63,7 @@ where
     /// Construct a new symbolic register game straight from an explicit parity game.
     ///
     /// See [crate::register_game::RegisterGame::construct]
-    #[tracing::instrument(name = "Build Symbolic Register Game", skip_all)]
+    #[tracing::instrument(name = "Build Symbolic One Hot Register Game", skip_all)]
     pub fn from_symbolic(explicit: &ParityGame, k: Rank, controller: Owner) -> symbolic::Result<Self> {
         let manager = F::new_manager(
             explicit.vertex_count(),

@@ -7,6 +7,7 @@ use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd_cache::StatisticsGenerator;
 use oxidd_core::{function::Function, HasApplyCache, Manager, ManagerRef, util::{AllocResult, OptBool}, WorkerManager};
+use oxidd_core::util::Subst;
 
 use variable_order::VariableAllocatorInfo;
 
@@ -110,7 +111,8 @@ where
                 },
             )
         })?;
-
+        
+        tracing::debug!("Starting symbolic parity game construction");
         let sg = SymbolicParityGame::from_explicit_impl_vars(
             explicit,
             manager.clone(),
@@ -132,18 +134,10 @@ where
             }
         };
 
-        tracing::debug!("Creating priority BDDs");
-        let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
-        let mut priorities: ahash::HashMap<_, _> = (0..=2 * k + extra_priorities)
-            .map(|val| (val as Priority, base_false.clone()))
-            .collect();
-        let mut prio_encoder =
-            CachedBinaryEncoder::new(&manager, variables.priority_vars().iter().cloned().collect());
+        tracing::debug!("Starting E_move construction");
         let mut prio_edge_encoder =
             CachedBinaryEncoder::new(&manager, edge_variables.priority_vars().iter().cloned().collect());
-
-        tracing::debug!("Starting E_move construction");
-
+        
         // Ensure all registers remain the same past the E_move transition
         let iff_register_condition = variables
             .register_vars()
@@ -159,17 +153,6 @@ where
             .diff(edge_variables.next_move_var())?
             .and(&iff_register_condition)?
             .and(edge_priority_zero)?;
-
-        // All E_move edges get a priority of `0` by default.
-        let priority_zero = prio_encoder.encode(0)?;
-        let _ = priorities.entry(0).and_modify(|pri| {
-            *pri = sg
-                .vertices
-                .and(priority_zero)
-                .unwrap()
-                .and(&variables.next_move_var().not().unwrap())
-                .unwrap()
-        });
 
         tracing::debug!("Starting E_i construction");
 
@@ -211,7 +194,7 @@ where
             // Calculate the `e_i` reset
             for i in 0..=k {
                 // As we iterate permutations backwards to forwards (aka, [0, 0, _], where `_` will have all values changed before [0, _, 0])
-                // we can stop iteration once we pass the point where we _know_ that the valuable BDDs have been constructed for the state-space.
+                // we can stop iterating once we pass the point where we _know_ that the valuable BDDs have been constructed for the state-space.
                 let multiplier = (k - i) + 1;
                 let skip_threshold = n_unique_priorities.pow(multiplier as u32);
                 if n_th_permutation >= skip_threshold {
@@ -239,29 +222,10 @@ where
 
                     let e_i = &mut e_i_edges[i];
                     *e_i = e_i.or(&all_vertices)?;
-
-                    // Update the priority set as well
-                    let next_base_encoding = perm_encoder.encode_many(&next_registers)?;
-                    let next_base_with_priority = next_base_encoding.and(prio_encoder.encode(rg_priority)?)?;
-                    let vertices_with_priority =
-                        prio_bdd.and(&next_base_with_priority)?.and(variables.next_move_var())?;
-                    priorities
-                        .entry(rg_priority)
-                        .and_modify(|bdd| *bdd = bdd.or(&vertices_with_priority).unwrap());
-
-                    // tracing::debug!(
-                    //     n_th_permutation,
-                    //     "Debug: {:?}/{:?} - Prio: {} - i: {} - next_prio: {}",
-                    //     permutation,
-                    //     next_registers,
-                    //     priority,
-                    //     i,
-                    //     rg_priority
-                    // );
                 }
             }
         }
-
+        
         // Add the additional conditions for each E_i relation.
         // From t=0 -> t=1
         let base_edge = edge_variables.next_move_var().diff(variables.next_move_var())?;
@@ -277,6 +241,37 @@ where
 
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
+        
+        tracing::debug!("Creating priority BDDs");
+        
+        let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
+        let mut priorities: ahash::HashMap<_, _> = (0..=2 * k + extra_priorities)
+            .map(|val| (val as Priority, base_false.clone()))
+            .collect();
+        let mut prio_encoder: CachedBinaryEncoder<Priority, F> =
+            CachedBinaryEncoder::new(&manager, variables.priority_vars().iter().cloned().collect());
+        
+        // All E_move edges get a priority of `0` by default.
+        let priority_zero = prio_encoder.encode(0)?;
+        let _ = priorities.entry(0).and_modify(|pri| {
+            *pri = sg
+                .vertices
+                .and(priority_zero)
+                .unwrap()
+                .and(&variables.next_move_var().not().unwrap())
+                .unwrap()
+        });
+        
+        // The E_i set contains our encoded priorities, we can create a quick look up set by substituting
+        for (rg_priority, bdd) in priorities.iter_mut() {
+            let prio_edge_encoding = prio_edge_encoder.encode(*rg_priority)?;
+            
+            let prio_vertices = e_i_joined.and(prio_edge_encoding)?.exist(&conj_v)?;
+            let subs = Subst::new(&edge_variables.all_variables, &variables.all_variables);
+            let reverse_substitute = prio_vertices.substitute(subs)?;
+        
+            *bdd = bdd.or(&reverse_substitute)?;
+        }
 
         manager.with_manager_exclusive(|man| man.set_threading_enabled(true));
 

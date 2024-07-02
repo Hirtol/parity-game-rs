@@ -94,11 +94,16 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
     // This order: 10.3s solver (19631 nodes), memory efficient order: 28.6s solver (14773 nodes)
     // It seems slower on `amba_decomposed`
     let next_move_edge = F::new_var_layer_idx(man)?;
-
-    let mut vertex_vars = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
     let next_move = F::new_var_layer_idx(man)?;
+    
+    // This substantially decreases the size and computation time of BDDs
+    let mut vertex_vars = Vec::new();
+    let mut vertex_vars_edge = Vec::new();
+    for _ in 0..alloc.n_vertex_vars {
+        vertex_vars_edge.push(F::new_var_layer_idx(man)?);
+        vertex_vars.push(F::new_var_layer_idx(man)?);
+    }
 
-    let mut vertex_vars_edge = (0..alloc.n_vertex_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
     let mut prio_vars_edge = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
     // This substantially decreases the size and computation time of BDDs
@@ -109,13 +114,6 @@ pub fn default_alloc_vars<F: BooleanFunctionExtensions>(
         registers_edge.push(F::new_var_layer_idx(man)?);
         registers.push(F::new_var_layer_idx(man)?);
     }
-    
-    // let mut registers_edge = (0..alloc.n_register_vars)
-    //     .flat_map(|_| F::new_var_layer_idx(man))
-    //     .collect_vec();
-    // let mut registers = (0..alloc.n_register_vars)
-    //     .flat_map(|_| F::new_var_layer_idx(man))
-    //     .collect_vec();
 
     let mut prio_vars = (0..alloc.n_priority_vars).flat_map(|_| F::new_var_layer_idx(man)).collect_vec();
 
