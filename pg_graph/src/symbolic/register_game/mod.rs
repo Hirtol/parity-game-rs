@@ -6,8 +6,11 @@ use std::{
 use ecow::{eco_vec, EcoVec};
 use itertools::Itertools;
 use oxidd_cache::StatisticsGenerator;
-use oxidd_core::{function::Function, HasApplyCache, Manager, ManagerRef, util::{AllocResult, OptBool}, WorkerManager};
-use oxidd_core::util::Subst;
+use oxidd_core::{
+    function::Function,
+    HasApplyCache,
+    Manager, ManagerRef, util::{AllocResult, OptBool, Subst}, WorkerManager,
+};
 
 use variable_order::VariableAllocatorInfo;
 
@@ -17,14 +20,12 @@ use crate::{
     Owner,
     Priority,
     symbolic, symbolic::{
-        helpers::{CachedBinaryEncoder, MultiEncoder},
+        BddError,
+        helpers::{CachedBinaryEncoder, MultiEncoder, SymbolicEncoder},
         oxidd_extensions::{BooleanFunctionExtensions, FunctionVarRef, GeneralBooleanFunction},
-        sat::TruthAssignmentsIterator,
-        SymbolicParityGame,
+        sat::TruthAssignmentsIterator, SymbolicParityGame,
     },
 };
-use crate::symbolic::BddError;
-use crate::symbolic::helpers::SymbolicEncoder;
 
 pub mod helpers;
 pub(crate) mod test_helpers;
@@ -114,7 +115,7 @@ where
                 },
             )
         })?;
-        
+
         tracing::debug!("Starting symbolic parity game construction");
         let sg = SymbolicParityGame::from_explicit_impl_vars(
             explicit,
@@ -140,7 +141,7 @@ where
         tracing::debug!("Starting E_move construction");
         let mut prio_edge_encoder =
             CachedBinaryEncoder::new(&manager, edge_variables.priority_vars().iter().cloned().collect());
-        
+
         // Ensure all registers remain the same past the E_move transition
         let iff_register_condition = variables
             .register_vars()
@@ -177,134 +178,175 @@ where
         // This will be vastly more efficient than constructing the full register game following the explicit naive algorithm.
         // However, should a game with `n` vertices and `n` priorities be used, this approach will likely take... forever...
         let n_unique_priorities = sg.priorities.keys().len();
-        let loop_count: usize = (0..=k).map(|i| n_unique_priorities.pow((k-i) as u32)).sum();
-        let mut logger = ProgressLogger::new(loop_count);
+        let loop_count: usize = (0..=k).map(|i| n_unique_priorities * n_unique_priorities.pow((k - i) as u32)).sum();
+        let mut logger = ProgressLogger::new(loop_count / 2);
 
-        // We need to handle three cases to efficiently encode this whole permutation set:
-        // 1. Efficient case where the contents in register `ì` <= `priority`
+        // We need to handle three cases to efficiently encode the whole permutation set:
+        // 1. Efficient case where the contents in register `r_i` <= `priority`
         //    - We can exploit the fact that we know that the `next_register_state` and the priority will be the exact same for all such cases.
         // 2. Case where the contents in `i` > `priority` and the contents are even
         // 3. Case where the contents in `i` > `priority` and the contents are odd
-        let mut i_closure_small = |i: usize, priority: Priority,
-                                   prio_bdd: &F, reg_vars: &[F],
-                                   register_state: &[Priority], next_registers_state: &mut [Priority], permutation_encoding: F,
-                                   permutation: Option<Vec<Priority>>,
-                                   base_register_encoder: &mut MultiEncoder<Priority, F, CachedBinaryEncoder<Priority, F>>| {
-            // We know that the resulting register states will _always_ be the same, no matter which of the cases above
-            // that we have. So we can simply reset once for the current priority.
-            explicit::register_game::next_registers_2021_out(register_state, next_registers_state, priority, num_registers, i);
+        let mut small_ei_encode =
+            |i: usize,
+             priority: Priority,
+             prio_bdd: &F,
+             reg_vars: &[F],
+             register_state: &[Priority],
+             next_registers_state: &mut [Priority],
+             permutation_encoding: F,
+             permutation: Option<Vec<Priority>>,
+             base_register_encoder: &mut MultiEncoder<Priority, F, CachedBinaryEncoder<Priority, F>>| {
+                // We know that the resulting register states will _always_ be the same, no matter which of the cases above
+                // that we have. So we can simply reset once for the current priority.
+                explicit::register_game::next_registers_2021_out(
+                    register_state,
+                    next_registers_state,
+                    priority,
+                    num_registers,
+                    i,
+                );
 
-            // ** First case **
-            // First calculate how many bits are significant
-            let significant_bits = (Priority::BITS - priority.leading_zeros()) as usize;
-            // We can exclude all register states which are binary wise higher than our current `priority`
-            // We still need to exclude special cases such as 3, when priority = 2.
-            let exclude_bits = reg_vars[significant_bits..register_bits_needed].iter().try_fold(base_true.clone(), |acc, var| acc.diff(var))?;
-            // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
-            let final_exclude = sg.priorities.keys().sorted().rev()
-                .filter(|&&p| p > priority && p < (priority + 1).next_power_of_two())
-                .try_fold(exclude_bits, |acc, p| acc.diff(base_register_encoder.encode_single(i, *p).unwrap()))?;
-            // The general register game priority will always be the same for values <= priority.
-            let rg_prio_general = explicit::register_game::reset_to_priority_2021(
-                i as Rank,
-                priority,
-                priority,
-                controller,
-            );
+                // ** First case **
+                // First calculate how many bits are significant
+                let significant_bits = (Priority::BITS - priority.leading_zeros()) as usize;
+                // We can exclude all register states which are binary wise higher than our current `priority`
+                // We still need to exclude special cases such as 3, when priority = 2.
+                let exclude_bits = reg_vars[significant_bits..register_bits_needed]
+                    .iter()
+                    .try_fold(base_true.clone(), |acc, var| acc.diff(var))?;
+                // We'll need to exclude values larger than `priority` up to the next power of two to ensure they don't get included
+                let final_exclude = sg
+                    .priorities
+                    .keys()
+                    .sorted()
+                    .filter(|&&p| p > priority && p < (priority + 1).next_power_of_two())
+                    .try_fold(exclude_bits, |acc, p| {
+                        acc.diff(base_register_encoder.encode_single(i, *p).unwrap())
+                    })?;
+                // The general register game priority will always be the same for values <= priority.
+                let rg_prio_general =
+                    explicit::register_game::reset_to_priority_2021(i as Rank, priority, priority, controller);
 
-            let starting_vertices = prio_bdd.and(&final_exclude)?.and(&permutation_encoding)?;
-            let next_registers = next_encoder.encode_many(next_registers_state)?;
-            let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_prio_general)?)?;
-            let all_vertices = starting_vertices.and(&next_with_priority)?;
+                let starting_vertices = prio_bdd.and(&final_exclude)?.and(&permutation_encoding)?;
+                let next_registers = next_encoder.encode_many(next_registers_state)?;
+                let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_prio_general)?)?;
+                let all_vertices = starting_vertices.and(&next_with_priority)?;
 
-            // tracing::debug!("Symbolic Reset of `r_{} <= {:?}`, prio: `{}`, from: `[X, {:?}]`, result: `{:?}`, rg_prio: `{}`", i, priority,  priority, permutation, next_registers_state, rg_prio_general);
-            let e_i = &mut e_i_edges[i];
-            *e_i = e_i.or(&all_vertices)?;
-
-            // ** Cases 2. and 3.
-            // This can almost certainly be done better with some binary tricks (inverting `final_exclude` above?)
-            // But for now just to get this idea tested:
-            for &v_priority in sg.priorities.keys().filter(|&&p| p > priority).sorted().rev() {
-                let rg_prio_greater = explicit::register_game::reset_to_priority_2021(i as Rank, v_priority, priority, controller);
-
-                // Have to create a new `starting_vertices` set.
-                let v_priority_register_encode = base_register_encoder.encode_single(i, v_priority)?;
-                let starting_vertices = prio_bdd.and(v_priority_register_encode)?.and(&permutation_encoding)?;
-                let all_vertices = if rg_prio_greater ==  rg_prio_general {
-                    // We can re-use `next_with_priority`,
-                    starting_vertices.and(&next_with_priority)
-                } else {
-                    // Re-calculate the `next_with_priority` set.
-                    let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_prio_greater)?)?;
-                    starting_vertices.and(&next_with_priority)
-                }?;
-
-                // tracing::debug!("Symbolic Reset of `r_{}({v_priority}) > {:?}`, prio: `{}`, from: `[{}, {:?}]`, result: `{:?}`, rg_prio: `{}`", i, priority,  priority, v_priority, permutation, next_registers_state, rg_prio_greater);
+                // tracing::debug!("Symbolic Reset of `r_{} <= {:?}`, prio: `{}`, from: `[X, {:?}]`, result: `{:?}`, rg_prio: `{}`", i, priority,  priority, permutation, next_registers_state, rg_prio_general);
+                let e_i = &mut e_i_edges[i];
                 *e_i = e_i.or(&all_vertices)?;
-            }
 
-            Ok::<_, BddError>(())
-        };
+                // ** Cases 2. and 3.
+                // This can almost certainly be done better with some binary tricks (inverting `final_exclude` above?)
+                // But for now just to get this idea tested:
+                for &v_priority in sg.priorities.keys().filter(|&&p| p > priority).sorted() {
+                    let rg_prio_greater =
+                        explicit::register_game::reset_to_priority_2021(i as Rank, v_priority, priority, controller);
+
+                    // Have to create a new `starting_vertices` set.
+                    let v_priority_register_encode = base_register_encoder.encode_single(i, v_priority)?;
+                    let starting_vertices = prio_bdd.and(v_priority_register_encode)?.and(&permutation_encoding)?;
+                    let all_vertices = if rg_prio_greater == rg_prio_general {
+                        // We can re-use `next_with_priority`,
+                        starting_vertices.and(&next_with_priority)
+                    } else {
+                        // Re-calculate the `next_with_priority` set.
+                        let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_prio_greater)?)?;
+                        starting_vertices.and(&next_with_priority)
+                    }?;
+
+                    // tracing::debug!("Symbolic Reset of `r_{}({v_priority}) > {:?}`, prio: `{}`, from: `[{}, {:?}]`, result: `{:?}`, rg_prio: `{}`", i, priority,  priority, v_priority, permutation, next_registers_state, rg_prio_greater);
+                    *e_i = e_i.or(&all_vertices)?;
+                }
+
+                Ok::<_, BddError>(())
+            };
 
         for i in 0..=k {
             let n_remaining_registers = k - i;
-            let mut register_state = vec![0; num_registers];
             let mut next_register_state = vec![0; num_registers];
             let reg_vars = variables.register_vars_i(i, register_bits_needed);
 
-            if n_remaining_registers > 0 {
-                // Simple case distinction:
-                // 1. We have a permutation [.., r_i, .., r_k], where for all i < j <= k => r_j <= priority
-                //    In this case we can merge them all into a single call, significantly reducing the number of permutations
-                // 2. We have a  [.., r_i, .., r_k], where for some i < j <= k => r_j > priority
-                //    For these permutations we need to manually add them all individually.
-                for (&priority, prio_bdd) in sg.priorities.iter().sorted_by_key(|k| *k.0).rev() {
-                    register_state = vec![0; num_registers];
-                    // ** Handle case 1 **
-                    // First calculate how many bits are significant
-                    let significant_bits = (Priority::BITS - priority.leading_zeros()) as usize;
-                    // Exclude the states which would be greater than our allowed priority
-                    let mut permutation_exclude = base_true.clone();
-                    for j in (i + 1)..=k {
-                        let reg_vars_j = variables.register_vars_i(j, register_bits_needed);
-                        // We can exclude all register states which are binary wise higher than our current `priority`
-                        // We still need to exclude special cases such as 3, when priority = 2.
-                        let exclude_bits = reg_vars_j[significant_bits..register_bits_needed].iter()
-                            .try_fold(base_true.clone(), |acc, var| acc.diff(var))?;
-                        // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
-                        let remaining_exclude = sg.priorities.keys().sorted().rev()
-                            .filter(|&&p| p > priority && p < (priority + 1).next_power_of_two())
-                            .try_fold(exclude_bits, |acc, p| acc.diff(base_registers_encoder.encode_single(j, *p).unwrap()))?;
+            // Simple case distinction:
+            // 1. We have a permutation [.., r_i, .., r_k], where for all i < j <= k => r_j <= priority
+            //    In this case we can merge them all into a single call, significantly reducing the number of permutations
+            // 2. We have a  [.., r_i, .., r_k], where for some i < j <= k => r_j > priority
+            //    For these permutations we need to manually add them all individually.
+            for (&priority, prio_bdd) in sg.priorities.iter().sorted_by_key(|k| *k.0) {
+                let mut register_state = vec![0; num_registers];
+                // ** Handle case 1 **
+                // First calculate how many bits are significant
+                let significant_bits = (Priority::BITS - priority.leading_zeros()) as usize;
+                // Exclude the states which would be greater than our allowed priority
+                let mut permutation_exclude = base_true.clone();
+                for j in (i + 1)..=k {
+                    let reg_vars_j = variables.register_vars_i(j, register_bits_needed);
+                    // We can exclude all register states which are binary wise higher than our current `priority`
+                    // We still need to exclude special cases such as 3, when priority = 2.
+                    let exclude_bits = reg_vars_j[significant_bits..register_bits_needed]
+                        .iter()
+                        .try_fold(base_true.clone(), |acc, var| acc.diff(var))?;
+                    // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
+                    let remaining_exclude = sg
+                        .priorities
+                        .keys()
+                        .sorted()
+                        .rev()
+                        .filter(|&&p| p > priority && p < (priority + 1).next_power_of_two())
+                        .try_fold(exclude_bits, |acc, p| {
+                            acc.diff(base_registers_encoder.encode_single(j, *p).unwrap())
+                        })?;
 
-                        permutation_exclude = permutation_exclude.and(&remaining_exclude)?;
-                    }
-
-                    i_closure_small(i, priority, prio_bdd, reg_vars, &register_state, &mut next_register_state, permutation_exclude, None, &mut base_registers_encoder)?;
-
-                    // ** Handle case 2 **
-                    let remaining_permutations = itertools::repeat_n(sg.priorities.keys().copied().filter(|&p| p > priority), n_remaining_registers).multi_cartesian_product();
-                    for (n_th_permutation, partial_permutation) in remaining_permutations.enumerate() {
-                        logger.tick(n_th_permutation);
-                        // For large (e.g., two_counters_14) cases intermediate GCs are required.
-                        if n_th_permutation > 0 && n_th_permutation % 5_000 == 0 {
-                            manager.with_manager_exclusive(|man| {
-                                tracing::debug!(nodes=man.num_inner_nodes(), "Running GC");
-                                man.gc();
-                                tracing::debug!(nodes=man.num_inner_nodes(), "Post GC node count");
-                            });
-                        }
-
-                        // Prepare our scratch register set for encodes.
-                        register_state[i + 1..].copy_from_slice(&partial_permutation);
-                        // Encode the register r_j, where j > i. These will always remain the same
-                        let permutation_encoding = base_registers_encoder.encode_many_range(i + 1..k+1, &partial_permutation).unwrap_or_else(|_| base_true.clone());
-
-                        i_closure_small(i, priority, prio_bdd, reg_vars, &register_state, &mut next_register_state, permutation_encoding, Some(partial_permutation), &mut base_registers_encoder)?;
-                    }
+                    permutation_exclude = permutation_exclude.and(&remaining_exclude)?;
                 }
-            } else {
-                for (&priority, prio_bdd) in sg.priorities.iter().sorted_by_key(|k| *k.0).rev() {
-                    i_closure_small(i, priority, prio_bdd, reg_vars, &register_state, &mut next_register_state, base_true.clone(), None, &mut base_registers_encoder)?;
+
+                small_ei_encode(
+                    i,
+                    priority,
+                    prio_bdd,
+                    reg_vars,
+                    &register_state,
+                    &mut next_register_state,
+                    permutation_exclude,
+                    None,
+                    &mut base_registers_encoder,
+                )?;
+
+                // ** Handle case 2 **
+                let remaining_permutations = itertools::repeat_n(
+                    sg.priorities.keys().copied().filter(|&p| p > priority),
+                    n_remaining_registers,
+                ).multi_cartesian_product();
+
+                for partial_permutation in remaining_permutations {
+                    logger.tick();
+                    // For large (e.g., two_counters_14) cases intermediate GCs are required.
+                    if logger.ticks > 0 && logger.ticks % 40_000 == 0 {
+                        manager.with_manager_exclusive(|man| {
+                            tracing::debug!(nodes = man.num_inner_nodes(), "Running GC");
+                            man.gc();
+                            tracing::debug!(nodes = man.num_inner_nodes(), "Post GC node count");
+                        });
+                    }
+
+                    // Prepare our scratch register set for encodes.
+                    register_state[i + 1..].copy_from_slice(&partial_permutation);
+                    // Encode the register r_j, where j > i. These will always remain the same
+                    let permutation_encoding = base_registers_encoder
+                        .encode_many_range(i + 1..k + 1, &partial_permutation)
+                        .unwrap_or_else(|_| base_true.clone());
+
+                    small_ei_encode(
+                        i,
+                        priority,
+                        prio_bdd,
+                        reg_vars,
+                        &register_state,
+                        &mut next_register_state,
+                        permutation_encoding,
+                        Some(partial_permutation),
+                        &mut base_registers_encoder,
+                    )?;
                 }
             }
         }
@@ -324,16 +366,16 @@ where
 
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
-        
+
         tracing::debug!("Creating priority BDDs");
-        
+
         let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
         let mut priorities: ahash::HashMap<_, _> = (0..=2 * k + extra_priorities)
             .map(|val| (val as Priority, base_false.clone()))
             .collect();
         let mut prio_encoder: CachedBinaryEncoder<Priority, F> =
             CachedBinaryEncoder::new(&manager, variables.priority_vars().iter().cloned().collect());
-        
+
         // All E_move edges get a priority of `0` by default.
         let priority_zero = prio_encoder.encode(0)?;
         let _ = priorities.entry(0).and_modify(|pri| {
@@ -344,15 +386,15 @@ where
                 .and(&variables.next_move_var().not().unwrap())
                 .unwrap()
         });
-        
+
         // The E_i set contains our encoded priorities, we can create a quick look up set by substituting
         for (rg_priority, bdd) in priorities.iter_mut() {
             let prio_edge_encoding = prio_edge_encoder.encode(*rg_priority)?;
-            
+
             let prio_vertices = e_i_joined.and(prio_edge_encoding)?.exist(&conj_v)?;
             let subs = Subst::new(&edge_variables.all_variables, &variables.all_variables);
             let reverse_substitute = prio_vertices.substitute(subs)?;
-        
+
             *bdd = bdd.or(&reverse_substitute)?;
         }
 
@@ -542,7 +584,7 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
     #[inline(always)]
     pub fn register_vars_i(&self, i: usize, num_register_bits: usize) -> &[F] {
         let start = i * num_register_bits;
-        &self.register_vars()[start..start+num_register_bits]
+        &self.register_vars()[start..start + num_register_bits]
     }
 
     #[inline(always)]
@@ -593,6 +635,7 @@ impl<F: BooleanFunctionExtensions> RegisterVertexVars<F> {
 
 struct ProgressLogger {
     total_len: usize,
+    ticks: usize,
     start: std::time::Instant,
     now: std::time::Instant,
 }
@@ -601,18 +644,20 @@ impl ProgressLogger {
     fn new(loop_count: usize) -> Self {
         Self {
             total_len: loop_count,
+            ticks: 0,
             start: std::time::Instant::now(),
             now: std::time::Instant::now(),
         }
     }
 
-    fn tick(&mut self, progress: usize) {
+    fn tick(&mut self) {
+        self.ticks += 1;
         if self.now.elapsed() > Duration::from_secs(3) {
-            let explore_rate = progress as f64 / self.start.elapsed().as_secs_f64();
-            let eta = (self.total_len - progress) as f64 / explore_rate;
+            let explore_rate = self.ticks as f64 / self.start.elapsed().as_secs_f64();
+            let eta = (self.total_len - self.ticks) as f64 / explore_rate;
             tracing::debug!(
                 "Current permutation: `{}/{}`, rate: `{:.2}/s`, ETA: `{:.2}`s",
-                progress,
+                self.ticks,
                 self.total_len,
                 explore_rate,
                 eta
