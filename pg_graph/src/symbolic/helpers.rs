@@ -1,5 +1,6 @@
 use std::{borrow::Borrow, collections::hash_map::Entry, fmt::Debug, hash::Hash};
 use std::marker::PhantomData;
+use std::ops::Range;
 
 use ecow::EcoVec;
 use oxidd_core::{function::Function, ManagerRef};
@@ -174,12 +175,20 @@ where
             __ph: Default::default(),
         }
     }
+    
+    /// Encode the given value as a [BDDFunction], where we use the specific encoder at `index` for the given `value`.
+    /// 
+    /// The result is fully cached.
+    pub fn encode_single(&mut self, index: usize, value: T) -> super::Result<&F> {
+        let encoder = self.encoders.get_mut(index).ok_or(BddError::NoInput)?;
+        encoder.encode(value)
+    }
 
     /// Encode the given values as a [BDDFunction], where each individual value is potentially cached and `AND`ed together to form the final BDD.
     ///
     /// Note that the entire `value` is not cached.
-    pub fn encode_many(&mut self, value: &[T]) -> super::Result<F> {
-        let mut it = value.into_iter().enumerate();
+    pub fn encode_many_range(&mut self, encoder_range: Range<usize>, values: &[T]) -> super::Result<F> {
+        let mut it = encoder_range.zip(values);
         let (i, first_item) = it.next().ok_or(BddError::NoInput)?;
         let mut first_encoding = self.encoders[i].encode(*first_item.borrow())?.clone();
 
@@ -189,6 +198,13 @@ where
         }
 
         Ok(first_encoding)
+    }
+
+    /// Encode the given values as a [BDDFunction], where each individual value is potentially cached and `AND`ed together to form the final BDD.
+    ///
+    /// Note that the entire `value` is not cached.
+    pub fn encode_many(&mut self, value: &[T]) -> super::Result<F> {
+        self.encode_many_range(0..value.len(), value)
     }
 
     /// Encode the given values as a [BDDFunction], where each individual value is potentially cached and `AND`ed together to form the final BDD.

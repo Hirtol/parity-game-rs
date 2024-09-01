@@ -22,6 +22,8 @@ pub enum BddError {
     NoMatchingInput,
     #[error("No input was provided")]
     NoInput,
+    #[error("An expected invariant was violated: {0}")]
+    InvariantViolated(String),
 }
 
 impl From<OutOfMemory> for BddError {
