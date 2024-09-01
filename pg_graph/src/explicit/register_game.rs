@@ -461,6 +461,23 @@ pub fn next_registers_2021(
     }
 }
 
+/// Calculate the next set of registers for a particular set of register contents.
+pub fn next_registers_2021_out(
+    current: &[Priority],
+    out: &mut [Priority],
+    vertex_priority: Priority,
+    n_registers: usize,
+    reset_register: usize,
+) {
+    for i in 0..n_registers {
+        match i.cmp(&reset_register) {
+            Ordering::Less => out[i] = 0,
+            Ordering::Equal => out[i] = vertex_priority,
+            Ordering::Greater => out[i] = current[i].max(vertex_priority),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub struct RegisterVertex {
     pub original_graph_id: VertexId,
