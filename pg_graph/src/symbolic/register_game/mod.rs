@@ -218,7 +218,6 @@ where
                 let final_exclude = sg
                     .priorities
                     .keys()
-                    .sorted()
                     .filter(|&&p| p > priority && p < (priority + 1).next_power_of_two())
                     .try_fold(exclude_bits, |acc, p| {
                         acc.diff(base_register_encoder.encode_single(i, *p).unwrap())
@@ -239,7 +238,7 @@ where
                 // ** Cases 2. and 3.
                 // This can almost certainly be done better with some binary tricks (inverting `final_exclude` above?)
                 // But for now just to get this idea tested:
-                for &v_priority in sg.priorities.keys().filter(|&&p| p > priority).sorted() {
+                for &v_priority in sg.priorities.keys().filter(|&&p| p > priority) {
                     let rg_prio_greater =
                         explicit::register_game::reset_to_priority_2021(i as Rank, v_priority, priority, controller);
 
@@ -290,8 +289,6 @@ where
                     let remaining_exclude = sg
                         .priorities
                         .keys()
-                        .sorted()
-                        .rev()
                         .filter(|&&p| p > priority && p < (priority + 1).next_power_of_two())
                         .try_fold(exclude_bits, |acc, p| {
                             acc.diff(base_registers_encoder.encode_single(j, *p).unwrap())
