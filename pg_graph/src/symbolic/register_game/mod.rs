@@ -196,6 +196,7 @@ where
              permutation_encoding: F,
              permutation: Option<Vec<Priority>>,
              base_register_encoder: &mut MultiEncoder<Priority, F, CachedBinaryEncoder<Priority, F>>| {
+                let base_starting_set = prio_bdd.and(&permutation_encoding)?;
                 // We know that the resulting register states will _always_ be the same, no matter which of the cases above
                 // that we have. So we can simply reset once for the current priority.
                 explicit::register_game::next_registers_2021_out(
@@ -226,7 +227,7 @@ where
                 let rg_prio_general =
                     explicit::register_game::reset_to_priority_2021(i as Rank, priority, priority, controller);
 
-                let starting_vertices = prio_bdd.and(&final_exclude)?.and(&permutation_encoding)?;
+                let starting_vertices = base_starting_set.and(&final_exclude)?;
                 let next_registers = next_encoder.encode_many(next_registers_state)?;
                 let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_prio_general)?)?;
                 let all_vertices = starting_vertices.and(&next_with_priority)?;
@@ -236,27 +237,30 @@ where
                 *e_i = e_i.or(&all_vertices)?;
 
                 // ** Cases 2. and 3.
-                // This can almost certainly be done better with some binary tricks (inverting `final_exclude` above?)
-                // But for now just to get this idea tested:
-                for &v_priority in sg.priorities.keys().filter(|&&p| p > priority) {
-                    let rg_prio_greater =
-                        explicit::register_game::reset_to_priority_2021(i as Rank, v_priority, priority, controller);
+                // We can simply invert the `final_exclude` to go from $r_i <= priority$ to $r_i > priority$
+                let inverse = final_exclude.not_owned()?;
+                let even_greater = inverse.and(&reg_vars[0].not()?)?;
+                let odd_greater = inverse.and(&reg_vars[0])?;
+                
+                let rg_odd_priority = explicit::register_game::reset_to_priority_2021(i as Rank, 1, 0, controller);
+                let rg_ev_priority = explicit::register_game::reset_to_priority_2021(i as Rank, 2, 0, controller);
+                
+                let ((rg_gt_eq_p, rg_gt_eq), (rg_gt_neq_p, rg_gt_neq)) = if rg_odd_priority == rg_prio_general {
+                    ((rg_odd_priority, odd_greater), (rg_ev_priority, even_greater))
+                } else {
+                    ((rg_ev_priority, even_greater), (rg_odd_priority, odd_greater))
+                };
 
-                    // Have to create a new `starting_vertices` set.
-                    let v_priority_register_encode = base_register_encoder.encode_single(i, v_priority)?;
-                    let starting_vertices = prio_bdd.and(v_priority_register_encode)?.and(&permutation_encoding)?;
-                    let all_vertices = if rg_prio_greater == rg_prio_general {
-                        // We can re-use `next_with_priority`,
-                        starting_vertices.and(&next_with_priority)
-                    } else {
-                        // Re-calculate the `next_with_priority` set.
-                        let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_prio_greater)?)?;
-                        starting_vertices.and(&next_with_priority)
-                    }?;
-
-                    // tracing::debug!("Symbolic Reset of `r_{}({v_priority}) > {:?}`, prio: `{}`, from: `[{}, {:?}]`, result: `{:?}`, rg_prio: `{}`", i, priority,  priority, v_priority, permutation, next_registers_state, rg_prio_greater);
-                    *e_i = e_i.or(&all_vertices)?;
-                }
+                // We can re-use `next_with_priority` for `rq_gt_eq_p`
+                let starting_vertices = base_starting_set.and(&rg_gt_eq)?;
+                let all_vertices = starting_vertices.and(&next_with_priority)?;
+                *e_i = e_i.or(&all_vertices)?;
+                
+                // Re-calculate the `next_with_priority` set for `rq_gt_neq_p`
+                let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_gt_neq_p)?)?;
+                let starting_vertices = base_starting_set.and(&rg_gt_neq)?;
+                let all_vertices = starting_vertices.and(&next_with_priority)?;
+                *e_i = e_i.or(&all_vertices)?;
 
                 Ok::<_, BddError>(())
             };
@@ -318,7 +322,7 @@ where
                 for partial_permutation in remaining_permutations {
                     logger.tick();
                     // For large (e.g., two_counters_14) cases intermediate GCs are required.
-                    if logger.ticks > 0 && logger.ticks % 40_000 == 0 {
+                    if logger.ticks > 0 && logger.ticks % 100_000 == 0 {
                         manager.with_manager_exclusive(|man| {
                             tracing::debug!(nodes = man.num_inner_nodes(), "Running GC");
                             man.gc();

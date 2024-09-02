@@ -302,7 +302,7 @@ impl SolveCommand {
         let (w_even, w_odd) = match solver {
             SymbolicSolvers::Zielonka => {
                 let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);
-
+                
                 let solution = timed_solve!(solver.run_symbolic());
                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                 solution
