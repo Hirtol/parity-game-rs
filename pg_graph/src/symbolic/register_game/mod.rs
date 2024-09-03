@@ -241,10 +241,10 @@ where
                 let inverse = final_exclude.not_owned()?;
                 let even_greater = inverse.and(&reg_vars[0].not()?)?;
                 let odd_greater = inverse.and(&reg_vars[0])?;
-                
+
                 let rg_odd_priority = explicit::register_game::reset_to_priority_2021(i as Rank, 1, 0, controller);
                 let rg_ev_priority = explicit::register_game::reset_to_priority_2021(i as Rank, 2, 0, controller);
-                
+
                 let ((rg_gt_eq_p, rg_gt_eq), (rg_gt_neq_p, rg_gt_neq)) = if rg_odd_priority == rg_prio_general {
                     ((rg_odd_priority, odd_greater), (rg_ev_priority, even_greater))
                 } else {
@@ -255,7 +255,7 @@ where
                 let starting_vertices = base_starting_set.and(&rg_gt_eq)?;
                 let all_vertices = starting_vertices.and(&next_with_priority)?;
                 *e_i = e_i.or(&all_vertices)?;
-                
+
                 // Re-calculate the `next_with_priority` set for `rq_gt_neq_p`
                 let next_with_priority = next_registers.and(prio_edge_encoder.encode(rg_gt_neq_p)?)?;
                 let starting_vertices = base_starting_set.and(&rg_gt_neq)?;
@@ -271,7 +271,7 @@ where
             let reg_vars = variables.register_vars_i(i, register_bits_needed);
 
             // Simple case distinction:
-            // 1. We have a permutation [.., r_i, .., r_k], where for all i < j <= k => r_j <= priority
+            // 1. We have a permutation [.., r_i, .., r_k], where for all i < j <= k -> r_j <= priority
             //    In this case we can merge them all into a single call, significantly reducing the number of permutations
             // 2. We have a  [.., r_i, .., r_k], where for some i < j <= k => r_j > priority
             //    For these permutations we need to manually add them all individually.
@@ -314,6 +314,42 @@ where
                 )?;
 
                 // ** Handle case 2 **
+                // TODO: This is not correct at the moment! Consider, we can just use equivalence relations for the > case you muppet!
+                // [0, 0] x         [>, <=, <=] STEP 2
+                // [0, 1] x         [>, >, <=]  STEP 2
+                // [0, 2] x         [<=, >, <=] STEP 2
+                // [0, 3] -         [<=, <=, <=] STEP 1
+                // [0, 4] -         [>, <=, >=] STEP 2
+                //                  [>, >, >=]  STEP 2
+                //                  [<=, >, >=] STEP 2
+                //                  [<=, <=, >=] STEP 2
+                // 
+                // [1, 0] x
+                // [1, 1] x
+                // [1, 2] x
+                // [1, 3] -
+                // [1, 4] -
+                // 
+                // [2, 0] x
+                // [2, 1] x
+                // [2, 2] x
+                // [2, 3] -
+                // [2, 4] -
+                // 
+                // [3, 0] -
+                // [3, 1] -
+                // [3, 2] -
+                // [3, 3]
+                // [3, 4]
+                // 
+                // [4, 0] -
+                // [4, 1] -
+                // [4, 2] -
+                // [4, 3]
+                // [4, 4]
+                // All the `x` cases are covered by step 1, but the `-` ones are not currently iterated over! (as all priorities have to be > priority)
+                // Why this doesn't cause issues at all in the benchmark set is beyond me. Each set of 3 `-` cases can be collapsed into one single BDD by just
+                // using different combinations of the step 1 exclude bits for the different registers (e.g., r_0 = <= 2, r_1 = 3)
                 let remaining_permutations = itertools::repeat_n(
                     sg.priorities.keys().copied().filter(|&p| p > priority),
                     n_remaining_registers,
@@ -329,14 +365,14 @@ where
                             tracing::debug!(nodes = man.num_inner_nodes(), "Post GC node count");
                         });
                     }
-
+                
                     // Prepare our scratch register set for encodes.
                     register_state[i + 1..].copy_from_slice(&partial_permutation);
                     // Encode the register r_j, where j > i. These will always remain the same
                     let permutation_encoding = base_registers_encoder
                         .encode_many_range(i + 1..k + 1, &partial_permutation)
                         .unwrap_or_else(|_| base_true.clone());
-
+                
                     small_ei_encode(
                         i,
                         priority,

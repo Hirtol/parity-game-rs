@@ -7,7 +7,7 @@ use oxidd_core::{function::Function, ManagerRef};
 
 use crate::symbolic::{BddError, oxidd_extensions::BooleanFunctionExtensions};
 
-pub trait SymbolicEncoder<T, F> 
+pub trait SymbolicEncoder<T, F>
     where F: Function {
 
     /// Encode the given value as a [BDDFunction].
@@ -230,15 +230,94 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Hash, Ord, Eq)]
+pub enum Inequality {
+    Leq,
+    Gt,
+}
+
+pub struct CachedInequalityEncoder<T, F: Function> {
+    base_true: F,
+    variables: EcoVec<F>,
+    value_domain: EcoVec<T>,
+    value_encoder: CachedBinaryEncoder<T, F>,
+    cache: ahash::HashMap<(Inequality, T), F>,
+}
+
+impl<T, F> CachedInequalityEncoder<T, F>
+    where
+        T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
+        T: Eq + Hash + Debug + PartialOrd<T>,
+        <T as std::ops::BitAnd>::Output: PartialEq<T>,
+        F: Function + BooleanFunctionExtensions {
+    /// Create a new [CachedInequalityEncoder].
+    ///
+    /// Expects `variables` to be sorted least-significant bit to most-significant bit.
+    pub fn new(manager: &F::ManagerRef, variables: EcoVec<F>, value_domain: EcoVec<T>) -> Self {
+        Self {
+            value_encoder: CachedBinaryEncoder::new(manager, variables.clone()),
+            variables,
+            value_domain,
+            base_true: manager.with_manager_exclusive(|man| F::t(man)),
+            cache: ahash::HashMap::default(),
+        }
+    }
+
+    pub fn encode(&mut self, ineq: Inequality, value: T) -> super::Result<&F> {
+        match ineq {
+            Inequality::Leq => Ok(
+                    match self.cache.entry((ineq, value)) {
+                        Entry::Occupied(val) => val.into_mut(),
+                        Entry::Vacant(val) => {
+                            // First calculate how many bits are significant
+                            let significant_bits = (value.num_bits() - value.leading_zeros_help()) as usize;
+                            // We can exclude all states which are binary wise higher than our current `value`
+                            // We still need to exclude special cases such as 3, when value = 2.
+                            let exclude_bits = self.variables[significant_bits..]
+                                .iter()
+                                .try_fold(self.base_true.clone(), |acc, var| acc.diff(var))?;
+                            // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
+                            let remaining_exclude = self.value_domain
+                                .iter()
+                                .filter(|&&p| p > value && p < value.add_one().next_power_of_two_help())
+                                .try_fold(exclude_bits, |acc, p| {
+                                    acc.diff(self.value_encoder.encode(*p).unwrap())
+                                })?;
+
+                            val.insert(remaining_exclude)
+                        }
+                    }
+                ),
+            Inequality::Gt => {
+                // Have to avoid multiple mutable borrows....
+                if !self.cache.contains_key(&(ineq, value)) {
+                    let leq_value = self.encode(Inequality::Leq, value)?.clone();
+                    let out = self.cache.entry((ineq, value)).or_insert(leq_value.not_owned()?);
+                    Ok(out)
+                } else {
+                    self.cache.get(&(ineq,value)).ok_or(BddError::NoMatchingInput)
+                }
+            }
+        }
+    }
+}
+
 pub trait BitHelper {
+    const NUM_BITS: u32;
     fn leading_zeros_help(&self) -> u32;
     fn num_bits(&self) -> u32;
+    
+    fn add_one(&self) -> Self;
+    
+    fn next_power_of_two_help(&self) -> Self;
 }
 
 macro_rules! impl_bithelpers {
     ($($value:ty),*) => {
         $(
             impl BitHelper for $value {
+                const NUM_BITS: u32 = Self::BITS;
+
                 #[inline(always)]
                 fn leading_zeros_help(&self) -> u32 {
                     self.leading_zeros()
@@ -247,6 +326,14 @@ macro_rules! impl_bithelpers {
                 #[inline(always)]
                 fn num_bits(&self) -> u32 {
                     Self::BITS
+                }
+                
+                fn add_one(&self) -> Self {
+                    self + 1
+                }
+                
+                fn next_power_of_two_help(&self) -> Self {
+                    self.next_power_of_two()
                 }
             }
         )*
