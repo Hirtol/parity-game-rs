@@ -191,8 +191,6 @@ where
             .sum();
         let mut logger = ProgressLogger::new(loop_count / 2);
 
-        
-
         let parity_domain = sg.priorities.keys().copied().collect::<EcoVec<_>>();
         let mut ineq_encoders = (0..=k)
             .map(|i| {
@@ -207,99 +205,106 @@ where
             // Simple case distinction:
             // 1. We have a permutation [.., r_i, .., r_k], where for all i < j <= k -> r_j <= priority
             //    In this case we can merge them all into a single call, significantly reducing the number of permutations
-            // 2. We have a  [.., r_i, .., r_k], where for some i < j <= k => r_j > priority
+            // 2. We have a  [.., r_i, ..., r_k], where for some i < j <= k => r_j > priority
             //    For these permutations we need to manually add them all individually.
             for (&priority, prio_bdd) in sg.priorities.iter().sorted_by_key(|k| *k.0) {
-                let register_inequality_permutations =
-                    itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
-                        .multi_cartesian_product();
-                
+                // Have to special case `k = 0` as it has no permutations
+                let base_and_target_registers = match k {
+                    0 => {
+                        vec![(prio_bdd.clone(), base_true.clone())]
+                    }
+                    _ => itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
+                        .multi_cartesian_product()
+                        .flat_map(|inequality_states| {
+                            let source_register_states = ineq_encoders[i + 1..=k]
+                                .iter_mut()
+                                .zip(&inequality_states)
+                                .flat_map(|(encoder, ineq)| encoder.encode(*ineq, priority))
+                                .try_fold(base_true.clone(), |acc, encoded_inequality| acc.and(encoded_inequality))?;
+
+                            let base_starting_set = prio_bdd.and(&source_register_states)?;
+
+                            // All cases where a register is <= priority needs to be set to priority
+                            // All cases where a register is > priority needs an equivalence relation between it and the next state.
+                            // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside.
+                            let target_register_states = {
+                                let mut base = base_true.clone();
+
+                                // First ensure the registers which come _before_ the reset are set to 0
+                                let zero_registers = edge_variables.register_vars()[0..i * register_bits_needed]
+                                    .iter()
+                                    .try_fold(base_true.clone(), |acc, next| acc.diff(next))?;
+                                base = base.and(&zero_registers)?;
+                                // Then ensure the register that is reset gets set to `priority`
+                                base = base.and(next_encoder.encode_single(i, priority)?)?;
+
+                                // Then encode the registers which come _after_ the reset.
+                                for (j, ineq) in (i + 1..=k).zip(inequality_states) {
+                                    base = match ineq {
+                                        // Any register which is smaller than priority will get overwritten;
+                                        Inequality::Leq => base.and(next_encoder.encode_single(j, priority)?)?,
+                                        Inequality::Gt => {
+                                            // Ensure all registers remain the same past the transition
+                                            let iff_register_condition = variables
+                                                .register_vars_i(j, register_bits_needed)
+                                                .iter()
+                                                .zip(edge_variables.register_vars_i(j, register_bits_needed))
+                                                .try_fold(base_true.clone(), |acc, (r, r_next)| {
+                                                    acc.and(&r.equiv(r_next)?)
+                                                })?;
+
+                                            base.and(&iff_register_condition)?
+                                        }
+                                    };
+                                }
+
+                                base
+                            };
+
+                            Ok::<_, BddError>((base_starting_set, target_register_states))
+                        })
+                        .collect(),
+                };
+
                 // We need to handle three cases to efficiently encode the whole permutation set:
                 // 1. Efficient case where the contents in register `r_i` <= `priority`
                 //    - We can exploit the fact that we know that the `next_register_state` and the priority will be the exact same for all such cases.
                 // 2. Case where the contents in `i` > `priority` and the contents are even
                 // 3. Case where the contents in `i` > `priority` and the contents are odd
-                // TODO: Fix this for k=0, as this loop won't initialise
-                // for inequality_states in register_inequality_permutations {
-                for inequality_states in register_inequality_permutations {
-                    let source_register_states = ineq_encoders[i + 1..=k]
-                            .iter_mut()
-                            .zip(&inequality_states)
-                            .flat_map(|(encoder, ineq)| encoder.encode(*ineq, priority))
-                            .try_fold(base_true.clone(), |acc, encoded_inequality| acc.and(encoded_inequality))?;
-                
-                    let base_starting_set = prio_bdd.and(&source_register_states)?;
-                    
-                    // All cases where a register is <= priority needs to be set to priority
-                    // All cases where a register is > priority needs an equivalence relation between it and the next state.
-                    // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside. 
-                    let target_register_states = {
-                        let mut base = base_true.clone();
-                        
-                        // First ensure the registers which come _before_ the reset are set to 0
-                        let zero_registers = edge_variables
-                            .register_vars()[0..i * register_bits_needed]
-                            .iter()
-                            .try_fold(base_true.clone(), |acc, next| acc.diff(next))?;
-                        base = base.and(&zero_registers)?;
-                        // Then ensure the register that is reset gets set to `priority`
-                        base = base.and(next_encoder.encode_single(i, priority)?)?;
-                        
-                        // Then encode the registers which come _after_ the reset.
-                        for (j, ineq) in (i + 1..=k).zip(inequality_states) {
-                            base = match ineq {
-                                // Any register which is smaller than priority will get overwritten;
-                                Inequality::Leq => base.and(next_encoder.encode_single(j, priority)?)?,
-                                Inequality::Gt => {
-                                    // Ensure all registers remain the same past the transition
-                                    let iff_register_condition = variables
-                                        .register_vars_i(j, register_bits_needed)
-                                        .iter()
-                                        .zip(edge_variables.register_vars_i(j, register_bits_needed))
-                                        .try_fold(base_true.clone(), |acc, (r, r_next)| acc.and(&r.equiv(r_next)?))?;
-                
-                                    base.and(&iff_register_condition)?
-                                }
-                            };
-                        }
-                        
-                        base
-                    };
-                
+                for (base_starting_set, target_register_states) in base_and_target_registers {
                     // ** First case **
                     let reset_lt_priority = ineq_encoders[i].encode(Inequality::Leq, priority)?;
                     // The general register game priority will always be the same for values <= priority.
                     let rg_prio_general =
                         explicit::register_game::reset_to_priority_2021(i as Rank, priority, priority, controller);
-                
+
                     let starting_vertices = base_starting_set.and(reset_lt_priority)?;
                     let next_with_priority = target_register_states.and(prio_edge_encoder.encode(rg_prio_general)?)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
-                
-                    // tracing::debug!("Symbolic Reset of `r_{} <= {:?}`, prio: `{}`, from: `[X, {:?}]`, result: `{:?}`, rg_prio: `{}`", i, priority,  priority, permutation, next_registers_state, rg_prio_general);
+                    
                     let e_i = &mut e_i_edges[i];
                     *e_i = e_i.or(&all_vertices)?;
-                
+
                     // ** Cases 2. and 3.
                     // We can simply invert the `final_exclude` to go from $r_i <= priority$ to $r_i > priority$
                     let inverse = ineq_encoders[i].encode(Inequality::Gt, priority)?;
                     let even_greater = inverse.and(&reg_vars[0].not()?)?;
                     let odd_greater = inverse.and(&reg_vars[0])?;
-                
+
                     let rg_odd_priority = explicit::register_game::reset_to_priority_2021(i as Rank, 1, 0, controller);
                     let rg_ev_priority = explicit::register_game::reset_to_priority_2021(i as Rank, 2, 0, controller);
-                
+
                     let ((rg_gt_eq_p, rg_gt_eq), (rg_gt_neq_p, rg_gt_neq)) = if rg_odd_priority == rg_prio_general {
                         ((rg_odd_priority, odd_greater), (rg_ev_priority, even_greater))
                     } else {
                         ((rg_ev_priority, even_greater), (rg_odd_priority, odd_greater))
                     };
-                
+
                     // We can re-use `next_with_priority` for `rq_gt_eq_p`
                     let starting_vertices = base_starting_set.and(&rg_gt_eq)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
                     *e_i = e_i.or(&all_vertices)?;
-                
+
                     // Re-calculate the `next_with_priority` set for `rq_gt_neq_p`
                     let next_with_priority = target_register_states.and(prio_edge_encoder.encode(rg_gt_neq_p)?)?;
                     let starting_vertices = base_starting_set.and(&rg_gt_neq)?;
@@ -627,13 +632,15 @@ impl ProgressLogger {
 
 fn check_rg_invariants(pg: &ParityGame) -> symbolic::Result<()> {
     let priorities = pg.priorities_unique().collect_vec();
-    
+
     // This is implicitly assumed in the definition of the game, and is used in our projection and E_i construction.
     // This could _most likely_ just be replaced by using the lowest priority in the game, but cba to test that right now.
     if !priorities.contains(&0) {
-        return Err(symbolic::BddError::InvariantViolated("A register game requires a zero priority to be present in the game".to_string()));
+        return Err(symbolic::BddError::InvariantViolated(
+            "A register game requires a zero priority to be present in the game".to_string(),
+        ));
     }
-    
+
     // if priorities.len() < 2 {
     //     return Err(symbolic::BddError::InvariantViolated("A register game requires at least two distinct priorities".to_string()));
     // }
