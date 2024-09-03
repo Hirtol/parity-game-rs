@@ -232,7 +232,9 @@ where
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Hash, Ord, Eq)]
 pub enum Inequality {
+    /// Less than or equal to
     Leq,
+    /// Greater than
     Gt,
 }
 

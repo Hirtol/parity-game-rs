@@ -186,10 +186,7 @@ where
         // This will be vastly more efficient than constructing the full register game following the explicit naive algorithm.
         // However, should a game with `n` vertices and `n` priorities be used, this approach will likely take... forever...
         let n_unique_priorities = sg.priorities.keys().len();
-        let loop_count: usize = (0..=k)
-            .map(|i| n_unique_priorities * n_unique_priorities.pow((k - i) as u32))
-            .sum();
-        let mut logger = ProgressLogger::new(loop_count / 2);
+        let mut logger = ProgressLogger::new(n_unique_priorities * (0..k).map(|i| 2usize.pow((k - i) as u32)).sum::<usize>());
 
         let parity_domain = sg.priorities.keys().copied().collect::<EcoVec<_>>();
         let mut ineq_encoders = (0..=k)
@@ -211,11 +208,12 @@ where
                 // Have to special case `k = 0` as it has no permutations
                 let base_and_target_registers = match k {
                     0 => {
-                        vec![(prio_bdd.clone(), base_true.clone())]
+                        vec![(prio_bdd.clone(), next_encoder.encode_single(i, priority)?.clone())]
                     }
                     _ => itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
                         .multi_cartesian_product()
                         .flat_map(|inequality_states| {
+                            logger.tick();
                             let source_register_states = ineq_encoders[i + 1..=k]
                                 .iter_mut()
                                 .zip(&inequality_states)
@@ -281,7 +279,7 @@ where
                     let starting_vertices = base_starting_set.and(reset_lt_priority)?;
                     let next_with_priority = target_register_states.and(prio_edge_encoder.encode(rg_prio_general)?)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
-                    
+
                     let e_i = &mut e_i_edges[i];
                     *e_i = e_i.or(&all_vertices)?;
 
