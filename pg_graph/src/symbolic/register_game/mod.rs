@@ -205,8 +205,10 @@ where
             // 2. We have a  [.., r_i, ..., r_k], where for some i < j <= k => r_j > priority
             //    For these permutations we need to manually add them all individually.
             for (&priority, prio_bdd) in sg.priorities.iter().sorted_by_key(|k| *k.0) {
-                // Have to special case `k = 0` as it has no permutations
-                let base_and_target_registers = match k {
+                // Have to special case `n_remaining_registers = 0` as it has no permutations
+                // Although it should be noted that itertools:repeat_n() then simply returns an empty Vec once, so it should be fine
+                // This is just more efficient.
+                let base_and_target_registers = match n_remaining_registers {
                     0 => {
                         vec![(prio_bdd.clone(), next_encoder.encode_single(i, priority)?.clone())]
                     }
@@ -224,7 +226,7 @@ where
 
                             // All cases where a register is <= priority needs to be set to priority
                             // All cases where a register is > priority needs an equivalence relation between it and the next state.
-                            // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside.
+                            // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside. 
                             let target_register_states = {
                                 let mut base = base_true.clone();
 

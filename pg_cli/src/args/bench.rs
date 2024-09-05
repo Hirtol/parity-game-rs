@@ -169,7 +169,7 @@ impl BenchCommand {
             .has_headers(true)
             .from_path(&self.out_path)?;
 
-        for game in games {
+        for (i, game) in games.into_iter().enumerate() {
             let (output_run, _) = timed_solve!(run_game(&game.path()));
 
             match output_run {
@@ -180,7 +180,7 @@ impl BenchCommand {
                 }
                 Err(e) => {
                     std::fs::create_dir_all("./errors")?;
-                    std::fs::write(format!("{:?}.txt", game.file_name()), format!("{e:#?}"))?;
+                    std::fs::write(format!("{:?}.txt", i), format!("{}\n{e:#?}", game.file_name().to_string_lossy()))?;
                     tracing::error!(?game, ?e, "Failed to run benchmark")
                 }
             }
