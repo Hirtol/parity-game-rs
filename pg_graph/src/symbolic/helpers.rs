@@ -4,6 +4,7 @@ use std::ops::Range;
 
 use ecow::EcoVec;
 use oxidd_core::{function::Function, ManagerRef};
+use oxidd_core::util::AllocResult;
 
 use crate::symbolic::{BddError, oxidd_extensions::BooleanFunctionExtensions};
 
@@ -248,7 +249,7 @@ pub struct CachedInequalityEncoder<T, F: Function> {
 
 impl<T, F> CachedInequalityEncoder<T, F>
     where
-        T: std::ops::BitAnd + std::ops::Shl<Output = T> + Copy + From<u8> + BitHelper,
+        T: std::ops::BitAnd + std::ops::Shl<Output = T> +  std::ops::Sub<Output = T> + Copy + From<u8> + BitHelper + Sized + Ord,
         T: Eq + Hash + Debug + PartialOrd<T>,
         <T as std::ops::BitAnd>::Output: PartialEq<T>,
         F: Function + BooleanFunctionExtensions {
@@ -278,13 +279,27 @@ impl<T, F> CachedInequalityEncoder<T, F>
                             let exclude_bits = self.variables[significant_bits..]
                                 .iter()
                                 .try_fold(self.base_true.clone(), |acc, var| acc.diff(var))?;
-                            // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
-                            let remaining_exclude = self.value_domain
-                                .iter()
-                                .filter(|&&p| p > value && p < value.add_one().next_power_of_two_help())
-                                .try_fold(exclude_bits, |acc, p| {
-                                    acc.diff(self.value_encoder.encode(*p).unwrap())
-                                })?;
+                            
+                            // Assume we have a continuous domain for the estimate.
+                            let estimated_items_to_exclude = value.add_one().next_power_of_two_help() - value;
+                            // After this point it can become slower to manually exclude values
+                            // up to the next power of two. However, with discontinuous domains it frequently results in faster to _solve_
+                            // BDDs to construct with explicit exclusion up to the next power of two.
+                            let remaining_exclude = if estimated_items_to_exclude.to_usize() > 20 {
+                                // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
+                                if significant_bits > 0 {
+                                    Self::recursive_bit_encode_leq(value, significant_bits - 1, &self.variables, &self.base_true, &mut self.value_encoder)?.and(&exclude_bits)?
+                                } else {
+                                    exclude_bits
+                                }
+                            } else {
+                                self.value_domain
+                                    .iter()
+                                    .filter(|&&p| p > value && p < value.add_one().next_power_of_two_help())
+                                    .try_fold(exclude_bits, |acc, p| {
+                                        acc.diff(self.value_encoder.encode(*p).unwrap())
+                                    })?
+                            };
 
                             val.insert(remaining_exclude)
                         }
@@ -302,6 +317,35 @@ impl<T, F> CachedInequalityEncoder<T, F>
             }
         }
     }
+
+    #[inline]
+    fn recursive_bit_encode_leq(value: T, bit: usize, variables: &[F], base_true: &F, value_encoder: &mut CachedBinaryEncoder<T, F>) -> AllocResult<F> {
+        let bit_set = (value & (T::from(1) << T::from(bit as u8))) != T::from(0);
+        let bit_var = &variables[bit];
+        // End recursion
+        if bit == 0 {
+            // If `bit_set` then it doesn't matter what `bit_var` is as it will always be <=
+            // Only if it's not set _then_ we need to exclude the bit.
+            return if bit_set {
+                Ok(base_true.clone())
+            } else {
+                bit_var.not()
+            }
+        }
+        
+        let recursive_value = Self::recursive_bit_encode_leq(value, bit - 1, variables, base_true, value_encoder)?;
+        if bit_set {
+            // We have to encode the following two cases:
+            // 1. bit_var == 1 -> formula needs to be `AND`ed with self.recursive_bit_encode_lt(value, bit - 1)
+            // 2. bit_var == 0 -> formula should return `true` as it's guaranteed to be smaller than `value`
+            bit_var.imp(&recursive_value)
+        } else {
+            // We have to encode the following two cases:
+            // 1. bit_var == 1 -> formula should return `false` as it's guaranteed to be bigger than `value`
+            // 2. bit_var == 0 -> formula needs to be `AND`ed with self.recursive_bit_encode_lt(value, bit - 1)
+            recursive_value.diff(bit_var)
+        }
+    }
 }
 
 pub trait BitHelper {
@@ -310,6 +354,8 @@ pub trait BitHelper {
     fn num_bits(&self) -> u32;
     
     fn add_one(&self) -> Self;
+    
+    fn to_usize(&self) -> usize;
     
     fn next_power_of_two_help(&self) -> Self;
 }
@@ -330,10 +376,17 @@ macro_rules! impl_bithelpers {
                     Self::BITS
                 }
                 
+                #[inline(always)]
                 fn add_one(&self) -> Self {
                     self + 1
                 }
                 
+                #[inline(always)]
+                fn to_usize(&self) -> usize {
+                    *self as usize
+                }
+                
+                #[inline(always)]
                 fn next_power_of_two_help(&self) -> Self {
                     self.next_power_of_two()
                 }

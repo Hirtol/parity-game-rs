@@ -27,6 +27,11 @@ pub struct SolveCommand {
     /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
     #[clap(short, global = true)]
     register_game_k: Option<u32>,
+    /// The controller of the game.
+    /// 
+    /// Defaults to `Even`.
+    #[clap(short, global = true, value_enum, default_value_t)]
+    controller: ClapOwner,
     /// Export the solution to a GraphViz graph where the vertices are coloured according to their winner
     /// Green = Even, Red = Odd
     #[clap(short = 'd', global = true)]
@@ -72,6 +77,22 @@ pub enum RegisterGameType {
     Symbolic,
 }
 
+#[derive(clap::ValueEnum, Debug, Clone, Default)]
+pub enum ClapOwner {
+    #[default]
+    Even,
+    Odd
+}
+
+impl From<ClapOwner> for Owner {
+    fn from(value: ClapOwner) -> Self {
+        match value {
+            ClapOwner::Even => Owner::Even,
+            ClapOwner::Odd => Owner::Odd
+        }
+    }
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum ExplicitSolvers {
     /// Use the traditional small progress measure algorithm
@@ -113,7 +134,7 @@ impl SolveCommand {
 
                     tracing::debug!(k, "Constructing with register index");
                     let register_game = timed_solve!(
-                        RegisterGame::construct_2021(&parity_game, k, Owner::Even),
+                        RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                         "Constructed Register Game"
                     );
 
@@ -168,7 +189,7 @@ impl SolveCommand {
 
                         tracing::debug!(k, "Constructing with register index");
                         let register_game = timed_solve!(
-                            RegisterGame::construct_2021(&parity_game, k, Owner::Even),
+                            RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                             "Constructed Register Game"
                         );
 
@@ -225,9 +246,9 @@ impl SolveCommand {
                         tracing::debug!(k, "Constructing with register index");
 
                         if symbolic.one_hot {
-                            Self::run_srg_one_hot(&parity_game, &solver, k)?
+                            Self::run_srg_one_hot(&parity_game, &solver, k, self.controller.into())?
                         } else {
-                            Self::run_srg(&parity_game, &solver, k)?
+                            Self::run_srg(&parity_game, &solver, k, self.controller.into())?
                         }
                     } else {
                         let game_to_solve = timed_solve!(
@@ -285,9 +306,9 @@ impl SolveCommand {
         Ok(())
     }
 
-    fn run_srg(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8) -> eyre::Result<Vec<Owner>> {
+    fn run_srg(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8, controller: Owner) -> eyre::Result<Vec<Owner>> {
         let register_game = timed_solve!(
-                                SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, Owner::Even),
+                                SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, controller),
                                 "Constructed Register Game"
                             )?;
         let game_to_solve = register_game.to_symbolic_parity_game()?;
@@ -318,9 +339,9 @@ impl SolveCommand {
         Ok(winners)
     }
 
-    fn run_srg_one_hot(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8) -> eyre::Result<Vec<Owner>> {
+    fn run_srg_one_hot(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8, controller: Owner) -> eyre::Result<Vec<Owner>> {
         let register_game = timed_solve!(
-            OneHotRegisterGame::<BDD>::from_symbolic(&parity_game, k, Owner::Even),
+            OneHotRegisterGame::<BDD>::from_symbolic(&parity_game, k, controller),
             "Constructed Register Game"
         )?;
         let game_to_solve = register_game.to_symbolic_parity_game()?;
