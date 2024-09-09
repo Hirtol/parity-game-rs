@@ -38,7 +38,7 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub variables: RegisterVertexVars<F>,
     pub variables_edges: RegisterVertexVars<F>,
     pub conjugated_variables: F,
-    pub conjugated_v_edges: F,
+    pub conjugated_vars_edges: F,
 
     pub vertices: F,
     pub v_even: F,
@@ -194,7 +194,7 @@ where
                 CachedInequalityEncoder::new(&manager, register_variables_chunked[i].clone(), parity_domain.clone())
             })
             .collect_vec();
-
+        
         for i in 0..=k {
             let n_remaining_registers = k - i;
             let reg_vars = variables.register_vars_i(i, register_bits_needed);
@@ -226,7 +226,7 @@ where
 
                             // All cases where a register is <= priority needs to be set to priority
                             // All cases where a register is > priority needs an equivalence relation between it and the next state.
-                            // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside. 
+                            // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside.
                             let target_register_states = {
                                 let mut base = base_true.clone();
 
@@ -370,7 +370,7 @@ where
             variables,
             variables_edges: edge_variables,
             conjugated_variables: conj_v,
-            conjugated_v_edges: conj_e,
+            conjugated_vars_edges: conj_e,
             vertices: s_even.or(&s_odd)?,
             v_even: s_even,
             v_odd: s_odd,
@@ -390,7 +390,7 @@ where
             variables: self.variables.all_variables.clone(),
             variables_edges: self.variables_edges.all_variables.clone(),
             conjugated_variables: self.conjugated_variables.clone(),
-            conjugated_v_edges: self.conjugated_v_edges.clone(),
+            conjugated_v_edges: self.conjugated_vars_edges.clone(),
             vertices: self.vertices.clone(),
             vertices_even: self.v_even.clone(),
             vertices_odd: self.v_odd.clone(),

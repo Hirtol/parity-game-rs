@@ -1,10 +1,10 @@
-use oxidd_core::{Manager, ManagerRef};
 use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant, FunctionSubst};
 use oxidd_core::util::Subst;
+use oxidd_core::{Manager, ManagerRef};
 
-use crate::{Owner, Priority, symbolic};
 use crate::symbolic::oxidd_extensions::{BooleanFunctionExtensions, GeneralBooleanFunction};
 use crate::symbolic::register_game::SymbolicRegisterGame;
+use crate::{symbolic, Owner, Priority};
 
 impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
 {
@@ -47,7 +47,7 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             variables: self.variables.clone(),
             variables_edges: self.variables_edges.clone(),
             conjugated_variables: self.conjugated_variables.clone(),
-            conjugated_v_edges: self.conjugated_v_edges.clone(),
+            conjugated_vars_edges: self.conjugated_vars_edges.clone(),
             vertices: self.vertices.diff(ignored)?,
             v_even: self.v_even.diff(ignored)?,
             v_odd: self.v_odd.diff(ignored)?,
@@ -92,7 +92,7 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             // We know that all `e_i` vertices are owned by the controller, so no need to check for opponent vertices.
             let e_i_attracted_set = self.e_i_all
                 .and(&edge_starting_set)?
-                .exist(&self.conjugated_v_edges)?;
+                .exist(&self.conjugated_vars_edges)?;
             
             if let Some(e_i) = last_e_i {
                 if e_i == e_i_attracted_set {
@@ -109,12 +109,12 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
 
             let any_edge_set = e_move_player_set
                 .and(&next_edge_starting_set)?
-                .exist(&self.conjugated_v_edges)?;
+                .exist(&self.conjugated_vars_edges)?;
 
             // !edge_starting_set & self.e_move
             let edges_to_outside = self.e_move.diff(&next_edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
-            let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_vars_edges)?)?;
             let e_move_attracted_set = all_edge_set.or(&any_edge_set)?;
             
             let new_output = output.or(&e_i_attracted_set)?.or(&e_move_attracted_set)?;
@@ -142,7 +142,7 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             // We know that all `e_i` vertices are owned by the controller, and the target set is owned by the opponent.
             let edges_to_outside = self.e_i_all.diff(&edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
-            let e_i_attracted_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            let e_i_attracted_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_vars_edges)?)?;
             let e_i_attracted_set = e_i_attracted_set.and(&self.variables.next_move_var().not()?)?;
             
             if let Some(e_i) = last_e_i {
@@ -160,12 +160,12 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
 
             let any_edge_set = e_move_player_set
                 .and(&next_edge_starting_set)?
-                .exist(&self.conjugated_v_edges)?;
+                .exist(&self.conjugated_vars_edges)?;
 
             // !edge_starting_set & self.e_move
             let edges_to_outside = self.e_move.diff(&next_edge_starting_set)?;
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
-            let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            let all_edge_set = opponent_set.diff(&edges_to_outside.exist(&self.conjugated_vars_edges)?)?;
             let e_move_attracted_set = self.variables.next_move_var().and(&all_edge_set)?.or(&any_edge_set)?;
             
             let new_output = output.or(&e_i_attracted_set)?.or(&e_move_attracted_set)?;
@@ -205,10 +205,10 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
 pub mod further_investigation {
     use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant};
 
-    use crate::{Owner, symbolic};
-    use crate::symbolic::BDD;
     use crate::symbolic::oxidd_extensions::BooleanFunctionExtensions;
     use crate::symbolic::register_game::SymbolicRegisterGame;
+    use crate::symbolic::BDD;
+    use crate::{symbolic, Owner};
 
     impl SymbolicRegisterGame<BDD>
     {
@@ -285,13 +285,13 @@ pub mod further_investigation {
             // Set of elements which have _any_ edge leading to our `starting_set` and are owned by `player`.
             let any_edge_set = edge_player_set
                 .and(targets)?
-                .exist(&self.conjugated_v_edges)?;
+                .exist(&self.conjugated_vars_edges)?;
 
             // !edge_starting_set & self.edges
             let edges_to_outside = edge_set.diff(targets)?;
 
             // Set of elements which have _no_ edges leading outside our `starting_set`. In other words, all edges point to our attractor set.
-            let all_edge_set = opponent.diff(&edges_to_outside.exist(&self.conjugated_v_edges)?)?;
+            let all_edge_set = opponent.diff(&edges_to_outside.exist(&self.conjugated_vars_edges)?)?;
 
             Ok(any_edge_set.or(&all_edge_set)?)
         }
@@ -300,15 +300,15 @@ pub mod further_investigation {
 
 #[cfg(test)]
 mod tests {
+    use crate::explicit::register_game::Rank;
+    use crate::symbolic::register_game::SymbolicRegisterGame;
     use crate::{
         explicit::ParityGame,
-        Owner,
-        symbolic::BDD
+        symbolic::BDD,
+        Owner
 
         ,
     };
-    use crate::explicit::register_game::Rank;
-    use crate::symbolic::register_game::SymbolicRegisterGame;
 
     fn small_pg() -> eyre::Result<ParityGame> {
         let mut pg = r#"parity 3;
