@@ -1,20 +1,20 @@
 use ahash::{HashSet, HashSetExt};
 use itertools::Itertools;
-use oxidd_core::{ManagerRef, WorkerManager};
 use oxidd_core::util::OptBool;
+use oxidd_core::{ManagerRef, WorkerManager};
 
+use crate::symbolic::helpers::SymbolicEncoder;
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
+use crate::symbolic::sat::TruthAssignmentsIterator;
 use crate::{
     explicit::ParityGame,
-    Owner,
     symbolic,
     symbolic::{
         helpers::CachedBinaryEncoder,
         register_game::SymbolicRegisterGame, sat::decode_split_assignments,
-    }, Vertex,
+    },
+    Owner, Vertex,
 };
-use crate::symbolic::helpers::SymbolicEncoder;
-use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
-use crate::symbolic::sat::TruthAssignmentsIterator;
 
 pub fn symbolic_to_explicit_alt<F: GeneralBooleanFunction>(symb: &SymbolicRegisterGame<F>) -> ParityGame
     where for<'id> F::Manager<'id>: WorkerManager,
@@ -109,15 +109,15 @@ mod tests {
     use crate::{
         explicit,
         explicit::ParityGame,
-        Owner,
         symbolic,
         symbolic::{
-            BDD,
             oxidd_extensions::BddExtensions,
             register_game::{RegisterLayers, SymbolicRegisterGame},
             solvers::symbolic_zielonka::SymbolicZielonkaSolver,
+            BDD,
         },
         visualize::DotWriter,
+        Owner,
     };
 
     #[test]

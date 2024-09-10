@@ -1,10 +1,11 @@
 use std::fmt::{Debug, Display, Write};
 
-use oxidd_core::{Edge, HasLevel, Manager};
 use oxidd_core::function::Function;
+use oxidd_core::{Edge, HasLevel, Manager};
 use oxidd_dump::dot::DotStyle;
 use petgraph::graph::IndexType;
 
+use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::{
     explicit::{
         register_game::{ChosenAction, RegisterGame},
@@ -13,7 +14,6 @@ use crate::{
     Owner
     ,
 };
-use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 
 /// An abstraction to allow for generic writing of the underlying graphs.
 ///
@@ -137,7 +137,6 @@ impl DotWriter {
                     .chain(graph.variables_edges.iter_names("_"));
 
                 let prio = graph.priorities.iter().map(|(p, bdd)| (bdd, format!("Priority {p}")));
-                let e_is = graph.e_i.iter().enumerate().map(|(i, bdd)| (bdd, format!("E_{i}")));
 
                 let functions = [
                     (&graph.vertices, "vertices".into()),
@@ -148,7 +147,6 @@ impl DotWriter {
                 ]
                 .into_iter()
                 .chain(prio)
-                .chain(e_is)
                 .chain(additional_funcs);
 
                 oxidd_dump::dot::dump_all(&mut out, man, variables, functions)

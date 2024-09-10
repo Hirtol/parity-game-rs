@@ -8,23 +8,23 @@ use itertools::Itertools;
 use oxidd_cache::StatisticsGenerator;
 use oxidd_core::{
     function::Function,
-    HasApplyCache,
-    Manager, ManagerRef, util::{AllocResult, OptBool, Subst}, WorkerManager,
+    util::{AllocResult, OptBool, Subst},
+    HasApplyCache, Manager, ManagerRef, WorkerManager,
 };
 
 use variable_order::VariableAllocatorInfo;
 
 use crate::{
     explicit,
-    explicit::{ParityGame, ParityGraph, register_game::Rank},
-    Owner,
-    Priority,
-    symbolic, symbolic::{
-        BddError,
+    explicit::{register_game::Rank, ParityGame, ParityGraph},
+    symbolic,
+    symbolic::{
         helpers::{CachedBinaryEncoder, CachedInequalityEncoder, Inequality, MultiEncoder, SymbolicEncoder},
         oxidd_extensions::{BooleanFunctionExtensions, FunctionVarRef, GeneralBooleanFunction},
-        sat::TruthAssignmentsIterator, SymbolicParityGame,
+        sat::TruthAssignmentsIterator,
+        BddError, SymbolicParityGame,
     },
+    Owner, Priority,
 };
 
 pub mod helpers;
@@ -45,7 +45,6 @@ pub struct SymbolicRegisterGame<F: Function> {
     pub v_odd: F,
     pub e_move: F,
     pub e_i_all: F,
-    pub e_i: Vec<F>,
     pub priorities: ahash::HashMap<Priority, F>,
 
     pub base_true: F,
@@ -159,8 +158,8 @@ where
             .and(edge_priority_zero)?;
 
         tracing::debug!("Starting E_i construction");
-
-        let mut e_i_edges = vec![base_false.clone(); num_registers];
+        
+        let mut e_i_joined = base_false.clone();
         let register_variables_chunked = variables
             .register_vars()
             .iter()
@@ -169,11 +168,7 @@ where
             .into_iter()
             .map(|chunk| chunk.collect::<EcoVec<_>>())
             .collect::<EcoVec<_>>();
-        let mut base_registers_encoder: MultiEncoder<Priority, F, CachedBinaryEncoder<Priority, F>> = MultiEncoder::new(
-            &manager,
-            &variables.register_vars().iter().cloned().chunks(register_bits_needed),
-        );
-        let mut next_encoder: MultiEncoder<Priority, _, _> = MultiEncoder::new(
+        let mut next_reg_encoder: MultiEncoder<Priority, _, _> = MultiEncoder::new(
             &manager,
             &edge_variables
                 .register_vars()
@@ -210,7 +205,7 @@ where
                 // This is just more efficient.
                 let base_and_target_registers = match n_remaining_registers {
                     0 => {
-                        vec![(prio_bdd.clone(), next_encoder.encode_single(i, priority)?.clone())]
+                        vec![(prio_bdd.clone(), next_reg_encoder.encode_single(i, priority)?.clone())]
                     }
                     _ => itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
                         .multi_cartesian_product()
@@ -236,13 +231,13 @@ where
                                     .try_fold(base_true.clone(), |acc, next| acc.diff(next))?;
                                 base = base.and(&zero_registers)?;
                                 // Then ensure the register that is reset gets set to `priority`
-                                base = base.and(next_encoder.encode_single(i, priority)?)?;
+                                base = base.and(next_reg_encoder.encode_single(i, priority)?)?;
 
                                 // Then encode the registers which come _after_ the reset.
                                 for (j, ineq) in (i + 1..=k).zip(inequality_states) {
                                     base = match ineq {
                                         // Any register which is smaller than priority will get overwritten;
-                                        Inequality::Leq => base.and(next_encoder.encode_single(j, priority)?)?,
+                                        Inequality::Leq => base.and(next_reg_encoder.encode_single(j, priority)?)?,
                                         Inequality::Gt => {
                                             // Ensure all registers remain the same past the transition
                                             let iff_register_condition = variables
@@ -281,12 +276,11 @@ where
                     let starting_vertices = base_starting_set.and(reset_lt_priority)?;
                     let next_with_priority = target_register_states.and(prio_edge_encoder.encode(rg_prio_general)?)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
-
-                    let e_i = &mut e_i_edges[i];
-                    *e_i = e_i.or(&all_vertices)?;
+                    
+                    e_i_joined = e_i_joined.or(&all_vertices)?;
 
                     // ** Cases 2. and 3.
-                    // We can simply invert the `final_exclude` to go from $r_i <= priority$ to $r_i > priority$
+                    // We can simply invert the `reset_lt_priority` to go from $r_i <= priority$ to $r_i > priority$
                     let inverse = ineq_encoders[i].encode(Inequality::Gt, priority)?;
                     let even_greater = inverse.and(&reg_vars[0].not()?)?;
                     let odd_greater = inverse.and(&reg_vars[0])?;
@@ -303,19 +297,19 @@ where
                     // We can re-use `next_with_priority` for `rq_gt_eq_p`
                     let starting_vertices = base_starting_set.and(&rg_gt_eq)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
-                    *e_i = e_i.or(&all_vertices)?;
-
+                    e_i_joined = e_i_joined.or(&all_vertices)?;
+                    
                     // Re-calculate the `next_with_priority` set for `rq_gt_neq_p`
                     let next_with_priority = target_register_states.and(prio_edge_encoder.encode(rg_gt_neq_p)?)?;
                     let starting_vertices = base_starting_set.and(&rg_gt_neq)?;
                     let all_vertices = starting_vertices.and(&next_with_priority)?;
-                    *e_i = e_i.or(&all_vertices)?;
+                    e_i_joined = e_i_joined.or(&all_vertices)?;
                 }
             }
         }
 
         // Add the additional conditions for each E_i relation.
-        // From t=0 -> t=1
+        // From t=0 -> t'=1
         let base_edge = edge_variables.next_move_var().diff(variables.next_move_var())?;
         // Any E_i transition will have the same underlying vertex, so we should assert it doesn't change.
         let base_vertex = variables
@@ -323,10 +317,8 @@ where
             .iter()
             .zip(edge_variables.vertex_vars())
             .try_fold(base_edge.clone(), |acc, (v, v_next)| acc.and(&v.equiv(v_next)?))?;
-
-        e_i_edges = e_i_edges.into_iter().flat_map(|e_i| e_i.and(&base_vertex)).collect();
-        let e_i_joined = e_i_edges.iter().try_fold(base_false.clone(), |acc, bdd| acc.or(bdd))?;
-
+        
+        e_i_joined = e_i_joined.and(&base_vertex)?;
         let conj_v = variables.conjugated(&base_true)?;
         let conj_e = edge_variables.conjugated(&base_true)?;
 
@@ -339,7 +331,7 @@ where
         let mut prio_encoder: CachedBinaryEncoder<Priority, F> =
             CachedBinaryEncoder::new(&manager, variables.priority_vars().iter().cloned().collect());
 
-        // All E_move edges get a priority of `0` by default.
+        // All E_i edges get a priority of `0` by default.
         let priority_zero = prio_encoder.encode(0)?;
         let _ = priorities.entry(0).and_modify(|pri| {
             *pri = sg
@@ -376,7 +368,6 @@ where
             v_odd: s_odd,
             e_move,
             e_i_all: e_i_joined,
-            e_i: e_i_edges,
             priorities,
             base_true,
             base_false,

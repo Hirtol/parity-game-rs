@@ -54,7 +54,6 @@ impl<F: GeneralBooleanFunction> SymbolicRegisterGame<F>
             priorities,
             e_move: self.e_move.diff(ignored)?.diff(&ignored_edge)?,
             e_i_all: self.e_i_all.diff(ignored)?.diff(&ignored_edge)?,
-            e_i: self.e_i.iter().flat_map(|e_i| Ok::<_, symbolic::BddError>(e_i.diff(ignored)?.diff(&ignored_edge)?)).collect(),
             base_true: self.base_true.clone(),
             base_false: self.base_false.clone(),
         })
