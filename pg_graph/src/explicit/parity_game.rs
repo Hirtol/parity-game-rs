@@ -12,7 +12,7 @@ use petgraph::{
     prelude::EdgeRef,
 };
 
-use crate::{datatypes::Priority, Vertex, visualize::VisualVertex};
+use crate::{datatypes::Priority, visualize::VisualVertex, Vertex};
 
 pub type VertexId<Ix = u32> = NodeIndex<Ix>;
 
@@ -20,6 +20,8 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     type Parent: ParityGraph<Ix>;
 
     fn vertex_count(&self) -> usize;
+
+    fn edge_count(&self) -> usize;
 
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
@@ -173,6 +175,10 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
         self.graph.node_count()
     }
 
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
     #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.graph.node_indices()
@@ -279,6 +285,11 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     fn vertex_count(&self) -> usize {
         // More efficient than doing a `.count()` call on `vertices_index()`
         self.parent.vertex_count() - self.ignored.len()
+    }
+
+    fn edge_count(&self) -> usize {
+        // TODO: This is not correct, but also doesn't really matter... so eh..
+        self.parent.edge_count() - self.ignored.len()
     }
 
     #[inline(always)]

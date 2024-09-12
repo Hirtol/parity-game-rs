@@ -1,15 +1,13 @@
-use oxidd_core::util::OptBool;
-use oxidd_core::WorkerManager;
+use oxidd_core::{util::OptBool, WorkerManager};
 
 use crate::{
     explicit::solvers::SolverOutput,
+    symbolic,
+    symbolic::{
+        oxidd_extensions::GeneralBooleanFunction, register_game::SymbolicRegisterGame, sat::TruthAssignmentsIterator,
+    },
     Owner,
-    symbolic
-    ,
 };
-use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
-use crate::symbolic::register_game::SymbolicRegisterGame;
-use crate::symbolic::sat::TruthAssignmentsIterator;
 
 pub struct SymbolicRegisterZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,
@@ -17,8 +15,9 @@ pub struct SymbolicRegisterZielonkaSolver<'a, F: GeneralBooleanFunction> {
 }
 
 impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
-    where for<'id> F::Manager<'id>: WorkerManager,
-          for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item=Vec<OptBool>>
+where
+    for<'id> F::Manager<'id>: WorkerManager,
+    for<'b, 'c> TruthAssignmentsIterator<'b, 'c, F>: Iterator<Item = Vec<OptBool>>,
 {
     pub fn new(game: &'a SymbolicRegisterGame<F>) -> Self {
         SymbolicRegisterZielonkaSolver {
@@ -95,9 +94,10 @@ impl<'a, F: GeneralBooleanFunction> SymbolicRegisterZielonkaSolver<'a, F>
 
 #[cfg(test)]
 pub mod test {
-    use crate::Owner;
-    use crate::symbolic::BDD;
-    use crate::symbolic::register_game::SymbolicRegisterGame;
+    use crate::{
+        symbolic::{register_game::SymbolicRegisterGame, BDD},
+        Owner,
+    };
 
     use super::SymbolicRegisterZielonkaSolver;
 
@@ -105,7 +105,7 @@ pub mod test {
     pub fn test_solve_tue_example() {
         let (game, compare) = crate::tests::load_and_compare_example("tue_example.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 1, Owner::Even).unwrap();
-        
+
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
         let solution = solver.run();
 
@@ -116,7 +116,7 @@ pub mod test {
     pub fn test_solve_two_counters_1_example() {
         let (game, compare) = crate::tests::load_and_compare_example("two_counters_1.pg");
         let s_pg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 2, Owner::Even).unwrap();
-        
+
         let mut solver = SymbolicRegisterZielonkaSolver::new(&s_pg);
         let solution = solver.run();
 

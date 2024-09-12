@@ -1,17 +1,17 @@
 use std::path::PathBuf;
 
 use pg_graph::{
-    explicit::{ParityGame, ParityGraph, register_game::RegisterGame},
-    Owner,
+    explicit::{register_game::RegisterGame, ParityGame, ParityGraph},
     symbolic::{
-        BDD,
         register_game::SymbolicRegisterGame,
         register_game_one_hot::OneHotRegisterGame,
         solvers::{
             symbolic_register_zielonka::SymbolicRegisterZielonkaSolver, symbolic_zielonka::SymbolicZielonkaSolver,
         },
+        BDD,
     },
     visualize::DotWriter,
+    Owner,
 };
 
 #[derive(clap::Args, Debug)]
@@ -151,6 +151,9 @@ impl SolveCommand {
                         from_vertex = rg.original_game.vertex_count(),
                         to_vertex = rg_pg.vertex_count(),
                         ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                        from_edges = rg.original_game.edge_count(),
+                        to_edges = rg_pg.edge_count(),
+                        ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                         "Converted from parity game to register game"
                     );
                     rg_pg
@@ -206,6 +209,8 @@ impl SolveCommand {
                             from_vertex = rg.original_game.vertex_count(),
                             to_vertex = rg_pg.vertex_count(),
                             ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                            from_edges = rg.original_game.edge_count(),
+                            to_edges = rg_pg.edge_count(),
                             "Converted from parity game to register game"
                         );
                         rg_pg

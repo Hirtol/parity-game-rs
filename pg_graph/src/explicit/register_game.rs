@@ -6,8 +6,8 @@ use ecow::{eco_vec, EcoVec};
 use crate::{
     datatypes::Priority,
     explicit::{ParityGame, ParityGraph, VertexId},
-    Owner,
     visualize::VisualVertex,
+    Owner,
 };
 
 /// The value type for `k` in a register game.
@@ -170,6 +170,12 @@ impl<'a> RegisterGame<'a> {
 
     #[tracing::instrument(name = "Construct Register Game 2021", skip(game))]
     pub fn construct_2021(game: &'a crate::explicit::ParityGame, k: Rank, controller: Owner) -> Self {
+        // Special case optimisation for `k = 0`, we can skip creating register reset vertices as the controller won't
+        // have a choice anyway
+        if k == 0 {
+            return Self::construct_2021_k0(game, controller);
+        }
+        
         let reg_quantity = k as usize + 1;
         let base_registers = game
             .priorities_unique()
@@ -210,7 +216,7 @@ impl<'a> RegisterGame<'a> {
                 // Expand the given original vertex as a starting node, aka, assuming fresh registers
                 ToExpand::OriginalVertex(v_id) => {
                     let register_values = base_registers.get(&0).expect("Priority register wasn't initialised");
-
+                    
                     // We assume we start with the next action being a register change instead of a move,
                     // thus the owner is always the controller.
                     let register_vertex = RegisterVertex {
@@ -266,8 +272,115 @@ impl<'a> RegisterGame<'a> {
                                     // After a move it'll always be the controller's turn again
                                     owner: controller,
                                 };
-
+                                
                                 edges.push(add_new_register_vertex!(r_next));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Self {
+            original_game: game,
+            vertices: final_graph,
+            edges: final_edges,
+        }
+    }
+
+    pub fn construct_2021_k0(game: &'a crate::explicit::ParityGame, controller: Owner) -> Self {
+        let reg_quantity = 1;
+        let base_registers = game
+            .priorities_unique()
+            .chain([0])
+            .map(|pr| (pr, eco_vec!(pr; reg_quantity)))
+            .collect::<ahash::HashMap<_, _>>();
+
+        let mut to_expand = game
+            .vertices_index()
+            .map(ToExpand::OriginalVertex)
+            .collect::<VecDeque<_>>();
+
+        let mut reg_v_index = ahash::HashMap::default();
+        let mut final_graph = Vec::new();
+        let mut final_edges = ahash::HashMap::default();
+
+        // Only expand the new register vertex if it's actually unique.
+        // Done as a macro as we mutably borrow `to_expand`
+        macro_rules! add_new_register_vertex {
+            ($reg:expr) => {{
+                let reg = $reg;
+
+                if let Some(&r_id) = reg_v_index.get(&reg) {
+                    VertexId::new(r_id)
+                } else {
+                    final_graph.push(reg.clone());
+                    let r_id = final_graph.len() - 1;
+                    reg_v_index.insert(reg, r_id);
+                    // Ensure this one is listed for further expansion
+                    to_expand.push_back(ToExpand::RegisterVertex(VertexId::new(r_id)));
+                    VertexId::new(r_id)
+                }
+            }};
+        }
+
+        while let Some(expanding) = to_expand.pop_back() {
+            match expanding {
+                // Expand the given original vertex as a starting node, aka, assuming fresh registers
+                ToExpand::OriginalVertex(v_id) => {
+                    let v = &game[v_id];
+                    let register_values = base_registers.get(&v.priority).expect("Priority register wasn't initialised");
+                    let new_priority = reset_to_priority_2021(
+                        0,
+                        register_values[0],
+                        v.priority,
+                        controller,
+                    );
+                    
+                    // We assume we start with the next action being a register change instead of a move,
+                    // thus the owner is always the controller.
+                    let register_vertex = RegisterVertex {
+                        original_graph_id: v_id,
+                        priority: new_priority,
+                        owner: v.owner,
+                        register_state: register_values.clone(),
+                        next_action: ChosenAction::Move,
+                    };
+
+                    let _: VertexId = add_new_register_vertex!(register_vertex);
+                }
+                ToExpand::RegisterVertex(reg_id) => {
+                    let reg_v = &final_graph[reg_id.index()];
+                    let edges = final_edges.entry(reg_id).or_insert_with(Vec::new);
+
+                    match reg_v.next_action {
+                        ChosenAction::RegisterChange => unreachable!(),
+                        ChosenAction::Move => {
+                            for edge_node in game.edges(reg_v.original_graph_id) {
+                                for r in 0..reg_quantity {
+                                    let reg_v = &final_graph[reg_id.index()];
+                                    let next_v = &game[edge_node];
+                                    let new_priority = reset_to_priority_2021(
+                                        r as Rank,
+                                        reg_v.register_state[r],
+                                        next_v.priority,
+                                        controller,
+                                    );
+                                    let mut new_registers = reg_v.register_state.clone();
+
+                                    let new_r = new_registers.make_mut();
+                                    next_registers_2021(new_r, next_v.priority, reg_quantity, r);
+
+                                    let e_r = RegisterVertex {
+                                        original_graph_id: edge_node,
+                                        priority: new_priority,
+                                        owner: next_v.owner,
+                                        register_state: new_registers,
+                                        next_action: ChosenAction::Move,
+                                    };
+
+                                    edges.push(add_new_register_vertex!(e_r));
+                                }
                             }
                         }
                     }
@@ -302,9 +415,9 @@ impl<'a> RegisterGame<'a> {
         for (reg_id, &winner) in game_winners.iter().enumerate() {
             // Only persist the result of the 0-initialised registers, as they're the starting registers
             let reg_v = &self.vertices[reg_id];
-            if reg_v.register_state.iter().any(|r| *r != 0) {
-                continue;
-            }
+            // if reg_v.register_state.iter().any(|r| *r != 0) {
+            //     continue;
+            // }
 
             let original_id = reg_v.original_graph_id;
             let current_winner = &mut output[original_id.index()];
