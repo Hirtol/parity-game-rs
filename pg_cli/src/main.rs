@@ -29,6 +29,9 @@ fn main() -> eyre::Result<()> {
         SubCommands::Bench(bench) => {
             bench.run()?;
         }
+        SubCommands::Test(test) => {
+            test.run()?;
+        }
     }
 
     tracing::info!(

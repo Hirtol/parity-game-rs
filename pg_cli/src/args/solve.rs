@@ -170,6 +170,7 @@ impl SolveCommand {
                         timed_solve!(solver.run())
                     }
                     ExplicitSolvers::Zielonka => {
+                        // let mut solver = pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(game_to_solve, &register_game.as_ref().unwrap().1);
                         let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(game_to_solve);
 
                         let out = timed_solve!(solver.run());

@@ -210,7 +210,7 @@ impl<Ix: IndexType> ParityGraph<Ix> for ParityGame<Ix> {
 
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
         SubGame {
-            parent: &self,
+            parent: self,
             ignored: HashSet::from_iter(exclude),
         }
     }

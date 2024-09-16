@@ -33,3 +33,4 @@ itertools.workspace = true
 
 pg_graph = { path = "../pg_graph", features = [] }
 pg_parser = { path = "../pg_parser" }
+ahash = "0.8.11"

@@ -1088,6 +1088,7 @@ dependencies = [
 name = "pg_cli"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "clap",
  "csv",
  "eyre",

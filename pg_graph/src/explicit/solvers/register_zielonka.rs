@@ -1,3 +1,4 @@
+use crate::explicit::register_game::RegisterGame;
 use crate::{
     explicit::{
         solvers::{AttractionComputer, SolverOutput},
@@ -9,15 +10,17 @@ use crate::{
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
     game: &'a ParityGame,
+    rg: &'a RegisterGame<'a>,
     attract: AttractionComputer,
 }
 
 impl<'a> ZielonkaSolver<'a> {
-    pub fn new(game: &'a ParityGame) -> Self {
+    pub fn new(game: &'a ParityGame, rg: &'a RegisterGame<'a>) -> Self {
         ZielonkaSolver {
             game,
             recursive_calls: 0,
             attract: AttractionComputer::new(),
+            rg,
         }
     }
 
@@ -45,11 +48,7 @@ impl<'a> ZielonkaSolver<'a> {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
-            let start_hash = starting_set.collect::<ahash::HashSet<_>>();
-            let attraction_set = self.attract.attractor_set(game, attraction_owner, start_hash.iter().copied());
-            if attraction_owner == Owner::Odd  && start_hash != attraction_set {
-                tracing::error!("Priority: {d} attractor does not equal the starting set! {}\nSTARTING: {:#?}\nENDING: {:#?}", self.recursive_calls, start_hash, attraction_set);
-            }
+            let attraction_set = self.attract.attractor_set_reg_game(game, self.rg, attraction_owner, starting_set);
 
             let sub_game = game.create_subgame(attraction_set.iter().copied());
 
@@ -64,8 +63,9 @@ impl<'a> ZielonkaSolver<'a> {
                 attraction_owner_set.extend(attraction_set);
                 (even, odd)
             } else {
-                let b_attr = self.attract.attractor_set(
+                let b_attr = self.attract.attractor_set_reg_game(
                     game,
+                    self.rg,
                     attraction_owner.other(),
                     not_attraction_owner_set.iter().copied(),
                 );

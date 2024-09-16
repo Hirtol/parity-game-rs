@@ -28,6 +28,7 @@ pub type Rank = u8;
 /// has [Owner::Odd]. You need at least a 2-Register Game (`1 + log_2(n=2) = 2`) to ensure the correct result.
 pub struct RegisterGame<'a> {
     pub original_game: &'a crate::explicit::ParityGame,
+    pub controller: Owner,
     pub vertices: Vec<RegisterVertex>,
     pub edges: ahash::HashMap<VertexId, Vec<VertexId>>,
 }
@@ -163,6 +164,7 @@ impl<'a> RegisterGame<'a> {
 
         Self {
             original_game: game,
+            controller,
             vertices: final_graph,
             edges: final_edges,
         }
@@ -173,7 +175,7 @@ impl<'a> RegisterGame<'a> {
         // Special case optimisation for `k = 0`, we can skip creating register reset vertices as the controller won't
         // have a choice anyway
         if k == 0 {
-            return Self::construct_2021_k0(game, controller);
+            return Self::construct_2021_k0(game, controller, k);
         }
         
         let reg_quantity = k as usize + 1;
@@ -283,13 +285,14 @@ impl<'a> RegisterGame<'a> {
 
         Self {
             original_game: game,
+            controller,
             vertices: final_graph,
             edges: final_edges,
         }
     }
 
-    pub fn construct_2021_k0(game: &'a crate::explicit::ParityGame, controller: Owner) -> Self {
-        let reg_quantity = 1;
+    pub fn construct_2021_k0(game: &'a crate::explicit::ParityGame, controller: Owner, k: Rank) -> Self {
+        let reg_quantity = (k + 1) as usize;
         let base_registers = game
             .priorities_unique()
             .chain([0])
@@ -390,6 +393,7 @@ impl<'a> RegisterGame<'a> {
 
         Self {
             original_game: game,
+            controller,
             vertices: final_graph,
             edges: final_edges,
         }

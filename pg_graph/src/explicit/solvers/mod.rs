@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use crate::explicit::register_game::RegisterGame;
 use crate::{
     explicit::{ParityGraph, VertexId},
     Owner,
@@ -8,6 +9,7 @@ use crate::{
 pub mod small_progress;
 pub mod tangle_learning;
 pub mod zielonka;
+pub mod register_zielonka;
 
 #[derive(Debug, Clone, Default)]
 pub struct SolverOutput {
@@ -51,6 +53,55 @@ impl AttractionComputer {
                     true
                 } else {
                     game.edges(predecessor).all(|v| attract_set.contains(&v))
+                };
+
+                // Only add to the attraction set if we should
+                if should_add && attract_set.insert(predecessor) {
+                    self.queue.push_back(predecessor);
+                }
+            }
+        }
+
+        attract_set
+    }
+
+    pub fn attractor_set_reg_game<T: ParityGraph>(
+        &mut self,
+        game: &T,
+        reg_game: &RegisterGame,
+        player: Owner,
+        starting_set: impl IntoIterator<Item = VertexId>,
+    ) -> ahash::HashSet<VertexId> {
+        let mut attract_set = ahash::HashSet::from_iter(starting_set);
+        let is_aligned = player == reg_game.controller;
+        self.queue.extend(&attract_set);
+
+        while let Some(next_item) = self.queue.pop_back() {
+            let next_item_v = game.get(next_item).expect("Invalid");
+            let priority_next_aligned = reg_game.controller.priority_aligned(next_item_v.priority);
+            
+            for predecessor in game.predecessors(next_item) {
+                let vertex = game.get(predecessor).expect("Invalid predecessor");
+                let should_add = if vertex.owner == player {
+                    if is_aligned {
+                        // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                        true
+                    } else {
+                        let all_unaligned= game.edges(predecessor).all(|v| !reg_game.controller.priority_aligned(game.get(v).unwrap().priority));
+                        if all_unaligned {
+                            // Check if this edge is the smallest possible, if so then this edge is attracting
+                            let smaller_edges = game.edges(predecessor).filter(|v| game.get(*v).unwrap().priority < vertex.priority).count();
+                            smaller_edges == 0
+                        } else {
+                            false
+                        }
+                    }
+                } else {
+                    // if is_aligned {
+                        game.edges(predecessor).all(|v| attract_set.contains(&v))
+                    // } else {
+                    //     
+                    // }
                 };
 
                 // Only add to the attraction set if we should
