@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::PEAK_ALLOC;
 use pg_graph::{
     explicit::{register_game::RegisterGame, ParityGame, ParityGraph},
     symbolic::{
@@ -224,6 +225,7 @@ impl SolveCommand {
                     )?;
                     symbolic_game.gc();
                     tracing::debug!(nodes = symbolic_game.bdd_node_count(), "Created symbolic game");
+                    
 
                     let solution = match solver {
                         SymbolicSolvers::Zielonka => {
@@ -325,6 +327,7 @@ impl SolveCommand {
                                 ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
                                 "Converted from parity game to symbolic register game"
                             );
+        tracing::debug!("Current memory usage: {} MB", PEAK_ALLOC.current_usage_as_mb());
         let (w_even, w_odd) = match solver {
             SymbolicSolvers::Zielonka => {
                 let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);

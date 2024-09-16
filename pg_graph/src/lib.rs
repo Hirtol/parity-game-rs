@@ -1,6 +1,7 @@
 #![feature(is_sorted)]
 
 pub use datatypes::*;
+pub use petgraph;
 
 mod datatypes;
 pub mod explicit;
@@ -13,8 +14,8 @@ pub mod tests {
 
     use pg_parser::parse_pg;
 
-    use crate::explicit::ParityGame;
     use crate::explicit::solvers::SolverOutput;
+    use crate::explicit::ParityGame;
 
     pub fn load_example(example: impl AsRef<str>) -> ParityGame {
         let input = std::fs::read_to_string(example_dir().join(example.as_ref())).unwrap();
