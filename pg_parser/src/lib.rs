@@ -70,9 +70,8 @@ pub struct Vertex<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, time::Instant};
-
     use crate::parse_pg;
+    use std::{path::PathBuf, time::Instant};
 
     #[test]
     pub fn test_simple() {

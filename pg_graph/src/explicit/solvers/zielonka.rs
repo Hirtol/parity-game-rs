@@ -9,7 +9,7 @@ use crate::{
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
     game: &'a ParityGame,
-    attract: AttractionComputer,
+    attract: AttractionComputer<u32>,
 }
 
 impl<'a> ZielonkaSolver<'a> {
@@ -47,9 +47,6 @@ impl<'a> ZielonkaSolver<'a> {
             let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
             let start_hash = starting_set.collect::<ahash::HashSet<_>>();
             let attraction_set = self.attract.attractor_set(game, attraction_owner, start_hash.iter().copied());
-            if attraction_owner == Owner::Odd  && start_hash != attraction_set {
-                tracing::error!("Priority: {d} attractor does not equal the starting set! {}\nSTARTING: {:#?}\nENDING: {:#?}", self.recursive_calls, start_hash, attraction_set);
-            }
 
             let sub_game = game.create_subgame(attraction_set.iter().copied());
 

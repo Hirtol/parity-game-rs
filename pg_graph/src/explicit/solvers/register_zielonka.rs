@@ -1,4 +1,4 @@
-use crate::explicit::register_game::RegisterGame;
+use crate::explicit::register_game::{GameRegisterVertex, RegisterGame};
 use crate::{
     explicit::{
         solvers::{AttractionComputer, SolverOutput},
@@ -9,13 +9,13 @@ use crate::{
 
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
-    game: &'a ParityGame,
+    game: &'a ParityGame<u32, GameRegisterVertex>,
     rg: &'a RegisterGame<'a>,
-    attract: AttractionComputer,
+    attract: AttractionComputer<u32>,
 }
 
 impl<'a> ZielonkaSolver<'a> {
-    pub fn new(game: &'a ParityGame, rg: &'a RegisterGame<'a>) -> Self {
+    pub fn new(game: &'a ParityGame<u32, GameRegisterVertex>, rg: &'a RegisterGame<'a>) -> Self {
         ZielonkaSolver {
             game,
             recursive_calls: 0,
@@ -39,7 +39,7 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka<T: ParityGraph>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>) {
+    fn zielonka<T: ParityGraph<u32, GameRegisterVertex>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>) {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {

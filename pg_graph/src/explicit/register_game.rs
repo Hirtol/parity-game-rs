@@ -1,14 +1,9 @@
 //! See [RegisterGame]
-use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
-
+use crate::{datatypes::Priority, explicit::{ParityGame, ParityGraph, VertexId}, visualize::VisualVertex, Owner, ParityVertex};
 use ecow::{eco_vec, EcoVec};
-
-use crate::{
-    datatypes::Priority,
-    explicit::{ParityGame, ParityGraph, VertexId},
-    visualize::VisualVertex,
-    Owner,
-};
+use eyre::ContextCompat;
+use petgraph::prelude::EdgeRef;
+use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
 
 /// The value type for `k` in a register game.
 ///
@@ -31,6 +26,23 @@ pub struct RegisterGame<'a> {
     pub controller: Owner,
     pub vertices: Vec<RegisterVertex>,
     pub edges: ahash::HashMap<VertexId, Vec<VertexId>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GameRegisterVertex {
+    pub priority: Priority,
+    pub owner: Owner,
+    pub original_v: VertexId,
+}
+
+impl ParityVertex for GameRegisterVertex {
+    fn priority(&self) -> Priority {
+        self.priority
+    }
+
+    fn owner(&self) -> Owner {
+        self.owner
+    }
 }
 
 enum ToExpand {
@@ -172,12 +184,6 @@ impl<'a> RegisterGame<'a> {
 
     #[tracing::instrument(name = "Construct Register Game 2021", skip(game))]
     pub fn construct_2021(game: &'a crate::explicit::ParityGame, k: Rank, controller: Owner) -> Self {
-        // Special case optimisation for `k = 0`, we can skip creating register reset vertices as the controller won't
-        // have a choice anyway
-        if k == 0 {
-            return Self::construct_2021_k0(game, controller, k);
-        }
-        
         let reg_quantity = k as usize + 1;
         let base_registers = game
             .priorities_unique()
@@ -291,7 +297,7 @@ impl<'a> RegisterGame<'a> {
         }
     }
 
-    pub fn construct_2021_k0(game: &'a crate::explicit::ParityGame, controller: Owner, k: Rank) -> Self {
+    pub fn construct_2021_reduced(game: &'a crate::explicit::ParityGame, k: Rank, controller: Owner) -> Self {
         let reg_quantity = (k + 1) as usize;
         let base_registers = game
             .priorities_unique()
@@ -439,8 +445,45 @@ impl<'a> RegisterGame<'a> {
         output.into_iter().flatten().collect()
     }
 
+    #[tracing::instrument(name = "Convert to Parity Game (Small)", skip(self))]
+    pub fn to_small_game(&self) -> eyre::Result<crate::explicit::ParityGame<u32, GameRegisterVertex>> {
+        let mut out = ParityGame::<u32, GameRegisterVertex>::empty();
+
+        let vertices: Vec<_> = self.vertices
+            .iter()
+            .map(|v| GameRegisterVertex {
+                priority: v.priority,
+                owner: v.owner,
+                original_v: v.original_graph_id,
+            })
+            .map(|v| out.graph.add_node(v))
+            .collect();
+
+        for v_idx in vertices {
+            let edges = self.edges.get(&v_idx).context("No edges for vertex")?;
+
+            for &target_v in edges {
+                out.graph.add_edge(v_idx, target_v, ());
+            }
+        }
+
+        let mut inverted_graph = vec![Vec::new(); out.graph.node_count()];
+
+        for vertex in out.graph.node_indices() {
+            for edge in out.graph.edges(vertex) {
+                inverted_graph[edge.target().index()].push(vertex);
+            }
+        }
+
+        out.inverted_vertices = inverted_graph;
+        out.labels = self.vertices.iter().map(|v| self.original_game.label(VertexId::from(v.original_graph_id)).map(|v| v.into())).collect();
+
+        Ok(out)
+    }
+
+
     #[tracing::instrument(name = "Convert to Parity Game", skip(self))]
-    pub fn to_game(&self) -> eyre::Result<crate::explicit::ParityGame> {
+    pub fn to_normal_game(&self) -> eyre::Result<crate::explicit::ParityGame> {
         let mut parsed_game = vec![];
 
         for (v_id, v, edges) in self

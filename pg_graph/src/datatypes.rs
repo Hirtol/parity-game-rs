@@ -59,20 +59,36 @@ impl TryFrom<u8> for Owner {
     }
 }
 
+pub trait ParityVertex {
+    fn priority(&self) -> Priority;
+    
+    fn owner(&self) -> Owner;
+    
+    #[inline(always)]
+    fn priority_even(&self) -> bool {
+        self.priority() % 2 == 0
+    }
+    
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        matches!(self.owner(), Owner::Even)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Vertex {
     pub priority: Priority,
     pub owner: Owner,
 }
 
-impl Vertex {
-    #[inline]
-    pub fn priority_even(&self) -> bool {
-        self.priority % 2 == 0
+impl ParityVertex for Vertex {
+    #[inline(always)]
+    fn priority(&self) -> Priority {
+        self.priority
     }
 
-    #[inline]
-    pub fn is_even(&self) -> bool {
-        matches!(self.owner, Owner::Even)
+    #[inline(always)]
+    fn owner(&self) -> Owner {
+        self.owner
     }
 }

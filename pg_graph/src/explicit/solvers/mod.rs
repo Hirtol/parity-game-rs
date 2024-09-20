@@ -1,10 +1,7 @@
+use crate::explicit::register_game::{GameRegisterVertex, RegisterGame};
+use crate::{explicit::{ParityGraph, VertexId}, Owner, ParityVertex};
+use petgraph::graph::IndexType;
 use std::collections::VecDeque;
-
-use crate::explicit::register_game::RegisterGame;
-use crate::{
-    explicit::{ParityGraph, VertexId},
-    Owner,
-};
 
 pub mod small_progress;
 pub mod tangle_learning;
@@ -20,11 +17,11 @@ pub struct SolverOutput {
     pub strategy: Option<Vec<VertexId>>,
 }
 
-pub struct AttractionComputer {
-    queue: VecDeque<VertexId>,
+pub struct AttractionComputer<Ix> {
+    queue: VecDeque<VertexId<Ix>>,
 }
 
-impl AttractionComputer {
+impl<Ix: IndexType> AttractionComputer<Ix> {
     pub fn new() -> Self {
         Self {
             queue: Default::default(),
@@ -36,19 +33,19 @@ impl AttractionComputer {
     /// This resulting set will contain all vertices which:
     /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
     /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
-    pub fn attractor_set<T: ParityGraph>(
+    pub fn attractor_set<V: ParityVertex + 'static, T: ParityGraph<Ix, V>>(
         &mut self,
         game: &T,
         player: Owner,
-        starting_set: impl IntoIterator<Item = VertexId>,
-    ) -> ahash::HashSet<VertexId> {
+        starting_set: impl IntoIterator<Item = VertexId<Ix>>,
+    ) -> ahash::HashSet<VertexId<Ix>> {
         let mut attract_set = ahash::HashSet::from_iter(starting_set);
         self.queue.extend(&attract_set);
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
                 let vertex = game.get(predecessor).expect("Invalid predecessor");
-                let should_add = if vertex.owner == player {
+                let should_add = if vertex.owner() == player {
                     // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                     true
                 } else {
@@ -65,43 +62,37 @@ impl AttractionComputer {
         attract_set
     }
 
-    pub fn attractor_set_reg_game<T: ParityGraph>(
+    pub fn attractor_set_reg_game<T: ParityGraph<Ix, GameRegisterVertex>>(
         &mut self,
         game: &T,
         reg_game: &RegisterGame,
         player: Owner,
-        starting_set: impl IntoIterator<Item = VertexId>,
-    ) -> ahash::HashSet<VertexId> {
+        starting_set: impl IntoIterator<Item = VertexId<Ix>>,
+    ) -> ahash::HashSet<VertexId<Ix>> {
         let mut attract_set = ahash::HashSet::from_iter(starting_set);
         let is_aligned = player == reg_game.controller;
         self.queue.extend(&attract_set);
 
         while let Some(next_item) = self.queue.pop_back() {
-            let next_item_v = game.get(next_item).expect("Invalid");
-            let priority_next_aligned = reg_game.controller.priority_aligned(next_item_v.priority);
-            
+
             for predecessor in game.predecessors(next_item) {
                 let vertex = game.get(predecessor).expect("Invalid predecessor");
-                let should_add = if vertex.owner == player {
+                let should_add = if vertex.owner() == player {
                     if is_aligned {
                         // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                         true
                     } else {
-                        let all_unaligned= game.edges(predecessor).all(|v| !reg_game.controller.priority_aligned(game.get(v).unwrap().priority));
-                        if all_unaligned {
-                            // Check if this edge is the smallest possible, if so then this edge is attracting
-                            let smaller_edges = game.edges(predecessor).filter(|v| game.get(*v).unwrap().priority < vertex.priority).count();
-                            smaller_edges == 0
-                        } else {
-                            false
-                        }
+                        let next_item_v = game.get(next_item).expect("Invalid");
+                        // First filter on the underlying original_graph_id to ensure those are equal and THEN check if there's any alternatives
+                        // This way we model the existence of an E_i vertex
+                        let all_with_same_id = game.edges(predecessor)
+                            .filter(|&v| game.get(v).map(|w| w.original_v == next_item_v.original_v).unwrap_or_default())
+                            .all(|v| attract_set.contains(&v));
+
+                        all_with_same_id
                     }
                 } else {
-                    // if is_aligned {
-                        game.edges(predecessor).all(|v| attract_set.contains(&v))
-                    // } else {
-                    //     
-                    // }
+                    game.edges(predecessor).all(|v| attract_set.contains(&v))
                 };
 
                 // Only add to the attraction set if we should

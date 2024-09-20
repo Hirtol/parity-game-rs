@@ -95,7 +95,7 @@ impl BenchCommand {
                     "Constructed Odd register game"
                 );
 
-                let rg_pg = odd_game.to_game()?;
+                let rg_pg = odd_game.to_normal_game()?;
                 let mut solver = ZielonkaSolver::new(&rg_pg);
                 let (output_odd, time_solve_odd) = timed_solve!(solver.run(), "Solved Zielonka on Odd register game");
                 let solution_rg_odd = odd_game.project_winners_original(&output_odd.winners);
@@ -109,7 +109,7 @@ impl BenchCommand {
                     RegisterGame::construct_2021(&parity_game, k, Owner::Even),
                     "Constructed Even register game"
                 );
-                let rg_pg = even_game.to_game()?;
+                let rg_pg = even_game.to_normal_game()?;
                 let mut solver = ZielonkaSolver::new(&rg_pg);
                 let (output_even, time_solve_even) =
                     timed_solve!(solver.run(), "Solved Zielonka on Even register game");

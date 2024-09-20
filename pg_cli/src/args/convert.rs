@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
+use pg_graph::symbolic::BDD;
 use pg_graph::{
-    explicit::{ParityGraph, register_game::RegisterGame},
-    Owner,
+    explicit::{register_game::RegisterGame, ParityGraph},
     symbolic::{register_game::SymbolicRegisterGame, SymbolicParityGame},
     visualize::{DotWriter, MermaidWriter, VisualRegisterGame},
+    Owner,
 };
-use pg_graph::symbolic::BDD;
 
 #[derive(clap::Args, Debug)]
 pub struct ConvertCommand {
@@ -128,7 +128,7 @@ impl ConvertCommand {
                 }
 
                 if let Some(path) = self.pg_path {
-                    let game = register_game.to_game()?;
+                    let game = register_game.to_small_game()?;
 
                     tracing::debug!(
                         from_vertex = had_nodes,
