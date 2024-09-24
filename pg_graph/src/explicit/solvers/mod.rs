@@ -1,5 +1,6 @@
 use crate::explicit::register_game::{GameRegisterVertex, RegisterGame};
 use crate::{explicit::{ParityGraph, VertexId}, Owner, ParityVertex};
+use itertools::Itertools;
 use petgraph::graph::IndexType;
 use std::collections::VecDeque;
 
@@ -62,6 +63,10 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         attract_set
     }
 
+    /// Calculate the attraction set for the given player.
+    ///
+    /// **Assumes that edges are grouped by the original vertex id consecutively**
+    #[allow(clippy::collapsible_else_if)]
     pub fn attractor_set_reg_game<T: ParityGraph<Ix, GameRegisterVertex>>(
         &mut self,
         game: &T,
@@ -74,25 +79,60 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         self.queue.extend(&attract_set);
 
         while let Some(next_item) = self.queue.pop_back() {
-
             for predecessor in game.predecessors(next_item) {
-                let vertex = game.get(predecessor).expect("Invalid predecessor");
-                let should_add = if vertex.owner() == player {
-                    if is_aligned {
+                let predecessor_v = game.get(predecessor).expect("Invalid predecessor");
+                let should_add = if is_aligned {
+                    if predecessor_v.owner == player {
                         // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                         true
                     } else {
-                        let next_item_v = game.get(next_item).expect("Invalid");
-                        // First filter on the underlying original_graph_id to ensure those are equal and THEN check if there's any alternatives
-                        // This way we model the existence of an E_i vertex
-                        let all_with_same_id = game.edges(predecessor)
-                            .filter(|&v| game.get(v).map(|w| w.original_v == next_item_v.original_v).unwrap_or_default())
-                            .all(|v| attract_set.contains(&v));
+                        // We pretend `E_i` vertices exist, but this requires that all these imagined `E_i` vertices are part of the
+                        // attraction set. Thus, as the owner of this vertex != player we need all chunks to have at least one attraction set edge.
+                        let mut iter = game.edges(predecessor);
+                        let v = iter.next().expect("No edges for vertex");
+                        let node = game.get(v).unwrap();
+                        let mut current_original_vertex_id = node.original_v;
+                        let mut current_group_has_edge = attract_set.contains(&v);
+                        let mut output = true;
 
-                        all_with_same_id
+                        for v in iter {
+                            let node = game.get(v).unwrap();
+
+                            if current_original_vertex_id != node.original_v {
+                                if !current_group_has_edge {
+                                    output = false;
+                                    break;
+                                }
+                                current_original_vertex_id = node.original_v;
+                                current_group_has_edge = attract_set.contains(&v);
+                            } else if !current_group_has_edge && attract_set.contains(&v) {
+                                current_group_has_edge = true;
+                            }
+                        }
+                        if !current_group_has_edge {
+                            output = false;
+                        }
+                        // Shorter, but substantially slower way of computing the above
+                        // game.edges(predecessor)
+                        //         .chunk_by(|v| game.get(*v).unwrap().original_v)
+                        //         .into_iter()
+                        //         .all(|(_, mut chunk)| {
+                        //             chunk.any(|v| attract_set.contains(&v))
+                        //         });
+                        output
+
                     }
                 } else {
-                    game.edges(predecessor).all(|v| attract_set.contains(&v))
+                    if predecessor_v.owner == player {
+                        // First filter on the underlying original_graph_id to ensure those are equal and THEN check if there's any alternatives
+                        // This way we model the existence of an E_i vertex
+                        let next_item_v = game.get(next_item).expect("Invalid");
+                        game.edges(predecessor)
+                            .filter(|&v| game.get(v).map(|w| w.original_v == next_item_v.original_v).unwrap_or_default())
+                            .all(|v| attract_set.contains(&v))
+                    } else {
+                        game.edges(predecessor).all(|v| attract_set.contains(&v))
+                    }
                 };
 
                 // Only add to the attraction set if we should

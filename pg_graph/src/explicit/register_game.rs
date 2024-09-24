@@ -365,6 +365,8 @@ impl<'a> RegisterGame<'a> {
                     match reg_v.next_action {
                         ChosenAction::RegisterChange => unreachable!(),
                         ChosenAction::Move => {
+                            // NOTE: It is currently assumed that the edges are added such that the edges with the same 
+                            // `edge_node` original vertex are consecutive. See `register_attractor`.
                             for edge_node in game.edges(reg_v.original_graph_id) {
                                 for r in 0..reg_quantity {
                                     let reg_v = &final_graph[reg_id.index()];

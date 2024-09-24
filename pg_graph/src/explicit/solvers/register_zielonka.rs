@@ -48,6 +48,7 @@ impl<'a> ZielonkaSolver<'a> {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
+
             let attraction_set = self.attract.attractor_set_reg_game(game, self.rg, attraction_owner, starting_set);
 
             let sub_game = game.create_subgame(attraction_set.iter().copied());

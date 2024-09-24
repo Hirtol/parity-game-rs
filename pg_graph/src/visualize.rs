@@ -241,7 +241,8 @@ impl<'a, 'b> VisualGraph for VisualRegisterGame<'a, 'b> {
         let v = &self.0.vertices[node.index()];
         write!(
             sink,
-            "{priority}<br/>{orig_priority},{regs:?}",
+            "{priority} ({node})<br/>{orig_priority},{regs:?}",
+            node = node.index(),
             priority = v.priority,
             orig_priority = self.0.original_game[v.original_graph_id].priority,
             regs = v.register_state,

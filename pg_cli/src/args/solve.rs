@@ -53,6 +53,9 @@ pub struct ExplicitSolveCommand {
     /// Which solver to use, by default will use Zielonka
     #[clap(subcommand)]
     solver: Option<ExplicitSolvers>,
+    /// Whether the register game should be reduced or not.
+    #[clap(short = 's', default_value_t)]
+    reduced: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -132,7 +135,7 @@ impl SolveCommand {
             SolveType::Explicit(explicit) => {
                 let solver = explicit.solver.unwrap_or(ExplicitSolvers::Zielonka);
                 tracing::info!(?solver, "Using explicit solver");
-                
+
                 match self.register_game_k {
                     None => match solver {
                         ExplicitSolvers::Spm => {
@@ -173,13 +176,13 @@ impl SolveCommand {
                                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                                     "Converted from parity game to register game"
                                 );
-                                
+
                                 let mut solver =
                                     pg_graph::explicit::solvers::small_progress::SmallProgressSolver::new(&rg_pg);
 
                                 rg.project_winners_original(&timed_solve!(solver.run()).winners)
                             }
-                            ExplicitSolvers::Zielonka => {
+                            ExplicitSolvers::Zielonka if explicit.reduced => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
                                     "Constructed Reduced Register Game"
@@ -196,6 +199,28 @@ impl SolveCommand {
                                     "Converted from parity game to register game"
                                 );
                                 let mut solver = pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(&rg_pg, &rg);
+
+                                let solution = timed_solve!(solver.run());
+                                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                                rg.project_winners_original(&solution.winners)
+                            }
+                            ExplicitSolvers::Zielonka => {
+                                let rg = timed_solve!(
+                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
+                                    "Constructed Reduced Register Game"
+                                );
+                                let rg_pg = rg.to_normal_game()?;
+
+                                tracing::debug!(
+                                    from_vertex = rg.original_game.vertex_count(),
+                                    to_vertex = rg_pg.vertex_count(),
+                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                                    from_edges = rg.original_game.edge_count(),
+                                    to_edges = rg_pg.edge_count(),
+                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                                    "Converted from parity game to register game"
+                                );
+                                let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(&rg_pg);
 
                                 let solution = timed_solve!(solver.run());
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
