@@ -272,9 +272,9 @@ impl<Ix: IndexType> Index<VertexId<Ix>> for ParityGame<Ix> {
 }
 
 pub struct SubGame<'a, Ix: IndexType, Vert: ParityVertex + 'static, Parent: ParityGraph<Ix, Vert>> {
-    parent: &'a Parent,
-    ignored: ahash::HashSet<NodeIndex<Ix>>,
-    _phantom: PhantomData<Vert>
+    pub(crate) parent: &'a Parent,
+    pub(crate) ignored: ahash::HashSet<NodeIndex<Ix>>,
+    pub(crate) _phantom: PhantomData<Vert>
 }
 
 impl<'a, Ix: IndexType, Vert: ParityVertex + 'static, Parent: ParityGraph<Ix, Vert>> SubGame<'a, Ix, Vert, Parent> {

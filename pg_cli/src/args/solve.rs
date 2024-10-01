@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::PEAK_ALLOC;
+use pg_graph::explicit::reduced_register_game::ReducedRegisterGame;
 use pg_graph::{
     explicit::{register_game::RegisterGame, ParityGame, ParityGraph},
     symbolic::{
@@ -54,8 +55,8 @@ pub struct ExplicitSolveCommand {
     #[clap(subcommand)]
     solver: Option<ExplicitSolvers>,
     /// Whether the register game should be reduced or not.
-    #[clap(short = 's', default_value_t)]
-    reduced: bool,
+    #[clap(short = 's', value_enum, default_value_t)]
+    reduced: RegisterReductionType,
 }
 
 #[derive(clap::Args, Debug)]
@@ -79,6 +80,17 @@ pub enum RegisterGameType {
     Explicit,
     #[default]
     Symbolic,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Default, PartialEq)]
+pub enum RegisterReductionType {
+    #[default]
+    /// No reduction is done, the full state-space is explored with all vertices and edges created in a game graph
+    Normal,
+    /// The `E_i` relation is eliminated, reducing the amount of vertices and increasing the amount of edges for k > 0
+    PartialReduced,
+    /// Nothing is explored and kept, everything is done just-in-time
+    Reduced,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Default)]
@@ -182,10 +194,10 @@ impl SolveCommand {
 
                                 rg.project_winners_original(&timed_solve!(solver.run()).winners)
                             }
-                            ExplicitSolvers::Zielonka if explicit.reduced => {
+                            ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
-                                    "Constructed Reduced Register Game"
+                                    "Constructed Partial Reduced Register Game"
                                 );
                                 let rg_pg = rg.to_small_game()?;
 
@@ -204,10 +216,31 @@ impl SolveCommand {
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                                 rg.project_winners_original(&solution.winners)
                             }
+                            ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::Reduced => {
+                                let rg = timed_solve!(
+                                    ReducedRegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
+                                    "Constructed Reduced Register Game"
+                                );
+
+                                tracing::debug!(
+                                    from_vertex = rg.original_game.vertex_count(),
+                                    to_vertex = rg.vertex_count(),
+                                    ratio = rg.vertex_count() / rg.original_game.vertex_count(),
+                                    from_edges = rg.original_game.edge_count(),
+                                    to_edges = rg.edge_count(),
+                                    ratio = rg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                                    "Converted from parity game to register game"
+                                );
+                                let mut solver = pg_graph::explicit::solvers::fully_reduced_reg_zielonka::ZielonkaSolver::new(&rg);
+
+                                let solution = timed_solve!(solver.run());
+                                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                                rg.project_winners_original(&solution.winners)
+                            }
                             ExplicitSolvers::Zielonka => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Reduced Register Game"
+                                    "Constructed Register Game"
                                 );
                                 let rg_pg = rg.to_normal_game()?;
 

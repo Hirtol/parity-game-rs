@@ -20,6 +20,8 @@ rayon = "1.10.0"
 
 tracing = { version = "0.1.40" }
 itertools.workspace = true
+dynqueue = { version = "0.3.0", features = ["crossbeam-queue"] }
+nary_tree = "0.4.3"
 
 petgraph = "0.6.4"
 oxidd = { git = "https://github.com/Hirtol/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }

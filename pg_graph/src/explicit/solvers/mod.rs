@@ -1,3 +1,4 @@
+use crate::explicit::reduced_register_game::{RegisterParityGraph, RegisterVertex};
 use crate::explicit::register_game::{GameRegisterVertex, RegisterGame};
 use crate::{explicit::{ParityGraph, VertexId}, Owner, ParityVertex};
 use itertools::Itertools;
@@ -8,6 +9,7 @@ pub mod small_progress;
 pub mod tangle_learning;
 pub mod zielonka;
 pub mod register_zielonka;
+pub mod fully_reduced_reg_zielonka;
 
 #[derive(Debug, Clone, Default)]
 pub struct SolverOutput {
@@ -129,6 +131,58 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         let next_item_v = game.get(next_item).expect("Invalid");
                         game.edges(predecessor)
                             .filter(|&v| game.get(v).map(|w| w.original_v == next_item_v.original_v).unwrap_or_default())
+                            .all(|v| attract_set.contains(&v))
+                    } else {
+                        game.edges(predecessor).all(|v| attract_set.contains(&v))
+                    }
+                };
+
+                // Only add to the attraction set if we should
+                if should_add && attract_set.insert(predecessor) {
+                    self.queue.push_back(predecessor);
+                }
+            }
+        }
+
+        attract_set
+    }
+
+    /// Calculate the attraction set for the given player.
+    ///
+    /// **Assumes that edges are grouped by the original vertex id consecutively**
+    #[allow(clippy::collapsible_else_if)]
+    pub fn attractor_set_reg_game_full_reduced<T: RegisterParityGraph<Ix, RegisterVertex>>(
+        &mut self,
+        game: &T,
+        controller: Owner,
+        player: Owner,
+        starting_set: impl IntoIterator<Item = VertexId<Ix>>,
+    ) -> ahash::HashSet<VertexId<Ix>> {
+        let mut attract_set = ahash::HashSet::from_iter(starting_set);
+        let is_aligned = player == controller;
+        self.queue.extend(&attract_set);
+
+        while let Some(next_item) = self.queue.pop_back() {
+            for predecessor in game.predecessors(next_item) {
+                let predecessor_v = game.get(predecessor).expect("Invalid predecessor");
+                let should_add = if is_aligned {
+                    if predecessor_v.owner == player {
+                        // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                        true
+                    } else {
+                        // We pretend `E_i` vertices exist, but this requires that all these imagined `E_i` vertices are part of the
+                        // attraction set. Thus, as the owner of this vertex != player we need all chunks to have at least one attraction set edge.
+                        game.grouped_edges(predecessor)
+                                .all(|mut group| {
+                                    group.any(|v| attract_set.contains(&v))
+                                })
+                    }
+                } else {
+                    if predecessor_v.owner == player {
+                        // First filter on the underlying original_graph_id to ensure those are equal and THEN check if there's any alternatives
+                        // This way we model the existence of an E_i vertex
+                        let next_item_v = game.get(next_item).expect("Invalid");
+                        game.edges_for_root_vertex(predecessor, next_item_v.original_graph_id)
                             .all(|v| attract_set.contains(&v))
                     } else {
                         game.edges(predecessor).all(|v| attract_set.contains(&v))
