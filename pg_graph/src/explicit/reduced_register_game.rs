@@ -1,4 +1,5 @@
 //! See [ReducedRegisterGame]
+use crate::explicit::register_tree::RegisterTree;
 use crate::{
     datatypes::Priority,
     explicit::{ParityGame, ParityGraph, SubGame, VertexId},
@@ -23,6 +24,7 @@ pub struct ReducedRegisterGame<'a> {
     pub reg_v_index: ahash::HashMap<RegisterVertex, VertexId>,
     /// Mapping from the parity game vertex to all register game vertices with this vertex as root.
     pub original_to_reg_v: ahash::HashMap<VertexId, ahash::HashSet<VertexId>>,
+    pub register_tree: RegisterTree,
     pub reg_quantity: usize,
 }
 
@@ -63,6 +65,10 @@ impl<'a> ReducedRegisterGame<'a> {
         let mut reg_v_index: ahash::HashMap<RegisterVertex, VertexId> = ahash::HashMap::default();
         let mut original_to_reg_v = ahash::HashMap::default();
         let mut final_graph = Vec::new();
+        let mut register_tree = RegisterTree::new(game.priority_max());
+        for (_, base_reg) in &base_registers {
+            register_tree.insert_leaf(base_reg.clone());
+        }
 
         // Only expand the new register vertex if it's actually unique.
         // Done as a macro as we mutably borrow `to_expand`
@@ -121,10 +127,8 @@ impl<'a> ReducedRegisterGame<'a> {
                     let next_v = &game[edge_node];
                     let new_priority =
                         reset_to_priority_2021(r as Rank, reg_v.register_state[r], next_v.priority, controller);
-                    let mut new_registers = reg_v.register_state.clone();
-
-                    let new_r = new_registers.make_mut();
-                    next_registers_2021(new_r, next_v.priority, reg_quantity, r);
+                    
+                    let new_registers = register_tree.next_registers_fresh(&reg_v.register_state, next_v.priority, reg_quantity, r).expect("Impossible");
 
                     let e_r = RegisterVertex {
                         original_graph_id: edge_node,
@@ -150,6 +154,7 @@ impl<'a> ReducedRegisterGame<'a> {
             vertices: final_graph,
             reg_v_index,
             original_to_reg_v,
+            register_tree,
             reg_quantity,
         }
     }
@@ -179,7 +184,7 @@ impl<'a> ReducedRegisterGame<'a> {
 
             if let Some(curr_win) = current_winner {
                 if *curr_win != winner {
-                    // panic!("Game winner ({curr_win:?}) for Reg Idx `{reg_id}` did not equal existing winner ({winner:?}) for original Idx `{original_id:?}`");
+                    panic!("Game winner ({curr_win:?}) for Reg Idx `{reg_id}` did not equal existing winner ({winner:?}) for original Idx `{original_id:?}`");
                 }
                 *curr_win = winner;
             } else {
@@ -196,10 +201,7 @@ impl<'a> ReducedRegisterGame<'a> {
             let next_v = &self.original_game[root_vertex];
             let new_priority =
                 reset_to_priority_2021(r as Rank, reg_v.register_state[r], next_v.priority, self.controller);
-            let mut new_registers = reg_v.register_state.clone();
-
-            let new_r = new_registers.make_mut();
-            next_registers_2021(new_r, next_v.priority, self.reg_quantity, r);
+            let new_registers = self.register_tree.next_registers(&reg_v.register_state, next_v.priority, self.reg_quantity, r).expect("Impossible");
 
             let e_r = RegisterVertex {
                 original_graph_id: root_vertex,
@@ -286,7 +288,7 @@ pub trait RegisterParityGraph<Ix: IndexType = u32, Vert: ParityVertex + 'static 
     /// Return all edges from a register vertex `v`, but grouped by the underlying parity game vertex id of the target vertices.
     fn grouped_edges(&self, v: VertexId<Ix>) -> impl Iterator<Item = impl Iterator<Item = VertexId<Ix>> + '_> + '_;
 
-    /// Return all `E_i` edges from a particular `register_v`, where the underlying parity game vertex is is `root_vertex`. 
+    /// Return all `E_i` edges from a particular `register_v`, where the underlying parity game vertex is is `root_vertex`.
     fn edges_for_root_vertex(&self, register_v: VertexId<Ix>, root_vertex: VertexId) -> impl Iterator<Item = VertexId<Ix>> + '_;
 }
 
@@ -313,7 +315,7 @@ impl<'a, Parent: RegisterParityGraph<u32, RegisterVertex>> RegisterParityGraph<u
         self.parent.grouped_edges(v)
             .flat_map(|r_itr| {
                 let mut itr = r_itr.filter(|rv| !self.ignored.contains(rv)).peekable();
-        
+
                 if itr.peek().is_some() {
                     Some(itr)
                 } else {
