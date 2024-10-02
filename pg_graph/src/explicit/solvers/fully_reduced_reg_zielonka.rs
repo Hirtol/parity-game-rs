@@ -1,4 +1,4 @@
-use crate::explicit::reduced_register_game::{ReducedRegisterGame, RegisterParityGraph, RegisterVertex};
+use crate::explicit::reduced_register_game::{ReducedRegisterGame, RegisterParityGraph};
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput}
     , ParityGraph, VertexId,
@@ -33,9 +33,9 @@ impl<'a> ZielonkaSolver<'a> {
             strategy: None,
         }
     }
-    
-    fn zielonka<T: RegisterParityGraph<u32, RegisterVertex>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>)
-        where T::Parent: RegisterParityGraph<u32, RegisterVertex> {
+
+    fn zielonka<T: RegisterParityGraph<u32>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>)
+        where T::Parent: RegisterParityGraph<u32> {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {
@@ -43,7 +43,7 @@ impl<'a> ZielonkaSolver<'a> {
         } else {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
-            let starting_set = game.vertices_by_priority_idx(d).map(|(idx, _)| idx);
+            let starting_set = game.vertices_index_by_priority(d);
 
             let attraction_set = self.attract.attractor_set_reg_game_full_reduced(game, self.rg.controller, attraction_owner, starting_set);
 

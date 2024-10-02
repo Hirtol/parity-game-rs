@@ -5,6 +5,7 @@ use oxidd_core::{Edge, HasLevel, Manager};
 use oxidd_dump::dot::DotStyle;
 use petgraph::graph::IndexType;
 
+use crate::explicit::ParityGraph;
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::{
     explicit::{
@@ -244,7 +245,7 @@ impl<'a, 'b> VisualGraph for VisualRegisterGame<'a, 'b> {
             "{priority} ({node})<br/>{orig_priority},{regs:?}",
             node = node.index(),
             priority = v.priority,
-            orig_priority = self.0.original_game[v.original_graph_id].priority,
+            orig_priority = self.0.original_game.priority(v.original_graph_id),
             regs = v.register_state,
         )
     }

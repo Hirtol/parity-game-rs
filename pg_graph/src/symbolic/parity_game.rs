@@ -1,24 +1,24 @@
 use ecow::EcoVec;
 use oxidd_core::{
     function::Function,
-    Manager,
-    ManagerRef, util::{OptBool, Subst}, WorkerManager,
+    util::{OptBool, Subst},
+    Manager, ManagerRef, WorkerManager,
 };
 use petgraph::prelude::EdgeRef;
 
+use crate::symbolic::helpers::SymbolicEncoder;
 use crate::{
     datatypes::Priority,
     explicit::{ParityGame, ParityGraph, VertexId},
-    Owner,
     symbolic,
     symbolic::{
-        BCDD,
-        BDD,
         helpers::CachedBinaryEncoder,
-        oxidd_extensions::GeneralBooleanFunction, sat::TruthAssignmentsIterator,
+        oxidd_extensions::GeneralBooleanFunction,
+        sat::TruthAssignmentsIterator,
+        BCDD, BDD,
     },
+    Owner,
 };
-use crate::symbolic::helpers::SymbolicEncoder;
 
 pub struct SymbolicParityGame<F: Function> {
     pub pg_vertex_count: usize,
@@ -120,13 +120,12 @@ where
 
         tracing::debug!("Starting priority/owner BDD construction");
         for v_idx in explicit.vertices_index() {
-            let vertex = explicit.get(v_idx).expect("Impossible");
+            let vertex = explicit.vertex(v_idx);
             let expr = var_encoder.encode(v_idx.index())?;
-            let priority = vertex.priority;
 
             // Fill priority
             s_priorities
-                .entry(priority)
+                .entry(vertex.priority)
                 .and_modify(|bdd| *bdd = bdd.or(expr).expect("Out of memory"));
 
             // Set owners
@@ -302,11 +301,11 @@ mod tests {
     use oxidd_core::{function::BooleanFunction, util::OptBool};
 
     use crate::{
-        explicit::{ParityGame, ParityGraph, solvers::AttractionComputer},
-        Owner,
-        symbolic::{BDD, oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame},
+        explicit::{solvers::AttractionComputer, ParityGame, ParityGraph},
+        symbolic::{oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame, BDD},
         tests::load_example,
         visualize::DotWriter,
+        Owner,
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -404,8 +403,7 @@ mod tests {
             Owner::Odd,
             s_tue
                 .original
-                .vertices_by_priority_idx(s_tue.pg.priority_max())
-                .map(|(a, b)| a),
+                .vertices_index_by_priority(s_tue.pg.priority_max()),
         );
 
         assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
@@ -428,7 +426,7 @@ mod tests {
         let underlying_attr_set = real_attraction.attractor_set(
             &s.original,
             Owner::Even,
-            s.original.vertices_by_priority_idx(s.pg.priority_max()).map(|(a, b)| a),
+            s.original.vertices_index_by_priority(s.pg.priority_max()),
         );
 
         assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());

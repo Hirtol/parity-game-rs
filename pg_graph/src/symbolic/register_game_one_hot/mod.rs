@@ -8,29 +8,28 @@ use itertools::Itertools;
 use oxidd_cache::StatisticsGenerator;
 use oxidd_core::{
     function::Function,
-    HasApplyCache,
-    ManagerRef, util::{AllocResult, OptBool}, WorkerManager,
+    util::{AllocResult, OptBool},
+    HasApplyCache, ManagerRef, WorkerManager,
 };
 
 use variable_order::VariableAllocatorInfo;
 
+use crate::symbolic::helpers::SymbolicEncoder;
+use crate::symbolic::register_game_one_hot::helpers::OneHotEncoder;
 use crate::{
     explicit,
-    explicit::{ParityGame, ParityGraph, register_game::Rank},
-    Owner,
-    Priority,
-    symbolic, symbolic::{
+    explicit::{register_game::Rank, ParityGame, ParityGraph},
+    symbolic,
+    symbolic::{
         helpers::{CachedBinaryEncoder, MultiEncoder},
         oxidd_extensions::{BooleanFunctionExtensions, FunctionVarRef, GeneralBooleanFunction},
         sat::TruthAssignmentsIterator,
         SymbolicParityGame,
     },
+    Owner, Priority,
 };
-use crate::symbolic::helpers::SymbolicEncoder;
-use crate::symbolic::register_game_one_hot::helpers::OneHotEncoder;
 
 pub mod helpers;
-pub(crate) mod test_helpers;
 mod variable_order;
 
 pub struct OneHotRegisterGame<F: Function> {

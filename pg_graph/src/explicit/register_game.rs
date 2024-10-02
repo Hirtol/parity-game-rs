@@ -1,8 +1,10 @@
 //! See [RegisterGame]
-use crate::{datatypes::Priority, explicit::{ParityGame, ParityGraph, VertexId}, visualize::VisualVertex, Owner, ParityVertex};
+use crate::{datatypes::Priority, explicit::{ParityGame, ParityGraph, VertexId}, visualize::VisualVertex, Owner, ParityVertexSoa};
 use ecow::{eco_vec, EcoVec};
 use eyre::ContextCompat;
+use petgraph::graph::IndexType;
 use petgraph::prelude::EdgeRef;
+use soa_derive::StructOfArray;
 use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
 
 /// The value type for `k` in a register game.
@@ -28,20 +30,20 @@ pub struct RegisterGame<'a> {
     pub edges: ahash::HashMap<VertexId, Vec<VertexId>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, StructOfArray)]
 pub struct GameRegisterVertex {
     pub priority: Priority,
     pub owner: Owner,
     pub original_v: VertexId,
 }
 
-impl ParityVertex for GameRegisterVertex {
-    fn priority(&self) -> Priority {
-        self.priority
+impl<Ix: IndexType> ParityVertexSoa<Ix> for GameRegisterVertexVec {
+    fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
+        self.priority.get(idx.index()).copied()
     }
 
-    fn owner(&self) -> Owner {
-        self.owner
+    fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner> {
+        self.owner.get(idx.index()).copied()
     }
 }
 
@@ -114,7 +116,7 @@ impl<'a> RegisterGame<'a> {
                 ToExpand::RegisterVertex(reg_id) => {
                     let reg_v = &final_graph[reg_id.index()];
                     let edges = final_edges.entry(reg_id).or_insert_with(Vec::new);
-                    let original_vertex = &game[reg_v.original_graph_id];
+                    let original_v_owner = game.owner(reg_v.original_graph_id);
 
                     match reg_v.next_action {
                         ChosenAction::RegisterChange => {
@@ -129,7 +131,7 @@ impl<'a> RegisterGame<'a> {
                                 let e_r = RegisterVertex {
                                     original_graph_id: reg_v.original_graph_id,
                                     priority: new_priority,
-                                    owner: original_vertex.owner,
+                                    owner: original_v_owner,
                                     register_state: new_registers,
                                     next_action: ChosenAction::Move,
                                 };
@@ -141,7 +143,7 @@ impl<'a> RegisterGame<'a> {
                             let e_skip = RegisterVertex {
                                 original_graph_id: reg_v.original_graph_id,
                                 priority: neutral_priority(controller),
-                                owner: original_vertex.owner,
+                                owner: original_v_owner,
                                 register_state: reg_v.register_state.clone(),
                                 next_action: ChosenAction::Move,
                             };
@@ -150,7 +152,7 @@ impl<'a> RegisterGame<'a> {
                         ChosenAction::Move => {
                             for edge in game.edges(reg_v.original_graph_id) {
                                 let reg_v = &final_graph[reg_id.index()];
-                                let next = game.get(edge).unwrap();
+                                let next_priority = game.priority(edge);
                                 let mut r_next = RegisterVertex {
                                     original_graph_id: edge,
                                     priority: neutral_priority(controller),
@@ -161,8 +163,8 @@ impl<'a> RegisterGame<'a> {
                                 };
 
                                 for reg in r_next.register_state.make_mut() {
-                                    if next.priority > *reg {
-                                        *reg = next.priority;
+                                    if next_priority > *reg {
+                                        *reg = next_priority;
                                     }
                                 }
 
@@ -240,7 +242,7 @@ impl<'a> RegisterGame<'a> {
                 ToExpand::RegisterVertex(reg_id) => {
                     let reg_v = &final_graph[reg_id.index()];
                     let edges = final_edges.entry(reg_id).or_insert_with(Vec::new);
-                    let original_vertex = &game[reg_v.original_graph_id];
+                    let original_vertex = &game.vertex(reg_v.original_graph_id);
 
                     match reg_v.next_action {
                         ChosenAction::RegisterChange => {
@@ -337,7 +339,7 @@ impl<'a> RegisterGame<'a> {
             match expanding {
                 // Expand the given original vertex as a starting node, aka, assuming fresh registers
                 ToExpand::OriginalVertex(v_id) => {
-                    let v = &game[v_id];
+                    let v = &game.vertex(v_id);
                     let register_values = base_registers.get(&v.priority).expect("Priority register wasn't initialised");
                     let new_priority = reset_to_priority_2021(
                         0,
@@ -365,12 +367,12 @@ impl<'a> RegisterGame<'a> {
                     match reg_v.next_action {
                         ChosenAction::RegisterChange => unreachable!(),
                         ChosenAction::Move => {
-                            // NOTE: It is currently assumed that the edges are added such that the edges with the same 
+                            // NOTE: It is currently assumed that the edges are added such that the edges with the same
                             // `edge_node` original vertex are consecutive. See `register_attractor`.
                             for edge_node in game.edges(reg_v.original_graph_id) {
                                 for r in 0..reg_quantity {
                                     let reg_v = &final_graph[reg_id.index()];
-                                    let next_v = &game[edge_node];
+                                    let next_v = &game.vertex(edge_node);
                                     let new_priority = reset_to_priority_2021(
                                         r as Rank,
                                         reg_v.register_state[r],
@@ -448,8 +450,8 @@ impl<'a> RegisterGame<'a> {
     }
 
     #[tracing::instrument(name = "Convert to Parity Game (Small)", skip(self))]
-    pub fn to_small_game(&self) -> eyre::Result<crate::explicit::ParityGame<u32, GameRegisterVertex>> {
-        let mut out = ParityGame::<u32, GameRegisterVertex>::empty();
+    pub fn to_small_game(&self) -> eyre::Result<crate::explicit::ParityGame<u32, GameRegisterVertexVec>> {
+        let mut out = ParityGame::<u32, GameRegisterVertexVec>::empty();
 
         let vertices: Vec<_> = self.vertices
             .iter()
@@ -458,7 +460,10 @@ impl<'a> RegisterGame<'a> {
                 owner: v.owner,
                 original_v: v.original_graph_id,
             })
-            .map(|v| out.graph.add_node(v))
+            .map(|v| {
+                out.vertices.push(v);
+                out.graph.add_node(())
+            })
             .collect();
 
         for v_idx in vertices {
@@ -531,7 +536,7 @@ impl<'a> crate::visualize::VisualGraph for RegisterGame<'a> {
             priority = v.priority,
             orig = v.original_graph_id.index(),
             orig_label = self.original_game.label(v.original_graph_id).unwrap_or_default(),
-            orig_priority = self.original_game[v.original_graph_id].priority,
+            orig_priority = self.original_game.priority(v.original_graph_id),
             regs = v.register_state,
             next_move = v.next_action,
         )

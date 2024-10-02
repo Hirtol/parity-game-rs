@@ -1,0 +1,21 @@
+Post edge removal, fully reduced, no register-tree:
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}:load_parity_game: pg_cli::utils: Loaded parity game size=232 edges=480
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Using explicit solver solver=Zielonka
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Constructing with register index k=2
+0.1s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Constructed Reduced Register Game elapsed=120.2745ms
+0.1s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Converted from parity game to register game from_vertex=232 to_vertex=113014 ratio=487 from_edges=480 to_edges=480 ratio=1.0
+124.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Solving done elapsed=123.9579284s
+124.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Solved with recursive calls n=2255
+124.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Results even_wins=116 odd_wins=116
+124.0s  INFO pg_cli: Runtime: 124.09s - Peak Memory Usage: 48.50397 MB
+
+Post edge removal, fully reduced, with register-tree:
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}:load_parity_game: pg_cli::utils: Loaded parity game size=232 edges=480
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Using explicit solver solver=Zielonka
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Constructing with register index k=2
+0.1s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Constructed Reduced Register Game elapsed=123.0833ms
+0.1s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Converted from parity game to register game from_vertex=232 to_vertex=113014 ratio=487 from_edges=480 to_edges=480 ratio=1.0
+90.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Solving done elapsed=89.9672725s
+90.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Solved with recursive calls n=2255
+90.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_8.pg"}: pg_cli::args::solve: Results even_wins=116 odd_wins=116
+90.0s  INFO pg_cli: Runtime: 90.10s - Peak Memory Usage: 45.862183 MB

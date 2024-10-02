@@ -1,3 +1,7 @@
+use crate::explicit::VertexId;
+use petgraph::graph::IndexType;
+use soa_derive::StructOfArray;
+
 pub type Priority = u32;
 
 /// Represents a particular player in the parity game.
@@ -59,36 +63,50 @@ impl TryFrom<u8> for Owner {
     }
 }
 
-pub trait ParityVertex {
-    fn priority(&self) -> Priority;
-    
-    fn owner(&self) -> Owner;
-    
+pub trait ParityVertexSoa<Ix> {
     #[inline(always)]
-    fn priority_even(&self) -> bool {
-        self.priority() % 2 == 0
+    fn priority(&self, idx: VertexId<Ix>) -> Priority {
+        self.get_priority(idx).unwrap()
     }
-    
+
     #[inline(always)]
-    fn is_even(&self) -> bool {
-        matches!(self.owner(), Owner::Even)
+    fn owner(&self, idx: VertexId<Ix>) -> Owner {
+        self.get_owner(idx).unwrap()
     }
+
+    fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority>;
+
+    fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner>;
 }
 
-#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, StructOfArray)]
 pub struct Vertex {
     pub priority: Priority,
     pub owner: Owner,
 }
 
-impl ParityVertex for Vertex {
+impl<Ix: IndexType> ParityVertexSoa<Ix> for VertexVec {
     #[inline(always)]
-    fn priority(&self) -> Priority {
-        self.priority
+    fn priority(&self, idx: VertexId<Ix>) -> Priority {
+        unsafe {
+            *self.priority.get_unchecked(idx.index())
+        }
     }
 
     #[inline(always)]
-    fn owner(&self) -> Owner {
-        self.owner
+    fn owner(&self, idx: VertexId<Ix>) -> Owner {
+        unsafe {
+            *self.owner.get_unchecked(idx.index())
+        }
+    }
+    
+    #[inline(always)]
+    fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
+        self.priority.get(idx.index()).copied()
+    }
+
+    #[inline(always)]
+    fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner> {
+        self.owner.get(idx.index()).copied()
     }
 }

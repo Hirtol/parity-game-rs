@@ -4,14 +4,13 @@ use itertools::Itertools;
 
 use crate::{
     datatypes::Priority,
-    explicit::{ParityGame, ParityGraph, solvers::SolverOutput, VertexId},
+    explicit::{solvers::SolverOutput, ParityGame, ParityGraph, VertexId},
     Owner,
 };
 
 type Progress = u32;
 type ProgressMeasureData<'a> = &'a [Progress];
 
-#[derive(Debug)]
 pub struct SmallProgressSolver<'a> {
     game: &'a ParityGame,
     progress_measures: ProgressMeasures,
@@ -103,7 +102,6 @@ impl<'a> SmallProgressSolver<'a> {
     /// * `false` if no change was made, and therefore a fixed point _may_ have been reached.
     #[profiling::function]
     fn lift(&mut self, vertex_id: VertexId, for_player: Owner) -> Option<bool> {
-        let vertex = self.game.get(vertex_id)?;
         self.prog_count += 1;
 
         let existing_prog = self.progress_measures.get_measure(vertex_id)?;
@@ -120,7 +118,7 @@ impl<'a> SmallProgressSolver<'a> {
         });
 
         // Always want to maximise the progress if we own the vertex
-        let possible_measure = if vertex.owner == for_player {
+        let possible_measure = if self.game.owner(vertex_id) == for_player {
             prog_values.max()
         } else {
             prog_values.min()
@@ -150,13 +148,12 @@ impl<'a> SmallProgressSolver<'a> {
     }
 
     fn prog(&self, from: VertexId, to: VertexId, calculating_for: Owner) -> Option<ProgressMeasure> {
-        let v_from = self.game.get(from)?;
         let from_progress = self.progress_measures.get_measure(from)?;
         let to_progress = self.progress_measures.get_measure(to)?;
 
         let next = to_progress.calculate_next(
             calculating_for,
-            v_from.priority,
+            self.game.priority(from),
             from_progress,
             self.max_measure(calculating_for),
         );
