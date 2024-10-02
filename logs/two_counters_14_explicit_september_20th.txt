@@ -2,7 +2,7 @@ POST:
 0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}:load_parity_game: pg_cli::utils: Loaded parity game size=658 edges=1428
 0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Using explicit solver solver=Zielonka
 0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Constructing with register index k=2
-0.8s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Constructed Reduced Register Game elapsed=799.3408ms
+0.8s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Constructed Partial Reduced Register Game elapsed=799.3408ms
 1.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Converted from parity game to register game from_vertex=658 to_vertex=875236 ratio=1330 from_edges=1428 to_edges=5579673 ratio=3907.334033613445
 109.5s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Solving done elapsed=108.5016889s
 109.5s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Solved with recursive calls n=7013

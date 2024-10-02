@@ -202,7 +202,7 @@ impl<'a> ReducedRegisterGame<'a> {
                 register_state: new_registers,
                 rank_reset: r as Rank,
             };
-
+            
             self.reg_v_index.get(&e_r).copied()
         })
     }
