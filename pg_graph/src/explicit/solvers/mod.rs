@@ -67,44 +67,6 @@ impl AttractionComputer<u32> {
 
         bit_set
     }
-
-    pub fn attractor_set_bit_fixed<T: ParityGraph<u32>>(
-        &mut self,
-        game: &T,
-        player: Owner,
-        size: usize,
-        starting_set: impl IntoIterator<Item = VertexId<u32>>,
-    ) -> fixedbitset::FixedBitSet {
-        // let mut attract_set = ahash::HashSet::from_iter(starting_set);
-        self.queue.extend(starting_set);
-        let mut bit_set = fixedbitset::FixedBitSet::with_capacity(size);
-        // let mut bit_set = roaring::RoaringBitmap::from_iter(self.queue.iter().map(|v| v.index() as u32));
-        //
-        self.queue.iter().for_each(|v| { bit_set.insert(v.index()); });
-
-        while let Some(next_item) = self.queue.pop_back() {
-            for predecessor in game.predecessors(next_item) {
-                if bit_set.contains(predecessor.index()) {
-                    continue;
-                }
-
-                let should_add = if game.owner(predecessor) == player {
-                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
-                    true
-                } else {
-                    game.edges(predecessor).all(|v| bit_set.contains(v.index()))
-                };
-
-                // Only add to the attraction set if we should
-                if should_add {
-                    bit_set.insert(predecessor.index());
-                    self.queue.push_back(predecessor);
-                }
-            }
-        }
-
-        bit_set
-    }
 }
 
 impl<Ix: IndexType> AttractionComputer<Ix> {
@@ -149,6 +111,40 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         }
 
         attract_set
+    }
+
+    pub fn attractor_set_bit_fixed<T: ParityGraph<Ix>>(
+        &mut self,
+        game: &T,
+        player: Owner,
+        starting_set: impl IntoIterator<Item = VertexId<Ix>>,
+    ) -> fixedbitset::FixedBitSet {
+        self.queue.extend(starting_set);
+        let mut bit_set = fixedbitset::FixedBitSet::with_capacity(game.original_vertex_count());
+        bit_set.extend(self.queue.iter().map(|v| v.index()));
+
+        while let Some(next_item) = self.queue.pop_back() {
+            for predecessor in game.predecessors(next_item) {
+                if bit_set.contains(predecessor.index()) {
+                    continue;
+                }
+
+                let should_add = if game.owner(predecessor) == player {
+                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                    true
+                } else {
+                    game.edges(predecessor).all(|v| bit_set.contains(v.index()))
+                };
+
+                // Only add to the attraction set if we should
+                if should_add {
+                    bit_set.insert(predecessor.index());
+                    self.queue.push_back(predecessor);
+                }
+            }
+        }
+
+        bit_set
     }
 
     /// Calculate the attraction set for the given player.

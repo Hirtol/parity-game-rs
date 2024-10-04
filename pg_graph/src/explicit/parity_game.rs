@@ -16,6 +16,13 @@ pub type VertexId<Ix = u32> = NodeIndex<Ix>;
 
 pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     type Parent: ParityGraph<Ix>;
+    
+    /// Query the size of the original ParityGraph.
+    /// 
+    /// Useful in case one may have a SubGame.
+    fn original_vertex_count(&self) -> usize {
+        self.vertex_count()
+    }
 
     fn vertex_count(&self) -> usize;
 
@@ -330,6 +337,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
 
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a, Ix, Parent>{
     type Parent = Parent;
+
+    fn original_vertex_count(&self) -> usize {
+        self.parent.vertex_count()
+    }
 
     #[inline(always)]
     fn vertex_count(&self) -> usize {

@@ -2,6 +2,7 @@ use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph, VertexId,
 }, Owner};
+use fixedbitset::FixedBitSet;
 
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
@@ -23,8 +24,8 @@ impl<'a> ZielonkaSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game);
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
-        for idx in odd {
-            winners[idx.index()] = Owner::Odd;
+        for idx in odd.ones() {
+            winners[idx] = Owner::Odd;
         }
 
         SolverOutput {
@@ -33,17 +34,17 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>) {
+    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &T) -> (FixedBitSet, FixedBitSet) {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {
-            (Vec::new(), Vec::new())
+            (FixedBitSet::with_capacity(game.original_vertex_count()), FixedBitSet::with_capacity(game.original_vertex_count()))
         } else {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.vertices_index_by_priority(d);
             
-            let attraction_set = self.attract.attractor_set_bit_fixed(game, attraction_owner,self.game.vertex_count(), starting_set);
+            let attraction_set = self.attract.attractor_set_bit_fixed(game, attraction_owner, starting_set);
 
             let sub_game = game.create_subgame_bit(&attraction_set);
 
@@ -54,15 +55,14 @@ impl<'a> ZielonkaSolver<'a> {
                 (&mut odd, &mut even)
             };
 
-            if not_attraction_owner_set.is_empty() {
-                attraction_owner_set.extend(attraction_set.ones().into_iter().map(|v| VertexId::new(v as usize)));
+            if not_attraction_owner_set.is_clear() {
+                attraction_owner_set.union_with(&attraction_set);
                 (even, odd)
             } else {
                 let b_attr = self.attract.attractor_set_bit_fixed(
                     game,
                     attraction_owner.other(),
-                    self.game.vertex_count(),
-                    not_attraction_owner_set.iter().copied(),
+                    not_attraction_owner_set.ones().map(VertexId::new),
                 );
                 let sub_game = game.create_subgame_bit(&b_attr);
 
@@ -72,7 +72,7 @@ impl<'a> ZielonkaSolver<'a> {
                 } else {
                     &mut even
                 };
-                not_attraction_owner_set.extend(b_attr.ones().into_iter().map(|v| VertexId::new(v as usize)));
+                not_attraction_owner_set.union_with(&b_attr);
 
                 (even, odd)
             }
