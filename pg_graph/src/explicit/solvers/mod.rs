@@ -52,6 +52,10 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
+                if attract_set.contains(&predecessor) {
+                    continue;
+                }
+                
                 let should_add = if game.owner(predecessor) == player {
                     // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                     true
@@ -86,6 +90,9 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
+                if attract_set.contains(&predecessor) {
+                    continue;
+                }
                 let predecessor_owner = game.owner(predecessor);
                 let should_add = if is_aligned {
                     if predecessor_owner == player {
@@ -166,6 +173,10 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
+                if attract_set.contains(&predecessor) {
+                    continue;
+                }
+                
                 let predecessor_owner = game.owner(predecessor);
                 let should_add = if is_aligned {
                     if predecessor_owner == player {

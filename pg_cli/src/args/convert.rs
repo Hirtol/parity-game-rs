@@ -128,14 +128,7 @@ impl ConvertCommand {
                 }
 
                 if let Some(path) = self.pg_path {
-                    let game = register_game.to_small_game()?;
-
-                    tracing::debug!(
-                        from_vertex = had_nodes,
-                        to_vertex = game.vertex_count(),
-                        ratio = game.vertex_count() / had_nodes,
-                        "Converted from PG to RG PG"
-                    );
+                    let game = register_game.to_normal_game()?;
 
                     std::fs::write(&path, game.to_pg())?;
 

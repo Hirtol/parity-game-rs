@@ -192,7 +192,7 @@ impl<'a> ReducedRegisterGame<'a> {
             let new_priority = reset_to_priority_2021(r as Rank, register_state[r], next_v.priority, self.controller);
             let new_registers = self
                 .register_tree
-                .next_registers(&register_state, next_v.priority, self.reg_quantity, r)
+                .next_registers(register_state, next_v.priority, self.reg_quantity, r)
                 .expect("Impossible");
 
             let e_r = RegisterVertex {
