@@ -10,6 +10,7 @@ use crate::{
 };
 use ahash::HashSet;
 use ecow::{eco_vec, EcoVec};
+use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::graph::{EdgeReference, IndexType, NodeIndex};
 use std::{cmp::Ordering, collections::VecDeque};
@@ -264,9 +265,15 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         &self,
         exclude: impl IntoIterator<Item = NodeIndex<u32>>,
     ) -> SubGame<u32, Self::Parent> {
+        let mut all_ones_subgame = FixedBitSet::with_capacity_and_blocks(self.vertex_count(), std::iter::repeat(!0));
+        for v in exclude {
+            all_ones_subgame.set(v.index(), false);
+        }
         SubGame {
             parent: self,
-            ignored: HashSet::from_iter(exclude),
+            len: all_ones_subgame.count_ones(..),
+            game_vertices: all_ones_subgame,
+            _phant: Default::default(),
         }
     }
 
@@ -335,7 +342,7 @@ impl<'a, Parent: RegisterParityGraph<u32>> RegisterParityGraph<u32> for SubGame<
     #[inline]
     fn grouped_edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = impl Iterator<Item = NodeIndex<u32>> + '_> + '_ {
         self.parent.grouped_edges(v).flat_map(|r_itr| {
-            let mut itr = r_itr.filter(|rv| !self.ignored.contains(rv)).peekable();
+            let mut itr = r_itr.filter(|rv| self.game_vertices.contains(rv.index())).peekable();
 
             if itr.peek().is_some() {
                 Some(itr)
@@ -352,7 +359,7 @@ impl<'a, Parent: RegisterParityGraph<u32>> RegisterParityGraph<u32> for SubGame<
     ) -> impl Iterator<Item = VertexId<u32>> + '_ {
         self.parent
             .edges_for_root_vertex(register_v, root_vertex)
-            .filter(|rv| !self.ignored.contains(rv))
+            .filter(|rv| self.game_vertices.contains(rv.index()))
     }
 
     #[inline(always)]

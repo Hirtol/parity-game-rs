@@ -43,9 +43,9 @@ impl<'a> ZielonkaSolver<'a> {
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.vertices_index_by_priority(d);
             
-            let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
+            let attraction_set = self.attract.attractor_set_bit_fixed(game, attraction_owner,self.game.vertex_count(), starting_set);
 
-            let sub_game = game.create_subgame(attraction_set.iter().copied());
+            let sub_game = game.create_subgame_bit(&attraction_set);
 
             let (mut even, mut odd) = self.zielonka(&sub_game);
             let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
@@ -55,15 +55,16 @@ impl<'a> ZielonkaSolver<'a> {
             };
 
             if not_attraction_owner_set.is_empty() {
-                attraction_owner_set.extend(attraction_set);
+                attraction_owner_set.extend(attraction_set.ones().into_iter().map(|v| VertexId::new(v as usize)));
                 (even, odd)
             } else {
-                let b_attr = self.attract.attractor_set(
+                let b_attr = self.attract.attractor_set_bit_fixed(
                     game,
                     attraction_owner.other(),
+                    self.game.vertex_count(),
                     not_attraction_owner_set.iter().copied(),
                 );
-                let sub_game = game.create_subgame(b_attr.iter().copied());
+                let sub_game = game.create_subgame_bit(&b_attr);
 
                 let (mut even, mut odd) = self.zielonka(&sub_game);
                 let not_attraction_owner_set = if attraction_owner.is_even() {
@@ -71,7 +72,7 @@ impl<'a> ZielonkaSolver<'a> {
                 } else {
                     &mut even
                 };
-                not_attraction_owner_set.extend(b_attr);
+                not_attraction_owner_set.extend(b_attr.ones().into_iter().map(|v| VertexId::new(v as usize)));
 
                 (even, odd)
             }

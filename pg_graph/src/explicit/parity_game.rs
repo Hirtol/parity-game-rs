@@ -1,11 +1,12 @@
 use crate::{datatypes::Priority, visualize::VisualVertex, Owner, ParityVertexSoa, Vertex, VertexVec};
-use ahash::HashSet;
+use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::{
     adj::IndexType,
     graph::{EdgeReference, NodeIndex},
     prelude::EdgeRef,
 };
+use std::marker::PhantomData;
 use std::{
     collections::HashMap,
     fmt::{Debug, Write},
@@ -29,8 +30,8 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         self.vertices_index().filter(move |&v| self.priority(v) == priority)
     }
 
-    #[inline(always)]
     /// Get the full vertex
+    #[inline(always)]
     fn get_vertex(&self, id: NodeIndex<Ix>) -> Option<Vertex> {
         Some(
             Vertex {
@@ -40,8 +41,8 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         )
     }
 
-    #[inline(always)]
     /// Get the full vertex
+    #[inline(always)]
     fn vertex(&self, id: NodeIndex<Ix>) -> Vertex {
         Vertex {
             priority: self.priority(id),
@@ -52,8 +53,8 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     /// Get the priority for the given vertex
     fn get_priority(&self, id: NodeIndex<Ix>) -> Option<Priority>;
 
-    #[inline(always)]
     /// Get the priority for the given vertex
+    #[inline(always)]
     fn priority(&self, id: NodeIndex<Ix>) -> Priority {
         self.get_priority(id).unwrap()
     }
@@ -76,6 +77,10 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     ///
     /// Note that `exclude` should be sorted!
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
+
+    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
+        todo!()
+    }
 
     /// Return the maximal priority found in the given game.
     #[inline(always)]
@@ -239,9 +244,30 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
     }
 
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
+        let mut all_ones_subgame = FixedBitSet::with_capacity(self.vertex_count());
+        all_ones_subgame.insert_range(..);
+        for v in exclude {
+            all_ones_subgame.set(v.index(), false);
+        }
+        
         SubGame {
             parent: self,
-            ignored: HashSet::from_iter(exclude),
+            len: all_ones_subgame.count_ones(..),
+            game_vertices: all_ones_subgame,
+            _phant: Default::default(),
+        }
+    }
+
+    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
+        // let mut all_ones_subgame = FixedBitSet::with_capacity_and_blocks(self.vertex_count(), std::iter::repeat(!0));
+        let mut all_ones_subgame = FixedBitSet::with_capacity(self.vertex_count());
+        all_ones_subgame.insert_range(..);
+        all_ones_subgame.difference_with(exclude);
+        SubGame {
+            parent: self,
+            len: all_ones_subgame.count_ones(..),
+            game_vertices: all_ones_subgame,
+            _phant: Default::default(),
         }
     }
 
@@ -290,7 +316,10 @@ impl<Ix: IndexType, T: ParityGraph<Ix>> crate::visualize::VisualGraph<Ix> for T 
 
 pub struct SubGame<'a, Ix: IndexType, Parent: ParityGraph<Ix>> {
     pub(crate) parent: &'a Parent,
-    pub(crate) ignored: ahash::HashSet<NodeIndex<Ix>>,
+    pub(crate) game_vertices: fixedbitset::FixedBitSet,
+    pub(crate) _phant: PhantomData<Ix>,
+    pub(crate) len: usize,
+    // pub(crate) ignored: ahash::HashSet<NodeIndex<Ix>>,
 }
 
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
@@ -305,22 +334,29 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     #[inline(always)]
     fn vertex_count(&self) -> usize {
         // More efficient than doing a `.count()` call on `vertices_index()`
-        self.parent.vertex_count() - self.ignored.len()
+        // self.game_vertices.count_ones(..)
+        // self.parent.vertex_count() - self.ignored.len()
+        self.len
     }
 
     fn edge_count(&self) -> usize {
         // TODO: This is not correct, but also doesn't really matter... so eh..
-        self.parent.edge_count() - self.ignored.len()
+        // self.parent.edge_count() - self.ignored.len()
+        self.parent.edge_count() - self.len 
     }
 
     #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.parent.vertices_index().filter(|ix| !self.ignored.contains(ix))
+        // self.parent.vertices_index().filter(|ix| !self.ignored.contains(ix.index()))
+        // let mut out = self.game_vertices.ones().map(VertexId::new).collect_vec();
+        // tracing::warn!(?out, "Hey");
+        self.game_vertices.ones().map(VertexId::new)
+        // out.into_iter()
     }
 
     #[inline(always)]
     fn label(&self, vertex_id: NodeIndex<Ix>) -> Option<&str> {
-        if !self.ignored.contains(&vertex_id) {
+        if self.game_vertices.contains(vertex_id.index()) {
             self.parent.label(vertex_id)
         } else {
             None
@@ -349,33 +385,52 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
 
     #[inline(always)]
     fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.parent.predecessors(id).filter(|idx| !self.ignored.contains(idx))
+        self.parent.predecessors(id).filter(|idx| self.game_vertices.contains(idx.index()))
     }
 
     #[inline(always)]
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
-        let mut new_ignore = self.ignored.clone();
-        new_ignore.extend(exclude);
+        let mut new_game = self.game_vertices.clone();
+        
+        // new_game.extend(exclude.into_iter().map(|v| v.index()));
+        for v in exclude {
+            new_game.set(v.index(), false);
+        }
         SubGame {
             parent: self.parent,
-            ignored: new_ignore,
+            len: new_game.count_ones(..),
+            game_vertices: new_game,
+            _phant: Default::default(),
         }
     }
 
+    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
+        let mut new_game = self.game_vertices.clone();
+        
+        new_game.difference_with(exclude);
+        SubGame {
+            parent: self.parent,
+            len: new_game.count_ones(..),
+            game_vertices: new_game,
+            _phant: Default::default(),
+        }
+    }
+
+
     #[inline(always)]
     fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
-        !self.ignored.contains(&from) && !self.ignored.contains(&to) && self.parent.has_edge(from, to)
+        self.game_vertices.contains(from.index()) && self.game_vertices.contains(to.index()) && self.parent.has_edge(from, to)
     }
 
     #[inline(always)]
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.parent.edges(v).filter(|idx| !self.ignored.contains(idx))
+        self.parent.edges(v).filter(|idx| self.game_vertices.contains(idx.index()))
     }
 
     #[inline(always)]
     fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
         self.parent
             .graph_edges()
-            .filter(|edge| !self.ignored.contains(&edge.source()) && !self.ignored.contains(&edge.target()))
+            .filter(|edge| self.game_vertices.contains(edge.source().index()) && self.game_vertices.contains(edge.target().index()))
     }
 }
