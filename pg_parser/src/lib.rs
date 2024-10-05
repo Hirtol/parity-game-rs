@@ -5,15 +5,18 @@ use winnow::{
     Parser,
 };
 
-pub fn parse_pg<'a>(input: &mut &'a str) -> winnow::PResult<Vec<Vertex<'a>>> {
+pub fn parse_pg<'a: 'b, 'b>(input: &mut &'a str, builder: &mut impl PgBuilder<'b>) -> winnow::PResult<()> {
     let header_cnt = opt(parse_header).parse_next(input)?;
-    if let Some(_) = header_cnt {
+    if let Some(header) = header_cnt {
         let _ = winnow::ascii::line_ending.parse_next(input)?;
+        builder.set_header(header).expect("Builder failure");
     }
 
-    let vertices: Vec<Vertex> = separated(0.., parse_node, winnow::ascii::line_ending).parse_next(input)?;
-
-    Ok(vertices)
+    separated(0.., |inp: &mut &'a str | {
+        let out = parse_node.parse_next(inp)?;
+        builder.add_vertex(out.id, out).expect("Builder failure");
+        Ok(())
+    }, winnow::ascii::line_ending).parse_next(input)
 }
 
 fn parse_header(input: &mut &str) -> winnow::PResult<usize> {
@@ -59,6 +62,12 @@ where
     winnow::combinator::delimited(space0, parser, space0)
 }
 
+pub trait PgBuilder<'a> {
+    fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()>;
+    
+    fn add_vertex(&mut self, id: usize, vertex: Vertex<'a>) -> eyre::Result<()>;
+}
+
 #[derive(Debug)]
 pub struct Vertex<'a> {
     pub id: usize,
@@ -70,9 +79,23 @@ pub struct Vertex<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parse_pg;
+    use crate::{parse_pg, PgBuilder, Vertex};
     use std::{path::PathBuf, time::Instant};
 
+    #[derive(Debug)]
+    struct FauxBuilder<'a>(Vec<Vertex<'a>>);
+    
+    impl<'a> PgBuilder<'a> for FauxBuilder<'a> {
+        fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()> {
+            Ok(())
+        }
+
+        fn add_vertex(&mut self, id: usize, vertex: Vertex<'a>) -> eyre::Result<()> {
+            self.0.push(vertex);
+            Ok(())
+        }
+    }
+    
     #[test]
     pub fn test_simple() {
         let mut input = "parity 4;
@@ -80,23 +103,25 @@ mod tests {
 1 2 1 1,3;
 2 2 1 0, 1;
 3 2 0 2,1,0;";
-        let pg = parse_pg(&mut input).unwrap();
+        let mut builder = FauxBuilder(Vec::new());
+        parse_pg(&mut input, &mut builder).unwrap();
 
-        assert_eq!(pg.len(), 4);
-        assert_eq!(pg[3].outgoing_edges.len(), 3);
+        assert_eq!(builder.0.len(), 4);
+        assert_eq!(builder.0[3].outgoing_edges.len(), 3);
 
-        println!("Parity Game: {:#?}", pg);
+        println!("Parity Game: {:#?}", builder);
     }
 
     #[test]
     pub fn test_with_label() {
         let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
+        let mut builder = FauxBuilder(Vec::new());
+        parse_pg(&mut input.as_str(), &mut builder).unwrap();
 
-        assert_eq!(pg.len(), 9);
-        assert_eq!(pg[8].label, Some("178"));
+        assert_eq!(builder.0.len(), 9);
+        assert_eq!(builder.0[8].label, Some("178"));
 
-        println!("Parity Game: {:#?}", pg);
+        println!("Parity Game: {:#?}", builder);
     }
 
     #[test]
@@ -105,12 +130,13 @@ mod tests {
             let input = std::fs::read_to_string(f.path()).unwrap();
 
             let now = Instant::now();
-            let pg = parse_pg(&mut input.as_str()).unwrap();
+            let mut builder = FauxBuilder(Vec::new());
+            parse_pg(&mut input.as_str(), &mut builder).unwrap();
 
             println!(
                 "Took: `{:?}` to parse parity game of size: `{}` ({:?})",
                 now.elapsed(),
-                pg.len(),
+                builder.0.len(),
                 f.path().file_name().unwrap()
             );
         });

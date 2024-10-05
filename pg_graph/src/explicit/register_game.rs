@@ -4,6 +4,7 @@ use ecow::{eco_vec, EcoVec};
 use eyre::ContextCompat;
 use petgraph::graph::IndexType;
 use petgraph::prelude::EdgeRef;
+use pg_parser::PgBuilder;
 use soa_derive::StructOfArray;
 use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
 
@@ -491,7 +492,8 @@ impl<'a> RegisterGame<'a> {
 
     #[tracing::instrument(name = "Convert to Parity Game", skip(self))]
     pub fn to_normal_game(&self) -> eyre::Result<crate::explicit::ParityGame> {
-        let mut parsed_game = vec![];
+        let mut parity_builder = crate::explicit::ParityGameBuilder::new();
+        parity_builder.set_header(self.vertices.len())?;
 
         for (v_id, v, edges) in self
             .vertices
@@ -499,16 +501,16 @@ impl<'a> RegisterGame<'a> {
             .enumerate()
             .flat_map(|(v_id, v)| self.edges.get(&VertexId::new(v_id)).map(|edg| (v_id, v, edg)))
         {
-            parsed_game.push(pg_parser::Vertex {
+            parity_builder.add_vertex(v_id, pg_parser::Vertex {
                 id: v_id,
                 priority: v.priority as usize,
                 owner: v.owner as u8,
                 outgoing_edges: edges.iter().copied().map(VertexId::index).collect(),
                 label: self.original_game.label(VertexId::from(v.original_graph_id)),
-            });
+            })?;
         }
 
-        crate::explicit::ParityGame::new(parsed_game)
+        Ok(parity_builder.build())
     }
 }
 

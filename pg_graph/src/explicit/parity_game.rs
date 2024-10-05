@@ -6,6 +6,7 @@ use petgraph::{
     graph::{EdgeReference, NodeIndex},
     prelude::EdgeRef,
 };
+use pg_parser::PgBuilder;
 use std::marker::PhantomData;
 use std::{
     collections::HashMap,
@@ -135,6 +136,85 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         }
 
         output
+    }
+}
+
+#[derive(Default)]
+pub struct ParityGameBuilder<Ix: IndexType = u32, VertexSoa = VertexVec> {
+    vertices: VertexSoa,
+    edge_indexes: Vec<usize>,
+    edges: Vec<VertexId<Ix>>,
+    inverted_edges: Vec<Vec<VertexId<Ix>>>,
+    labels: Vec<Option<String>>,
+}
+
+impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn build(self) -> ParityGame<Ix, Vert> {
+        // Construct the petgraph first
+        let mut graph = petgraph::Graph::with_capacity(self.inverted_edges.len(), self.edges.len());
+        for _ in 0..self.edge_indexes.len() {
+            graph.add_node(());
+        }
+        for (source_vertex, window) in self.edge_indexes.windows(2).enumerate() {
+            let source = VertexId::new(source_vertex);
+            for &edge in &self.edges[window[0]..window[1]] {
+                graph.add_edge(source, edge, ());
+            }
+        }
+        // The last edge can never be in the window
+        if let Some(&last) = self.edge_indexes.last() { 
+            let source = VertexId::new(self.edge_indexes.len() - 1);
+            for &edge in &self.edges[last..] {
+                graph.add_edge(source, edge, ());
+            }
+        }
+
+        ParityGame {
+            graph,
+            vertices: self.vertices,
+            inverted_vertices: self.inverted_edges,
+            labels: self.labels,
+        }
+    }
+}
+
+impl<'a, Ix: IndexType> PgBuilder<'a> for ParityGameBuilder<Ix> {
+    fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()> {
+        self.labels = Vec::with_capacity(vertex_count);
+        self.inverted_edges = vec![Vec::new(); vertex_count];
+        self.edges = Vec::with_capacity(vertex_count);
+        self.edge_indexes = Vec::with_capacity(vertex_count);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn add_vertex(&mut self, id: usize, vertex: pg_parser::Vertex<'a>) -> eyre::Result<()> {
+        if self.vertices.len() != id {
+            eyre::bail!("Non-contiguous vertex IDs!")
+        }
+
+        self.vertices.push(Vertex {
+            priority: vertex.priority as Priority,
+            owner: vertex.owner.try_into()?,
+        });
+        self.labels.push(vertex.label.map(|v| v.into()));
+        
+        // Add edges
+        self.edge_indexes.push(self.edges.len());
+        for edge in vertex.outgoing_edges {
+            // The header is not guaranteed to be correct
+            while self.inverted_edges.len() <= edge {
+                self.inverted_edges.push(Vec::new());
+            }
+            self.edges.push(VertexId::new(edge));
+            self.inverted_edges[edge].push(VertexId::new(id));
+        }
+
+        Ok(())
     }
 }
 

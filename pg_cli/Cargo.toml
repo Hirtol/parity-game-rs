@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 [features]
 default = []
 profiling-tracy = ["profiling/profile-with-tracy", "tracy-client"]
+dhat-heap = []
 
 [dependencies]
 eyre.workspace = true
@@ -23,6 +24,8 @@ clap = { version = "4.5", features = ["derive", "env"] }
 indicatif = "0.17.8"
 tracing-indicatif = "0.3.6"
 peak_alloc = "0.2.0"
+dhat = "0.3.3"
+
 
 csv = "1.3.0"
 serde = { version = "1", features = ["derive"] }
