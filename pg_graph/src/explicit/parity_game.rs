@@ -413,6 +413,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
     pub fn parent(&self) -> &'a Parent {
         self.parent
     }
+    
+    pub fn vertex_in_subgame(&self, vertex_id: VertexId<Ix>) -> bool {
+        self.game_vertices.contains(vertex_id.index())
+    }
 }
 
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a, Ix, Parent>{
