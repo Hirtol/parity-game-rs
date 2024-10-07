@@ -15,12 +15,18 @@ pub mod tests {
     use pg_parser::parse_pg;
 
     use crate::explicit::solvers::SolverOutput;
-    use crate::explicit::ParityGame;
+    use crate::explicit::{ParityGame, ParityGameBuilder};
 
     pub fn load_example(example: impl AsRef<str>) -> ParityGame {
         let input = std::fs::read_to_string(example_dir().join(example.as_ref())).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        ParityGame::new(pg).unwrap()
+        parse_pg_from_str(input)
+    }
+    
+    pub fn parse_pg_from_str(game: impl AsRef<str>) -> ParityGame {
+        let mut builder = ParityGameBuilder::new();
+        parse_pg(&mut game.as_ref(), &mut builder).unwrap();
+        
+        builder.build()
     }
     
     /// Load the given example and calculate an authoritative solution (using the explicit Zielonka solver)
@@ -54,18 +60,16 @@ pub mod tests {
             .join("game_examples")
     }
 
-    pub fn trivial_pg() -> eyre::Result<ParityGame> {
-        let mut pg = r#"parity 1;
+    pub fn trivial_pg() -> ParityGame {
+        let pg = r#"parity 1;
 0 1 1 0 "0";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        parse_pg_from_str(pg)
     }
 
-    pub fn trivial_pg_2() -> eyre::Result<ParityGame> {
-        let mut pg = r#"parity 2;
+    pub fn trivial_pg_2() -> ParityGame {
+        let pg = r#"parity 2;
 0 0 0 0,1 "0";
 1 1 1 1,0 "1";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        parse_pg_from_str(pg)
     }
 }

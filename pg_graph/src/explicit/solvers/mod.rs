@@ -288,7 +288,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        explicit::{ParityGame, VertexId},
+        explicit::VertexId,
         Owner,
     };
     use std::collections::HashSet;
@@ -299,8 +299,7 @@ mod tests {
 0 1 1 0,1 "0";
 1 1 0 2 "1";
 2 2 0 2 "2";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        let pg = ParityGame::new(pg)?;
+        let pg = crate::tests::parse_pg_from_str(pg);
 
         let mut attract = super::AttractionComputer::new();
         let set = attract.attractor_set(&pg, Owner::Even, [VertexId::new(2)]);

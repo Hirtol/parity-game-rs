@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     pub fn test_trivial_2() -> eyre::Result<()> {
-        let game = crate::tests::trivial_pg_2()?;
+        let game = crate::tests::trivial_pg_2();
         let srg: SymbolicRegisterGame<BDD> = SymbolicRegisterGame::from_symbolic(&game, 0, Owner::Even).unwrap();
 
         let spg = srg.to_symbolic_parity_game()?;
@@ -137,7 +137,6 @@ mod tests {
         // 0 0 0 0,1 "0";
         // 1 0 1 2 "1";
         // 2 1 1 2 "2";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        Ok(crate::tests::parse_pg_from_str(pg))
     }
 }

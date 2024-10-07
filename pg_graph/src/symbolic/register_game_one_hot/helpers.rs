@@ -4,19 +4,19 @@ use ahash::HashMap;
 use ecow::EcoVec;
 use oxidd_core::{
     function::{BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst},
-    Manager,
-    ManagerRef, util::{OutOfMemory, Subst},
+    util::{OutOfMemory, Subst},
+    Manager, ManagerRef,
 };
 
+use crate::symbolic::helpers::SymbolicEncoder;
 use crate::{
-    Owner,
-    Priority,
-    symbolic, symbolic::{
+    symbolic,
+    symbolic::{
         oxidd_extensions::{BooleanFunctionExtensions, GeneralBooleanFunction},
         register_game_one_hot::OneHotRegisterGame,
     },
+    Owner, Priority,
 };
-use crate::symbolic::helpers::SymbolicEncoder;
 
 impl<F: GeneralBooleanFunction> OneHotRegisterGame<F> {
     pub fn gc(&self) -> usize {
@@ -219,9 +219,9 @@ pub mod further_investigation {
     use oxidd_core::function::{BooleanFunction, BooleanFunctionQuant};
 
     use crate::{
-        Owner,
         symbolic,
-        symbolic::{BDD, oxidd_extensions::BooleanFunctionExtensions, register_game_one_hot::OneHotRegisterGame},
+        symbolic::{oxidd_extensions::BooleanFunctionExtensions, register_game_one_hot::OneHotRegisterGame, BDD},
+        Owner,
     };
 
     impl OneHotRegisterGame<BDD> {
@@ -367,9 +367,9 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        explicit::{ParityGame, register_game::Rank},
+        explicit::{register_game::Rank, ParityGame},
+        symbolic::{register_game_one_hot::OneHotRegisterGame, BDD},
         Owner,
-        symbolic::{BDD, register_game_one_hot::OneHotRegisterGame},
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {
@@ -377,8 +377,7 @@ mod tests {
 0 1 1 0,1 "0";
 1 1 0 2 "1";
 2 2 0 2 "2";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        Ok(crate::tests::parse_pg_from_str(pg))
     }
 
     fn other_pg() -> eyre::Result<ParityGame> {
@@ -387,8 +386,7 @@ mod tests {
 1 1 0 2 "1";
 2 2 0 2 "2";
 3 1 1 2 "3";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        Ok(crate::tests::parse_pg_from_str(pg))
     }
 
     macro_rules! id_vec {

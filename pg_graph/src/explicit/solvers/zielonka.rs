@@ -84,11 +84,9 @@ impl<'a> ZielonkaSolver<'a> {
 pub mod test {
     use std::time::Instant;
 
-    use pg_parser::parse_pg;
-
     use crate::{
-        explicit::{solvers::zielonka::ZielonkaSolver, ParityGame},
-        tests::{example_dir, load_example},
+        explicit::solvers::zielonka::ZielonkaSolver,
+        tests::load_example,
         Owner,
     };
 
@@ -106,9 +104,7 @@ pub mod test {
 
     #[test]
     pub fn test_solve_action_converter() {
-        let input = std::fs::read_to_string(example_dir().join("ActionConverter.tlsf.ehoa.pg")).unwrap();
-        let pg = parse_pg(&mut input.as_str()).unwrap();
-        let game = ParityGame::new(pg).unwrap();
+        let game = load_example("ActionConverter.tlsf.ehoa.pg");
         let mut solver = ZielonkaSolver::new(&game);
 
         let now = Instant::now();

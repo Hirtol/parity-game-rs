@@ -310,22 +310,20 @@ mod tests {
     };
 
     fn small_pg() -> eyre::Result<ParityGame> {
-        let mut pg = r#"parity 3;
+        let pg = r#"parity 3;
 0 1 1 0,1 "0";
 1 1 0 2 "1";
 2 2 0 2 "2";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        Ok(crate::tests::parse_pg_from_str(pg))
     }
 
     fn other_pg() -> eyre::Result<ParityGame> {
-        let mut pg = r#"parity 4;
+        let pg = r#"parity 4;
 0 1 1 0,1 "0";
 1 1 0 2 "1";
 2 2 0 2 "2";
 3 1 1 2 "3";"#;
-        let pg = pg_parser::parse_pg(&mut pg).unwrap();
-        ParityGame::new(pg)
+        Ok(crate::tests::parse_pg_from_str(pg))
     }
 
     macro_rules! id_vec {
