@@ -1,3 +1,4 @@
+use crate::explicit::{BitsetExtensions, VertexSet};
 use crate::{
     explicit::{
         reduced_register_game::RegisterParityGraph,
@@ -87,41 +88,9 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         game: &T,
         player: Owner,
         starting_set: impl IntoIterator<Item = VertexId<Ix>>,
-    ) -> ahash::HashSet<VertexId<Ix>> {
-        let mut attract_set = ahash::HashSet::from_iter(starting_set);
-        self.queue.extend(&attract_set);
-
-        while let Some(next_item) = self.queue.pop_back() {
-            for predecessor in game.predecessors(next_item) {
-                if attract_set.contains(&predecessor) {
-                    continue;
-                }
-                
-                let should_add = if game.owner(predecessor) == player {
-                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
-                    true
-                } else {
-                    game.edges(predecessor).all(|v| attract_set.contains(&v))
-                };
-
-                // Only add to the attraction set if we should
-                if should_add && attract_set.insert(predecessor) {
-                    self.queue.push_back(predecessor);
-                }
-            }
-        }
-
-        attract_set
-    }
-
-    pub fn attractor_set_bit_fixed<T: ParityGraph<Ix>>(
-        &mut self,
-        game: &T,
-        player: Owner,
-        starting_set: impl IntoIterator<Item = VertexId<Ix>>,
-    ) -> fixedbitset::FixedBitSet {
+    ) -> VertexSet {
         self.queue.extend(starting_set);
-        let mut bit_set = fixedbitset::FixedBitSet::with_capacity(game.original_vertex_count());
+        let mut bit_set = VertexSet::empty_game(game);
         bit_set.extend(self.queue.iter().map(|v| v.index()));
 
         while let Some(next_item) = self.queue.pop_back() {
@@ -158,14 +127,15 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         reg_game: &RegisterGame,
         player: Owner,
         starting_set: impl IntoIterator<Item = VertexId<Ix>>,
-    ) -> ahash::HashSet<VertexId<Ix>> {
-        let mut attract_set = ahash::HashSet::from_iter(starting_set);
+    ) -> VertexSet {
+        self.queue.extend(starting_set);
+        let mut attract_set = VertexSet::empty_game(game);
+        attract_set.extend(self.queue.iter().map(|v| v.index()));
         let is_aligned = player == reg_game.controller;
-        self.queue.extend(&attract_set);
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
-                if attract_set.contains(&predecessor) {
+                if attract_set.contains(predecessor.index()) {
                     continue;
                 }
                 let predecessor_owner = game.owner(predecessor);
@@ -179,7 +149,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         let mut iter = game.edges(predecessor);
                         let v = iter.next().expect("No edges for vertex");
                         let mut current_original_vertex_id = game.underlying_vertex_id(v);
-                        let mut current_group_has_edge = attract_set.contains(&v);
+                        let mut current_group_has_edge = attract_set.contains(v.index());
                         let mut output = true;
 
                         for v in iter {
@@ -191,8 +161,8 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                                     break;
                                 }
                                 current_original_vertex_id = node_original_v;
-                                current_group_has_edge = attract_set.contains(&v);
-                            } else if !current_group_has_edge && attract_set.contains(&v) {
+                                current_group_has_edge = attract_set.contains(v.index());
+                            } else if !current_group_has_edge && attract_set.contains(v.index()) {
                                 current_group_has_edge = true;
                             }
                         }
@@ -215,14 +185,15 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         let next_item_v = game.underlying_vertex_id(next_item);
                         game.edges(predecessor)
                             .filter(|&v| game.underlying_vertex_id(v) == next_item_v)
-                            .all(|v| attract_set.contains(&v))
+                            .all(|v| attract_set.contains(v.index()))
                     } else {
-                        game.edges(predecessor).all(|v| attract_set.contains(&v))
+                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                     }
                 };
 
                 // Only add to the attraction set if we should
-                if should_add && attract_set.insert(predecessor) {
+                if should_add {
+                    attract_set.insert(predecessor.index());
                     self.queue.push_back(predecessor);
                 }
             }
@@ -288,6 +259,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
 #[cfg(test)]
 mod tests {
+    use crate::explicit::BitsetExtensions;
     use crate::{
         explicit::VertexId,
         Owner,
@@ -296,7 +268,7 @@ mod tests {
 
     #[test]
     pub fn test_attract_set_computation() -> eyre::Result<()> {
-        let mut pg = r#"parity 3;
+        let pg = r#"parity 3;
 0 1 1 0,1 "0";
 1 1 0 2 "1";
 2 2 0 2 "2";"#;
@@ -305,7 +277,7 @@ mod tests {
         let mut attract = super::AttractionComputer::new();
         let set = attract.attractor_set(&pg, Owner::Even, [VertexId::new(2)]);
 
-        assert_eq!(set, HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));
+        assert_eq!(set.ones_vertices().collect::<HashSet<_>>(), HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));
 
         Ok(())
     }

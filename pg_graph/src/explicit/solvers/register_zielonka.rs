@@ -1,9 +1,10 @@
 use crate::explicit::reduced_register_game::RegisterParityGraph;
 use crate::explicit::register_game::{GameRegisterVertexVec, RegisterGame};
+use crate::explicit::{BitsetExtensions, VertexSet};
 use crate::{
     explicit::{
         solvers::{AttractionComputer, SolverOutput},
-        ParityGame, ParityGraph, VertexId,
+        ParityGame, ParityGraph,
     },
     Owner,
 };
@@ -30,8 +31,8 @@ impl<'a> ZielonkaSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.zielonka(self.game);
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
-        for idx in odd {
-            winners[idx.index()] = Owner::Odd;
+        for idx in odd.ones() {
+            winners[idx] = Owner::Odd;
         }
 
         SolverOutput {
@@ -40,12 +41,12 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka<T: RegisterParityGraph<u32>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>)
+    fn zielonka<T: RegisterParityGraph<u32>>(&mut self, game: &T) -> (VertexSet, VertexSet)
         where T::Parent: RegisterParityGraph<u32> {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {
-            (Vec::new(), Vec::new())
+            (VertexSet::empty_game(game), VertexSet::empty_game(game))
         } else {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
@@ -53,7 +54,7 @@ impl<'a> ZielonkaSolver<'a> {
 
             let attraction_set = self.attract.attractor_set_reg_game(game, self.rg, attraction_owner, starting_set);
 
-            let sub_game = game.create_subgame(attraction_set.iter().copied());
+            let sub_game = game.create_subgame_bit(&attraction_set);
 
             let (mut even, mut odd) = self.zielonka(&sub_game);
             let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
@@ -62,17 +63,17 @@ impl<'a> ZielonkaSolver<'a> {
                 (&mut odd, &mut even)
             };
 
-            if not_attraction_owner_set.is_empty() {
-                attraction_owner_set.extend(attraction_set);
+            if not_attraction_owner_set.is_clear() {
+                attraction_owner_set.union_with(&attraction_set);
                 (even, odd)
             } else {
                 let b_attr = self.attract.attractor_set_reg_game(
                     game,
                     self.rg,
                     attraction_owner.other(),
-                    not_attraction_owner_set.iter().copied(),
+                    not_attraction_owner_set.ones_vertices(),
                 );
-                let sub_game = game.create_subgame(b_attr.iter().copied());
+                let sub_game = game.create_subgame_bit(&b_attr);
 
                 let (mut even, mut odd) = self.zielonka(&sub_game);
                 let not_attraction_owner_set = if attraction_owner.is_even() {
@@ -80,7 +81,7 @@ impl<'a> ZielonkaSolver<'a> {
                 } else {
                     &mut even
                 };
-                not_attraction_owner_set.extend(b_attr);
+                not_attraction_owner_set.union_with(&b_attr);
 
                 (even, odd)
             }

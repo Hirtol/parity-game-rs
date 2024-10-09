@@ -296,10 +296,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use ahash::HashSet;
     use itertools::Itertools;
     use oxidd::bdd::BDDFunction;
     use oxidd_core::{function::BooleanFunction, util::OptBool};
 
+    use crate::explicit::BitsetExtensions;
     use crate::{
         explicit::{solvers::AttractionComputer, ParityGame, ParityGraph},
         symbolic::{oxidd_extensions::BddExtensions, parity_game::SymbolicParityGame, BDD},
@@ -404,7 +406,7 @@ mod tests {
                 .vertices_index_by_priority(s_tue.pg.priority_max()),
         );
 
-        assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
+        assert_eq!(underlying_attr_set.ones_vertices().collect::<HashSet<_>>(), attr_set_vertices.into_iter().collect());
 
         Ok(())
     }
@@ -427,7 +429,7 @@ mod tests {
             s.original.vertices_index_by_priority(s.pg.priority_max()),
         );
 
-        assert_eq!(underlying_attr_set, attr_set_vertices.into_iter().collect());
+        assert_eq!(underlying_attr_set.ones_vertices().collect::<HashSet<_>>(), attr_set_vertices.into_iter().collect());
         Ok(())
     }
 

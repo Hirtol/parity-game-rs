@@ -1,8 +1,8 @@
+use crate::explicit::{BitsetExtensions, VertexSet};
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph, VertexId,
 }, Owner};
-use fixedbitset::FixedBitSet;
 
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
@@ -34,17 +34,17 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &T) -> (FixedBitSet, FixedBitSet) {
+    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &T) -> (VertexSet, VertexSet) {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {
-            (FixedBitSet::with_capacity(game.original_vertex_count()), FixedBitSet::with_capacity(game.original_vertex_count()))
+            (VertexSet::empty_game(game), VertexSet::empty_game(game))
         } else {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
             let starting_set = game.vertices_index_by_priority(d);
             
-            let attraction_set = self.attract.attractor_set_bit_fixed(game, attraction_owner, starting_set);
+            let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
 
             let sub_game = game.create_subgame_bit(&attraction_set);
 
@@ -59,7 +59,7 @@ impl<'a> ZielonkaSolver<'a> {
                 attraction_owner_set.union_with(&attraction_set);
                 (even, odd)
             } else {
-                let b_attr = self.attract.attractor_set_bit_fixed(
+                let b_attr = self.attract.attractor_set(
                     game,
                     attraction_owner.other(),
                     not_attraction_owner_set.ones().map(VertexId::new),

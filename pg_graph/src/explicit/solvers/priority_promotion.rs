@@ -94,7 +94,7 @@ impl<'a> PPSolver<'a> {
                 .filter(|v| region[v.index()] == region_priority)
                 .collect_vec();
 
-            let attraction_set = self.attract.attractor_set_bit_fixed(&partial_subgame, region_owner, starting_set.iter().copied());
+            let attraction_set = self.attract.attractor_set(&partial_subgame, region_owner, starting_set.iter().copied());
 
             // Find all vertices where alpha-bar can 'escape' the quasi-dominion
             let base_escape_targets = attraction_set.ones_vertices()
@@ -158,7 +158,7 @@ impl<'a> PPSolver<'a> {
                 // There were no escape vertices, thus the quasi-dominion is alpha-closed, and therefore an actual dominion
                 let full_dominion =
                     self.attract
-                        .attractor_set_bit_fixed(current_game, region_owner, attraction_set.ones_vertices());
+                        .attractor_set(current_game, region_owner, attraction_set.ones_vertices());
 
                 tracing::trace!(priority=region_priority, size=full_dominion.count_ones(..), "Found dominion");
 
