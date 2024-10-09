@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use crate::PEAK_ALLOC;
 use pg_graph::explicit::reduced_register_game::ReducedRegisterGame;
 use pg_graph::{
     explicit::{register_game::RegisterGame, ParityGame, ParityGraph},
@@ -115,6 +114,8 @@ pub enum ExplicitSolvers {
     Spm,
     /// Use the recursive Zielonka algorithm
     Zielonka,
+    /// Use the Priority Promotion algorithm
+    PP
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -163,6 +164,13 @@ impl SolveCommand {
                             tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                             out.winners
                         }
+                        ExplicitSolvers::PP => {
+                            let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&parity_game);
+
+                            let out = timed_solve!(solver.run());
+                            tracing::info!(n = solver.promotions, "Solved with promotions");
+                            out.winners
+                        }
                     }
                     Some(k) => {
                         let k = k as u8;
@@ -191,6 +199,29 @@ impl SolveCommand {
 
                                 let mut solver =
                                     pg_graph::explicit::solvers::small_progress::SmallProgressSolver::new(&rg_pg);
+
+                                rg.project_winners_original(&timed_solve!(solver.run()).winners)
+                            },
+                            ExplicitSolvers::PP => {
+                                // PP can't handle the reduced game properly (as it needs to handle the controller vertices)
+                                // So we construct the full game instead.
+                                let rg = timed_solve!(
+                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
+                                    "Constructed Register Game"
+                                );
+                                let rg_pg = rg.to_normal_game()?;
+
+                                tracing::debug!(
+                                    from_vertex = rg.original_game.vertex_count(),
+                                    to_vertex = rg_pg.vertex_count(),
+                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                                    from_edges = rg.original_game.edge_count(),
+                                    to_edges = rg_pg.edge_count(),
+                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                                    "Converted from parity game to register game"
+                                );
+
+                                let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&rg_pg);
 
                                 rg.project_winners_original(&timed_solve!(solver.run()).winners)
                             }
@@ -404,7 +435,8 @@ impl SolveCommand {
                                 ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
                                 "Converted from parity game to symbolic register game"
                             );
-        tracing::debug!("Current memory usage: {} MB", PEAK_ALLOC.current_usage_as_mb());
+        #[cfg(not(feature = "dhat-heap"))]
+        tracing::debug!("Current memory usage: {} MB", crate::PEAK_ALLOC.current_usage_as_mb());
         let (w_even, w_odd) = match solver {
             SymbolicSolvers::Zielonka => {
                 let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);

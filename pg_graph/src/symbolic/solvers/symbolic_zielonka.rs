@@ -1,14 +1,14 @@
 use oxidd_core::util::OptBool;
 use oxidd_core::WorkerManager;
 
-use crate::{
-    explicit::solvers::SolverOutput,
-    Owner,
-    symbolic,
-    symbolic::parity_game::SymbolicParityGame,
-};
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::symbolic::sat::TruthAssignmentsIterator;
+use crate::{
+    explicit::solvers::SolverOutput,
+    symbolic,
+    symbolic::parity_game::SymbolicParityGame,
+    Owner,
+};
 
 pub struct SymbolicZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,
@@ -94,9 +94,8 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
 
 #[cfg(test)]
 pub mod test {
-    use crate::symbolic::parity_game::SymbolicParityGame;
-
     use super::SymbolicZielonkaSolver;
+    use crate::symbolic::parity_game::SymbolicParityGame;
 
     #[test]
     pub fn test_solve_tue_example() {
