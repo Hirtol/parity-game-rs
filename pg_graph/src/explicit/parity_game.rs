@@ -406,7 +406,6 @@ pub struct SubGame<'a, Ix: IndexType, Parent: ParityGraph<Ix>> {
     pub(crate) game_vertices: fixedbitset::FixedBitSet,
     pub(crate) _phant: PhantomData<Ix>,
     pub(crate) len: usize,
-    // pub(crate) ignored: ahash::HashSet<NodeIndex<Ix>>,
 }
 
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
@@ -416,6 +415,12 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
     
     pub fn vertex_in_subgame(&self, vertex_id: VertexId<Ix>) -> bool {
         self.game_vertices.contains(vertex_id.index())
+    }
+    
+    /// Similar to [Self::create_subgame()], but `self` is not borrowed for the new subgame, and instead modified in place.
+    pub fn shrink_subgame(&mut self, exclude: &FixedBitSet) {
+        self.game_vertices.difference_with(exclude);
+        self.len = self.game_vertices.count_ones(..);
     }
 }
 
@@ -484,7 +489,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     }
 
     #[inline(always)]
-    fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
+    fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<'a, Ix, Self::Parent> {
         let mut new_game = self.game_vertices.clone();
         
         // new_game.extend(exclude.into_iter().map(|v| v.index()));
@@ -499,7 +504,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         }
     }
 
-    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
+    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<'a, Ix, Self::Parent> {
         let mut new_game = self.game_vertices.clone();
         
         new_game.difference_with(exclude);
