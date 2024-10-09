@@ -331,30 +331,11 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
     }
 
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {
-        let mut all_ones_subgame = FixedBitSet::with_capacity(self.vertex_count());
-        all_ones_subgame.insert_range(..);
-        for v in exclude {
-            all_ones_subgame.set(v.index(), false);
-        }
-        
-        SubGame {
-            parent: self,
-            len: all_ones_subgame.count_ones(..),
-            game_vertices: all_ones_subgame,
-            _phant: Default::default(),
-        }
+        create_subgame(self, exclude)
     }
 
     fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
-        let mut all_ones_subgame = FixedBitSet::with_capacity(self.vertex_count());
-        all_ones_subgame.insert_range(..);
-        all_ones_subgame.difference_with(exclude);
-        SubGame {
-            parent: self,
-            len: all_ones_subgame.count_ones(..),
-            game_vertices: all_ones_subgame,
-            _phant: Default::default(),
-        }
+        create_subgame_bit(self, exclude)
     }
 
     #[inline(always)]
@@ -490,11 +471,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     #[inline(always)]
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<'a, Ix, Self::Parent> {
         let mut new_game = self.game_vertices.clone();
-        
-        // new_game.extend(exclude.into_iter().map(|v| v.index()));
         for v in exclude {
             new_game.set(v.index(), false);
         }
+        
         SubGame {
             parent: self.parent,
             len: new_game.count_ones(..),
@@ -531,5 +511,38 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         self.parent
             .graph_edges()
             .filter(|edge| self.game_vertices.contains(edge.source().index()) && self.game_vertices.contains(edge.target().index()))
+    }
+}
+
+
+/// Create a generic subgame from the given `parent`.
+#[inline]
+pub fn create_subgame<Ix: IndexType, PG: ParityGraph<Ix>>(parent: &PG, exclude: impl IntoIterator<Item=VertexId<Ix>>) -> SubGame<Ix, PG> {
+    let mut all_ones_subgame = FixedBitSet::with_capacity(parent.original_vertex_count());
+    all_ones_subgame.insert_range(..);
+    for v in exclude {
+        all_ones_subgame.set(v.index(), false);
+    }
+
+    SubGame {
+        parent,
+        len: all_ones_subgame.count_ones(..),
+        game_vertices: all_ones_subgame,
+        _phant: Default::default(),
+    }
+}
+
+/// Create a generic subgame from the given `parent` and exclusion bitset.
+#[inline]
+pub fn create_subgame_bit<'a, Ix: IndexType, PG: ParityGraph<Ix>>(parent: &'a PG, exclude: &FixedBitSet) -> SubGame<'a, Ix, PG> {
+    let mut all_ones_subgame = FixedBitSet::with_capacity(parent.vertex_count());
+    all_ones_subgame.insert_range(..);
+    all_ones_subgame.difference_with(exclude);
+    
+    SubGame {
+        parent,
+        len: all_ones_subgame.count_ones(..),
+        game_vertices: all_ones_subgame,
+        _phant: Default::default(),
     }
 }

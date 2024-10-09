@@ -241,10 +241,6 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         let original_v_priority = self.original_game.priority(original_graph_id);
         self.original_game.predecessors(original_graph_id).flat_map(move |v| {
             let register_game_vs = self.original_to_reg_v.get(&v).unwrap();
-            // let old_method = register_game_vs
-            //     .iter()
-            //     .filter(move |reg_v| self.edges(**reg_v).any(|reg_v_edge| reg_v_edge == id))
-            //     .copied().collect_vec();
             register_game_vs
                 .iter()
                 .filter(move |v| {
@@ -265,17 +261,13 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         &self,
         exclude: impl IntoIterator<Item = NodeIndex<u32>>,
     ) -> SubGame<u32, Self::Parent> {
-        let mut all_ones_subgame = FixedBitSet::with_capacity_and_blocks(self.vertex_count(), std::iter::repeat(!0));
-        for v in exclude {
-            all_ones_subgame.set(v.index(), false);
-        }
-        SubGame {
-            parent: self,
-            len: all_ones_subgame.count_ones(..),
-            game_vertices: all_ones_subgame,
-            _phant: Default::default(),
-        }
+        parity_game::create_subgame(self, exclude)
     }
+
+    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<u32, Self::Parent> {
+        parity_game::create_subgame_bit(self, exclude)
+    }
+
 
     fn priority_max(&self) -> Priority {
         self.vertices.priority.iter().max().copied().unwrap_or_default()
@@ -487,5 +479,6 @@ pub mod reg_v {
     }
 }
 
+use crate::explicit::parity_game;
 use crate::explicit::register_game::GameRegisterVertexVec;
 pub use reg_v::RegisterVertex;
