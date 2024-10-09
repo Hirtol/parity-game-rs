@@ -1,8 +1,10 @@
-use crate::explicit::SubGame;
-use crate::{explicit::{
-    solvers::{AttractionComputer, SolverOutput},
-    BitsetExtensions, ParityGame, ParityGraph, VertexId,
-}, Owner, ParityVertexSoa, Priority};
+use crate::{
+    explicit::{
+        solvers::{AttractionComputer, SolverOutput},
+        BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId,
+    },
+    Owner, ParityVertexSoa, Priority,
+};
 use ahash::HashMapExt;
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
@@ -174,11 +176,15 @@ impl<'a> PPSolver<'a> {
             let d = current_game.priority_max();
             region = self.game.vertices.priority.clone();
 
-            let (w_even, w_odd) = self.search_dominion(&current_game, &current_game, &mut region, d);
+            let (w_even, w_odd) = self.search_dominion(&current_game, &mut region, d);
             winning_even.union_with(&w_even);
             winning_odd.union_with(&w_odd);
 
-            tracing::debug!("Found dominion for `d` ({d}) - {} - {}", w_even.count_ones(..), current_game.vertex_count());
+            tracing::debug!(
+                "Found dominion for `d` ({d}) - {} - {}",
+                w_even.count_ones(..),
+                current_game.vertex_count()
+            );
 
             current_game.shrink_subgame(&w_even);
             current_game.shrink_subgame(&w_odd);
@@ -194,111 +200,139 @@ impl<'a> PPSolver<'a> {
     fn search_dominion(
         &mut self,
         current_game: &impl ParityGraph<u32>,
-        partial_subgame: &SubGame<u32, impl ParityGraph<u32>>,
         region: &mut [Priority],
-        region_priority: Priority,
+        mut region_priority: Priority,
     ) -> (FixedBitSet, FixedBitSet) {
-        let region_owner = Owner::from_priority(region_priority);
-        let starting_set = current_game
-            .vertices_index()
-            .filter(|v| region[v.index()] == region_priority).collect_vec();
+        let mut partial_subgame = current_game.create_subgame([]);
 
-        let attraction_set = self
-            .attract
-            .attractor_set_bit_fixed(partial_subgame, region_owner, starting_set.iter().copied());
+        loop {
+            let region_owner = Owner::from_priority(region_priority);
+            let starting_set = current_game
+                .vertices_index()
+                .filter(|v| region[v.index()] == region_priority)
+                .collect_vec();
 
-        // Find all vertices where alpha-bar can 'escape' the quasi-dominion
-        let base_escape_targets = attraction_set.ones_vertices()
-            .filter(|v| current_game.owner(*v) != region_owner)
-            .flat_map(|v| {
-                current_game
-                    .edges(v)
-                    // .filter(|to| region[to.index()] < region_priority)
-                    .filter(|succ| !attraction_set.contains(succ.index()))
-        }).collect_vec();
-        let base_open_vertices = attraction_set.ones_vertices()
-            .filter(|v| current_game.owner(*v) == region_owner)
-            .filter(|v| {
-                current_game
-                    .edges(*v)
-                    .all(|succ| !attraction_set.contains(succ.index()))
-            }).collect_vec();
+            let attraction_set =
+                self.attract
+                    .attractor_set_bit_fixed(&partial_subgame, region_owner, starting_set.iter().copied());
 
-        // Check if it's a dominion, if there are no escape vertices the quasi-dominion is alpha-closed, thus it is an actual dominion
-        // base_escape_targets.iter().any(|v| partial_subgame.vertex_in_subgame(*v))
-        if base_escape_targets.is_empty() && base_open_vertices.is_empty() {
-            tracing::debug!(
-                ?starting_set,
-                attraction=?attraction_set.ones().collect_vec(),
-                ?base_escape_targets,
-                ?base_open_vertices,
-                "Found dominion"
-            );
-            let full_dominion = self.attract.attractor_set_bit_fixed(current_game, region_owner, attraction_set.ones_vertices());
-            match region_owner {
-                Owner::Even => (full_dominion, FixedBitSet::with_capacity(self.game.vertex_count())),
-                Owner::Odd => (FixedBitSet::with_capacity(self.game.vertex_count()), full_dominion),
-            }
-        } else {
             // Find all vertices where alpha-bar can 'escape' the quasi-dominion
-            let escape_vertices = attraction_set.ones_vertices()
-                .filter(|v| partial_subgame.owner(*v) != region_owner)
-                .filter(|v| {
-                    partial_subgame
-                        .edges(*v)
+            let base_escape_targets = attraction_set
+                .ones_vertices()
+                .filter(|v| current_game.owner(*v) != region_owner)
+                .flat_map(|v| {
+                    current_game
+                        .edges(v)
                         // .filter(|to| region[to.index()] < region_priority)
-                        .any(|to| !attraction_set.contains(to.index()))
-                }).collect_vec();
-            let open_vertices = attraction_set.ones_vertices()
-                .filter(|v| partial_subgame.owner(*v) == region_owner)
+                        .filter(|succ| !attraction_set.contains(succ.index()))
+                })
+                .collect_vec();
+            let base_open_vertices = attraction_set
+                .ones_vertices()
+                .filter(|v| current_game.owner(*v) == region_owner)
                 .filter(|v| {
-                    partial_subgame
+                    current_game
                         .edges(*v)
                         .all(|succ| !attraction_set.contains(succ.index()))
-                }).collect_vec();
+                })
+                .collect_vec();
 
-            // We know that the quasi-dominion has escapes, now check if that's true in our current partial_subgame, or only in the full game.
-            if !escape_vertices.is_empty() || !open_vertices.is_empty() {
-                // There are escapes in the current state, find the lowest priority to escape to.
-                for v_id in attraction_set.ones() {
-                    region[v_id] = region_priority;
-                }
-                let next_state = partial_subgame.create_subgame_bit(&attraction_set);
-                let next_priority = next_state.priority_max();
-                tracing::debug!(
-                    ?starting_set,
-                    attraction=?attraction_set.ones().collect_vec(),
-                    next_priority,
-                    ?escape_vertices,
-                    ?open_vertices, "Found escapes, looking at next lowest priority");
-                self.search_dominion(current_game, &next_state, region, next_priority)
+            // Check if it's a dominion, if there are no escape vertices the quasi-dominion is alpha-closed, thus it is an actual dominion
+            // base_escape_targets.iter().any(|v| partial_subgame.vertex_in_subgame(*v))
+            if base_escape_targets.is_empty() && base_open_vertices.is_empty() {
+                // tracing::debug!(
+                //     ?starting_set,
+                //     attraction=?attraction_set.ones().collect_vec(),
+                //     ?base_escape_targets,
+                //     ?base_open_vertices,
+                //     "Found dominion"
+                // );
+                let full_dominion =
+                    self.attract
+                        .attractor_set_bit_fixed(current_game, region_owner, attraction_set.ones_vertices());
+                return match region_owner {
+                    Owner::Even => (full_dominion, FixedBitSet::with_capacity(self.game.vertex_count())),
+                    Owner::Odd => (FixedBitSet::with_capacity(self.game.vertex_count()), full_dominion),
+                };
             } else {
-                self.promotions += 1;
-                // Only true in the full game, so closed region in the current state, the opposing player can only escape to regions which dominate the current `d` priority
-                let next_priority = base_escape_targets.into_iter()
-                    .map(|v| region[v.index()])
-                    .min()
-                    .expect("No priority available");
+                // Find all vertices where alpha-bar can 'escape' the quasi-dominion
+                let escape_vertices = attraction_set
+                    .ones_vertices()
+                    .filter(|v| partial_subgame.owner(*v) != region_owner)
+                    .filter(|v| {
+                        partial_subgame
+                            .edges(*v)
+                            // .filter(|to| region[to.index()] < region_priority)
+                            .any(|to| !attraction_set.contains(to.index()))
+                    })
+                    .collect_vec();
+                let open_vertices = attraction_set
+                    .ones_vertices()
+                    .filter(|v| partial_subgame.owner(*v) == region_owner)
+                    .filter(|v| {
+                        partial_subgame
+                            .edges(*v)
+                            .all(|succ| !attraction_set.contains(succ.index()))
+                    })
+                    .collect_vec();
 
-                // Update region priorities, reset lower region priorities to their original values as we merge regions
-                for v_id in attraction_set.ones() {
-                    region[v_id] = next_priority;
-                }
-                for (v_id, rp) in region.iter_mut().enumerate() {
-                    if *rp < next_priority {
-                        *rp = self.game.vertices.priority[v_id]
+                // We know that the quasi-dominion has escapes, now check if that's true in our current partial_subgame, or only in the full game.
+                if !escape_vertices.is_empty() || !open_vertices.is_empty() {
+                    // There are escapes in the current state, find the lowest priority to escape to.
+                    for v_id in attraction_set.ones() {
+                        region[v_id] = region_priority;
                     }
-                }
+                    // Next state
+                    partial_subgame.shrink_subgame(&attraction_set);
+                    // let next_state = partial_subgame.create_subgame_bit(&attraction_set);
+                    let next_priority = partial_subgame.priority_max();
 
-                let to_exclude = current_game.vertices_index().filter(|v| region[v.index()] > next_priority);
-                let next_state = current_game.create_subgame(to_exclude);
-                tracing::debug!(next_priority,
-                    ?starting_set,
-                    attraction=?attraction_set.ones().collect_vec(),
-                    next_priority,
-                    "Locally closed");
-                tracing::debug!("Next state: {:?}", next_state.vertices_index().map(|v_id| (v_id, next_state.vertex(v_id), region[v_id.index()])).collect_vec());
-                self.search_dominion(current_game, &next_state, region, next_priority)
+                    region_priority = next_priority;
+                    // tracing::debug!(
+                    // ?starting_set,
+                    // attraction=?attraction_set.ones().collect_vec(),
+                    // next_priority,
+                    // ?escape_vertices,
+                    // ?open_vertices, "Found escapes, looking at next lowest priority");
+                } else {
+                    self.promotions += 1;
+                    // Only true in the full game, so closed region in the current state, the opposing player can only escape to regions which dominate the current `d` priority
+                    let next_priority = base_escape_targets
+                        .into_iter()
+                        .map(|v| region[v.index()])
+                        .min()
+                        .expect("No priority available");
+
+                    // Update region priorities, reset lower region priorities to their original values as we merge regions
+                    for v_id in attraction_set.ones() {
+                        region[v_id] = next_priority;
+                    }
+                    for (v_id, rp) in region.iter_mut().enumerate() {
+                        if *rp < next_priority {
+                            *rp = self.game.vertices.priority[v_id]
+                        }
+                    }
+
+                    let to_exclude = current_game
+                        .vertices_index()
+                        .filter(|v| region[v.index()] > next_priority);
+                    let next_state = current_game.create_subgame(to_exclude);
+                    // tracing::debug!(next_priority,
+                    // ?starting_set,
+                    // attraction=?attraction_set.ones().collect_vec(),
+                    // next_priority,
+                    // "Locally closed");
+                    // tracing::debug!(
+                    //     "Next state: {:?}",
+                    //     next_state
+                    //         .vertices_index()
+                    //         .map(|v_id| (v_id, next_state.vertex(v_id), region[v_id.index()]))
+                    //         .collect_vec()
+                    // );
+
+                    partial_subgame = next_state;
+                    region_priority = next_priority;
+                }
             }
         }
     }
@@ -313,11 +347,12 @@ pub mod test {
     #[test]
     pub fn verify_correctness() {
         for name in tests::examples_iter() {
-            println!("Running test for: {name}");
+            print!("Running test for: {name}...");
             let (game, compare) = tests::load_and_compare_example(name);
             let mut pp_solver = PPSolver::new(&game);
             let solution = pp_solver.run();
-            compare(solution)
+            compare(solution);
+            println!(" correct!")
         }
     }
 
