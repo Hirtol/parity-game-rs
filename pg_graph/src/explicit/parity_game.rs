@@ -346,7 +346,6 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
     }
 
     fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
-        // let mut all_ones_subgame = FixedBitSet::with_capacity_and_blocks(self.vertex_count(), std::iter::repeat(!0));
         let mut all_ones_subgame = FixedBitSet::with_capacity(self.vertex_count());
         all_ones_subgame.insert_range(..);
         all_ones_subgame.difference_with(exclude);
@@ -416,7 +415,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
     pub fn vertex_in_subgame(&self, vertex_id: VertexId<Ix>) -> bool {
         self.game_vertices.contains(vertex_id.index())
     }
-    
+
     /// Similar to [Self::create_subgame()], but `self` is not borrowed for the new subgame, and instead modified in place.
     pub fn shrink_subgame(&mut self, exclude: &FixedBitSet) {
         self.game_vertices.difference_with(exclude);

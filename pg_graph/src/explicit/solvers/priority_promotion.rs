@@ -26,11 +26,11 @@ impl<'a> PPSolver<'a> {
 
     #[tracing::instrument(name = "Run Priority Promotion", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.priority_promotion_2(self.game);
+        let (even, odd) = self.priority_promotion(self.game);
 
         let mut winners = vec![Owner::Even; self.game.vertex_count()];
-        for idx in odd {
-            winners[idx.index()] = Owner::Odd;
+        for idx in odd.ones() {
+            winners[idx] = Owner::Odd;
         }
 
         SolverOutput {
@@ -39,130 +39,8 @@ impl<'a> PPSolver<'a> {
         }
     }
 
-    fn priority_promotion<T: ParityGraph<u32>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>) {
-        self.promotions += 1;
-        // Mapping of priority
-        let mut regions: ahash::HashMap<Priority, FixedBitSet> = ahash::HashMap::new();
-        // Mapping from Vertex id -> Priority region
-        let mut region: Vec<Priority> = game.vertices_index().map(|v| game.priority(v)).collect_vec();
-        let mut d = game.priority_max();
-
-        let mut dominions: ahash::HashMap<Owner, FixedBitSet> = ahash::HashMap::new();
-        for p in game.priorities_unique().sorted().rev() {
-            for v in game.vertices_index_by_priority(p) {
-                if region[v.index()] > p {
-                    continue;
-                }
-                println!("{region:?}");
-
-                let mut d = p;
-
-                loop {
-                    let region_owner = Owner::from_priority(d);
-                    let sub_game = game.create_subgame(
-                        region
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, p)| **p <= d)
-                            .map(|(id, _)| VertexId::new(id)),
-                    );
-                    let starting_set = game.vertices_index_by_priority(d).chain(
-                        region
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, &p)| p == d)
-                            .map(|id| VertexId::new(id.0)),
-                    );
-                    let attraction_set = self
-                        .attract
-                        .attractor_set_bit_fixed(&sub_game, region_owner, starting_set);
-
-                    let open_alpha_vertices = {
-                        let mut vertices_owned_by_alpha = attraction_set
-                            .ones_vertices()
-                            .filter(|&v_id| game.owner(v_id) == region_owner);
-
-                        vertices_owned_by_alpha
-                            .any(|v_id| game.edges(v_id).all(|succ| !attraction_set.contains(succ.index())))
-                    };
-
-                    let escape_vertices = attraction_set
-                        .ones_vertices()
-                        .filter(|&v_id| game.owner(v_id) != region_owner)
-                        .flat_map(|v_id| game.edges(v_id))
-                        .filter(|successor| !attraction_set.contains(successor.index()))
-                        .collect_vec();
-
-                    let any_intersection = escape_vertices.iter().any(|v_id| sub_game.vertex_in_subgame(*v_id));
-
-                    if open_alpha_vertices || any_intersection {
-                        // Update the next priority
-                        let new_d = sub_game
-                            .vertices_index()
-                            .filter(|v| !attraction_set.contains(v.index()))
-                            .map(|v| sub_game.priority(v))
-                            .max()
-                            .expect("Empty subgame");
-
-                        // Set regions
-                        for v_id in attraction_set.ones() {
-                            region[v_id] = d;
-                        }
-                        regions
-                            .entry(d)
-                            .and_modify(|v| v.union_with(&attraction_set))
-                            .or_insert(attraction_set);
-
-                        d = new_d;
-                    } else if !escape_vertices.is_empty() {
-                        // Merge regions and reset
-                        // Set p to lowest escape
-                        for v_id in attraction_set.ones() {
-                            region[v_id] = d;
-                        }
-                        regions
-                            .entry(d)
-                            .and_modify(|v| v.union_with(&attraction_set))
-                            .or_insert(attraction_set);
-                        for (v_id, target_region) in region.iter_mut().enumerate() {
-                            let v_p = game.priority(VertexId::new(v_id));
-                            if v_p < d {
-                                *target_region = v_p;
-                            }
-                        }
-                        for (_, set) in regions.iter_mut().filter(|p| *p.0 < d) {
-                            set.clear();
-                        }
-
-                        d = escape_vertices
-                            .into_iter()
-                            .map(|v| region[v.index()])
-                            .min()
-                            .expect("Impossible");
-                    } else {
-                        // Found a dominion
-                        let real_attr =
-                            self.attract
-                                .attractor_set_bit_fixed(game, region_owner, attraction_set.ones_vertices());
-                        dominions
-                            .entry(region_owner)
-                            .and_modify(|s| s.union_with(&real_attr))
-                            .or_insert(real_attr);
-                        break;
-                    }
-                }
-            }
-        }
-
-        for (owner, dominion) in dominions {
-            println!("Owner: {owner:?}, dominion: {:?}", dominion.ones().collect_vec())
-        }
-
-        // (dominions.entry(Owner::Even).or_default().ones_vertices().collect_vec(), dominions.entry(Owner::Odd).or_default().ones_vertices().collect_vec())
-        todo!("Found dominions")
-    }
-
-    fn priority_promotion_2<T: ParityGraph<u32>>(&mut self, game: &T) -> (Vec<VertexId>, Vec<VertexId>) {
+    /// Return (W_even, W_odd)
+    fn priority_promotion<T: ParityGraph<u32>>(&mut self, game: &T) -> (FixedBitSet, FixedBitSet) {
         let (mut winning_even, mut winning_odd) = (
             FixedBitSet::with_capacity(game.vertex_count()),
             FixedBitSet::with_capacity(game.vertex_count()),
@@ -191,11 +69,14 @@ impl<'a> PPSolver<'a> {
         }
 
         (
-            winning_even.ones_vertices().collect(),
-            winning_odd.ones_vertices().collect(),
+            winning_even,
+            winning_odd,
         )
     }
 
+    /// Search for a dominion in the given game.
+    /// 
+    /// The `region` array should reflect the original priorities of the vertices.
     /// Return (W_even, W_odd)
     fn search_dominion(
         &mut self,
