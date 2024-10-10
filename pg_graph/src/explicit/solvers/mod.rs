@@ -7,7 +7,9 @@ use crate::{
     },
     Owner,
 };
+use fixedbitset::FixedBitSet;
 use petgraph::graph::IndexType;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 
 pub mod fully_reduced_reg_zielonka;
@@ -31,46 +33,6 @@ pub struct AttractionComputer<Ix> {
     queue: VecDeque<VertexId<Ix>>,
 }
 
-impl AttractionComputer<u32> {
-    pub fn attractor_set_bit<T: ParityGraph<u32>>(
-        &mut self,
-        game: &T,
-        player: Owner,
-        starting_set: impl IntoIterator<Item = VertexId<u32>>,
-    ) -> hi_sparse_bitset::BitSet<hi_sparse_bitset::config::_256bit> {
-        // let mut attract_set = ahash::HashSet::from_iter(starting_set);
-        self.queue.extend(starting_set);
-        
-        let mut bit_set = hi_sparse_bitset::BitSet::<hi_sparse_bitset::config::_256bit>::new();
-        // let mut bit_set = roaring::RoaringBitmap::from_iter(self.queue.iter().map(|v| v.index() as u32));
-        //
-        self.queue.iter().for_each(|v| { bit_set.insert(v.index()); });
-
-        while let Some(next_item) = self.queue.pop_back() {
-            for predecessor in game.predecessors(next_item) {
-                if bit_set.contains(predecessor.index()) {
-                    continue;
-                }
-
-                let should_add = if game.owner(predecessor) == player {
-                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
-                    true
-                } else {
-                    game.edges(predecessor).all(|v| bit_set.contains(v.index()))
-                };
-
-                // Only add to the attraction set if we should
-                if should_add {
-                    bit_set.insert(predecessor.index());
-                    self.queue.push_back(predecessor);
-                }
-            }
-        }
-
-        bit_set
-    }
-}
-
 impl<Ix: IndexType> AttractionComputer<Ix> {
     pub fn new() -> Self {
         Self {
@@ -89,9 +51,26 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         player: Owner,
         starting_set: impl IntoIterator<Item = VertexId<Ix>>,
     ) -> VertexSet {
-        self.queue.extend(starting_set);
         let mut attract_set = VertexSet::empty_game(game);
-        attract_set.extend(self.queue.iter().map(|v| v.index()));
+        attract_set.extend(starting_set.into_iter().map(|v| v.index()));
+
+        self.attractor_set_bit(game, player, Cow::Owned(attract_set))
+    }
+
+    /// Calculate the attraction set for the given starting set.
+    ///
+    /// This resulting set will contain all vertices which:
+    /// * If a vertex is owned by `player`, then if any edge leads to the attraction set it will be added to the resulting set.
+    /// * If a vertex is _not_ owned by `player`, then only if _all_ edges lead to the attraction set will it be added.
+    #[inline]
+    pub fn attractor_set_bit<T: ParityGraph<Ix>>(
+        &mut self,
+        game: &T,
+        player: Owner,
+        starting_set: Cow<'_, FixedBitSet>
+    ) -> VertexSet {
+        self.queue.extend(starting_set.ones_vertices());
+        let mut attract_set = starting_set.into_owned();
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
@@ -214,7 +193,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         self.queue.extend(starting_set);
         let mut attract_set = VertexSet::empty_game(game);
         attract_set.extend(self.queue.iter().map(|v| v.index()));
-        
+
         let is_aligned = player == controller;
 
         while let Some(next_item) = self.queue.pop_back() {
@@ -277,7 +256,7 @@ mod tests {
         let mut attract = super::AttractionComputer::new();
         let set = attract.attractor_set(&pg, Owner::Even, [VertexId::new(2)]);
 
-        assert_eq!(set.ones_vertices().collect::<HashSet<_>>(), HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));
+        assert_eq!(set.ones_vertices::<u32>().collect::<HashSet<_>>(), HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));
 
         Ok(())
     }

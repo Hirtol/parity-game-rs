@@ -1,13 +1,14 @@
 use crate::{
     explicit::{
         solvers::{AttractionComputer, SolverOutput},
-        BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId,
+        BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId, VertexSet,
     },
     Owner, ParityVertexSoa, Priority,
 };
 use ahash::HashMapExt;
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
+use std::borrow::Cow;
 
 pub struct PPSolver<'a> {
     pub promotions: usize,
@@ -45,37 +46,34 @@ impl<'a> PPSolver<'a> {
             FixedBitSet::with_capacity(game.vertex_count()),
             FixedBitSet::with_capacity(game.vertex_count()),
         );
-        // Mapping from Vertex id -> Priority region
-        // let mut region: Vec<Priority> = game.vertices_index().map(|v| game.priority(v)).collect_vec();
-        let mut region: Vec<Priority> = self.game.vertices.priority.clone();
 
         let mut current_game = game.create_subgame([]);
         while current_game.vertex_count() > 0 {
             let d = current_game.priority_max();
-            region = self.game.vertices.priority.clone();
+            // Mapping from Vertex id -> Priority region
+            let mut region = self.game.vertices.priority.clone();
 
-            let (w_even, w_odd) = self.search_dominion(&current_game, &mut region, d);
-            winning_even.union_with(&w_even);
-            winning_odd.union_with(&w_odd);
+            let dominion = self.search_dominion(&current_game, &mut region, d);
 
-            tracing::trace!(
-                "Found dominion for `d` ({d}) - {} - {}",
-                w_even.count_ones(..),
-                current_game.vertex_count()
+            tracing::debug!(
+                priority = dominion.dominating_p,
+                size = dominion.vertices.count_ones(..),
+                "Found dominion"
             );
 
-            current_game.shrink_subgame(&w_even);
-            current_game.shrink_subgame(&w_odd);
+            match Owner::from_priority(dominion.dominating_p) {
+                Owner::Even => winning_even.union_with(&dominion.vertices),
+                Owner::Odd => winning_odd.union_with(&dominion.vertices),
+            }
+
+            current_game.shrink_subgame(&dominion.vertices);
         }
 
-        (
-            winning_even,
-            winning_odd,
-        )
+        (winning_even, winning_odd)
     }
 
     /// Search for a dominion in the given game.
-    /// 
+    ///
     /// The `region` array should reflect the original priorities of the vertices.
     /// Return (W_even, W_odd)
     fn search_dominion(
@@ -83,7 +81,7 @@ impl<'a> PPSolver<'a> {
         current_game: &impl ParityGraph<u32>,
         region: &mut [Priority],
         region_priority: Priority,
-    ) -> (FixedBitSet, FixedBitSet) {
+    ) -> Dominion {
         let mut partial_subgame = current_game.create_subgame([]);
         let mut region_priority = region_priority;
 
@@ -94,10 +92,13 @@ impl<'a> PPSolver<'a> {
                 .filter(|v| region[v.index()] == region_priority)
                 .collect_vec();
 
-            let attraction_set = self.attract.attractor_set(&partial_subgame, region_owner, starting_set.iter().copied());
+            let attraction_set =
+                self.attract
+                    .attractor_set(&partial_subgame, region_owner, starting_set.iter().copied());
 
             // Find all vertices where alpha-bar can 'escape' the quasi-dominion
-            let base_escape_targets = attraction_set.ones_vertices()
+            let base_escape_targets = attraction_set
+                .ones_vertices()
                 .filter(|v| current_game.owner(*v) != region_owner)
                 .flat_map(|v| {
                     current_game
@@ -108,17 +109,19 @@ impl<'a> PPSolver<'a> {
             // In the official algorithm this is defined on the complete attraction set, but the only way for
             // a vertex to be in the attraction set whilst having no edges pointing towards it is to be part of the starting set!
             // We can therefore skip quite a few vertices by just checking the initial set.
-            let any_open_alpha_vertices = starting_set.iter().copied()
+            let any_open_alpha_vertices = starting_set
+                .iter()
+                .copied()
                 .filter(|v| current_game.owner(*v) == region_owner)
-                .any(|v| {
-                    current_game
-                        .edges(v)
-                        .all(|succ| !attraction_set.contains(succ.index()))
-                });
+                .any(|v| current_game.edges(v).all(|succ| !attraction_set.contains(succ.index())));
 
             // We first check if there is any alpha-vertex which _has_ to leave our quasi-dominion.
             // Subsequently, if not, check if there are any escape targets for alpha-bar in the current partial_subgame.
-            if any_open_alpha_vertices || base_escape_targets.iter().any(|v| partial_subgame.vertex_in_subgame(*v)) {
+            if any_open_alpha_vertices
+                || base_escape_targets
+                    .iter()
+                    .any(|v| partial_subgame.vertex_in_subgame(*v))
+            {
                 // There are escapes in the current partial_subgame, expand the next (priority wise smaller) region.
                 for v_id in attraction_set.ones() {
                     region[v_id] = region_priority;
@@ -158,17 +161,20 @@ impl<'a> PPSolver<'a> {
                 // There were no escape vertices, thus the quasi-dominion is alpha-closed, and therefore an actual dominion
                 let full_dominion =
                     self.attract
-                        .attractor_set(current_game, region_owner, attraction_set.ones_vertices());
+                        .attractor_set_bit(current_game, region_owner, Cow::Owned(attraction_set));
 
-                tracing::trace!(priority=region_priority, size=full_dominion.count_ones(..), "Found dominion");
-
-                return match region_owner {
-                    Owner::Even => (full_dominion, FixedBitSet::with_capacity(current_game.original_vertex_count())),
-                    Owner::Odd => (FixedBitSet::with_capacity(current_game.original_vertex_count()), full_dominion),
+                return Dominion {
+                    dominating_p: region_priority,
+                    vertices: full_dominion,
                 };
             }
         }
     }
+}
+
+struct Dominion {
+    dominating_p: Priority,
+    vertices: VertexSet,
 }
 
 #[cfg(test)]

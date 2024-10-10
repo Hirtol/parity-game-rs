@@ -222,8 +222,10 @@ impl SolveCommand {
                                 );
 
                                 let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&rg_pg);
-
-                                rg.project_winners_original(&timed_solve!(solver.run()).winners)
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(n = solver.promotions, "Solved with promotions");
+                                
+                                rg.project_winners_original(&out.winners)
                             }
                             ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
                                 let rg = timed_solve!(

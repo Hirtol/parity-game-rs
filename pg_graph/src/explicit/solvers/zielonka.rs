@@ -1,7 +1,7 @@
 use crate::explicit::{BitsetExtensions, VertexSet};
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
-    ParityGame, ParityGraph, VertexId,
+    ParityGame, ParityGraph,
 }, Owner};
 
 pub struct ZielonkaSolver<'a> {
@@ -62,7 +62,7 @@ impl<'a> ZielonkaSolver<'a> {
                 let b_attr = self.attract.attractor_set(
                     game,
                     attraction_owner.other(),
-                    not_attraction_owner_set.ones().map(VertexId::new),
+                    not_attraction_owner_set.ones_vertices(),
                 );
                 let sub_game = game.create_subgame_bit(&b_attr);
 

@@ -15,9 +15,9 @@ pub trait BitsetExtensions {
     /// Create an empty [FixedBitSet] with the capacity which matches the amount of original vertices in `pg`
     fn empty_game<Ix: IndexType, PG: ParityGraph<Ix>>(pg: &PG) -> Self;
 
-    fn ones_vertices(&self) -> impl Iterator<Item = VertexId>;
+    fn ones_vertices<Ix: IndexType>(&self) -> impl Iterator<Item = VertexId<Ix>>;
     
-    fn zero_vertices(&self) -> impl Iterator<Item = VertexId>;
+    fn zero_vertices<Ix: IndexType>(&self) -> impl Iterator<Item = VertexId<Ix>>;
 }
 
 impl BitsetExtensions for FixedBitSet {
@@ -25,11 +25,11 @@ impl BitsetExtensions for FixedBitSet {
         Self::with_capacity(pg.original_vertex_count())
     }
 
-    fn ones_vertices(&self) -> impl Iterator<Item=VertexId> {
+    fn ones_vertices<Ix: IndexType>(&self) -> impl Iterator<Item=VertexId<Ix>> {
         self.ones().map(VertexId::new)
     }
 
-    fn zero_vertices(&self) -> impl Iterator<Item=VertexId> {
+    fn zero_vertices<Ix: IndexType>(&self) -> impl Iterator<Item=VertexId<Ix>> {
         self.zeroes().map(VertexId::new)
     }
 }
