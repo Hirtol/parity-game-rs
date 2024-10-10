@@ -90,12 +90,12 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         starting_set: impl IntoIterator<Item = VertexId<Ix>>,
     ) -> VertexSet {
         self.queue.extend(starting_set);
-        let mut bit_set = VertexSet::empty_game(game);
-        bit_set.extend(self.queue.iter().map(|v| v.index()));
+        let mut attract_set = VertexSet::empty_game(game);
+        attract_set.extend(self.queue.iter().map(|v| v.index()));
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
-                if bit_set.contains(predecessor.index()) {
+                if attract_set.contains(predecessor.index()) {
                     continue;
                 }
 
@@ -103,18 +103,18 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                     true
                 } else {
-                    game.edges(predecessor).all(|v| bit_set.contains(v.index()))
+                    game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                 };
 
                 // Only add to the attraction set if we should
                 if should_add {
-                    bit_set.insert(predecessor.index());
+                    attract_set.insert(predecessor.index());
                     self.queue.push_back(predecessor);
                 }
             }
         }
 
-        bit_set
+        attract_set
     }
 
     /// Calculate the attraction set for the given player.
@@ -182,9 +182,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     if predecessor_owner == player {
                         // First filter on the underlying original_graph_id to ensure those are equal and THEN check if there's any alternatives
                         // This way we model the existence of an E_i vertex
-                        let next_item_v = game.underlying_vertex_id(next_item);
-                        game.edges(predecessor)
-                            .filter(|&v| game.underlying_vertex_id(v) == next_item_v)
+                        game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
                             .all(|v| attract_set.contains(v.index()))
                     } else {
                         game.edges(predecessor).all(|v| attract_set.contains(v.index()))
@@ -212,14 +210,16 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         controller: Owner,
         player: Owner,
         starting_set: impl IntoIterator<Item = VertexId<Ix>>,
-    ) -> ahash::HashSet<VertexId<Ix>> {
-        let mut attract_set = ahash::HashSet::from_iter(starting_set);
+    ) -> VertexSet {
+        self.queue.extend(starting_set);
+        let mut attract_set = VertexSet::empty_game(game);
+        attract_set.extend(self.queue.iter().map(|v| v.index()));
+        
         let is_aligned = player == controller;
-        self.queue.extend(&attract_set);
 
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
-                if attract_set.contains(&predecessor) {
+                if attract_set.contains(predecessor.index()) {
                     continue;
                 }
                 
@@ -232,22 +232,22 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         // We pretend `E_i` vertices exist, but this requires that all these imagined `E_i` vertices are part of the
                         // attraction set. Thus, as the owner of this vertex != player we need all chunks to have at least one attraction set edge.
                         game.grouped_edges(predecessor)
-                            .all(|mut group| group.any(|v| attract_set.contains(&v)))
+                            .all(|mut group| group.any(|v| attract_set.contains(v.index())))
                     }
                 } else {
                     if predecessor_owner == player {
                         // First filter on the underlying original_graph_id to ensure those are equal and THEN check if there's any alternatives
                         // This way we model the existence of an E_i vertex
-                        let next_item_v = game.underlying_vertex_id(next_item);
-                        game.edges_for_root_vertex(predecessor, next_item_v)
-                            .all(|v| attract_set.contains(&v))
+                        game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
+                            .all(|v| attract_set.contains(v.index()))
                     } else {
-                        game.edges(predecessor).all(|v| attract_set.contains(&v))
+                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                     }
                 };
 
                 // Only add to the attraction set if we should
-                if should_add && attract_set.insert(predecessor) {
+                if should_add {
+                    attract_set.insert(predecessor.index());
                     self.queue.push_back(predecessor);
                 }
             }

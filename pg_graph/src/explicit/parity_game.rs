@@ -116,6 +116,10 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
 
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
+    fn vertex_edge_count(&self, v: NodeIndex<Ix>) -> usize {
+        self.edges(v).count()
+    }
+
     fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>>;
 
     fn to_pg(&self) -> String {
