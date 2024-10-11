@@ -23,16 +23,8 @@ impl<'a> ZielonkaSolver<'a> {
     #[tracing::instrument(name = "Run Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.zielonka(self.rg);
-        let mut winners = vec![Owner::Even; self.rg.vertex_count()];
-        for idx in odd.ones() {
-            winners[idx] = Owner::Odd;
-        }
-
-        SolverOutput {
-            winners,
-            strategy: None,
-        }
+        let (_, odd) = self.zielonka(self.rg);
+        SolverOutput::from_winning(self.rg.vertex_count(), &odd)
     }
 
     fn zielonka<T: RegisterParityGraph<u32>>(&mut self, game: &T) -> (VertexSet, VertexSet)

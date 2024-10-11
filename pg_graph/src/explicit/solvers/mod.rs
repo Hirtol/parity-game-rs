@@ -28,6 +28,20 @@ pub struct SolverOutput {
     pub strategy: Option<Vec<VertexId>>,
 }
 
+impl SolverOutput {
+    pub fn from_winning(vertex_count: usize, winning_odd: &VertexSet) -> Self {
+        let mut winners = vec![Owner::Even; vertex_count];
+        for idx in winning_odd.ones() {
+            winners[idx] = Owner::Odd;
+        }
+
+        SolverOutput {
+            winners,
+            strategy: None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct AttractionComputer<Ix> {
     queue: VecDeque<VertexId<Ix>>,

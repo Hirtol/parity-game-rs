@@ -86,9 +86,10 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     /// Note that `exclude` should be sorted!
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent>;
 
-    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
-        todo!()
-    }
+    /// Create a sub-game by excluding all vertices in `exclude`.
+    /// 
+    /// Note that `exclude` should have a length equal to [Self::original_vertex_count]
+    fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent>;
 
     /// Return the maximal priority found in the given game.
     #[inline(always)]
