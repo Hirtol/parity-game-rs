@@ -59,6 +59,14 @@ impl<'a> ZielonkaSolver<'a> {
                     attraction_owner.other(),
                     not_attraction_owner_set.ones_vertices(),
                 );
+
+                // If the attractor set doesn't grow for the opposing player then we can pre-emptively conclude
+                // that the dominions don't change, without recursing further. See "An Improved Recursive Algorithm for Parity Games".
+                if b_attr == *not_attraction_owner_set {
+                    attraction_owner_set.union_with(&attraction_set);
+                    return (even, odd)
+                }
+                
                 let sub_game = game.create_subgame_bit(&b_attr);
 
                 let (mut even, mut odd) = self.zielonka(&sub_game);

@@ -76,6 +76,14 @@ where
                 Ok((even, odd))
             } else {
                 let b_attr = game.attractor_set(attraction_owner.other(), not_attraction_owner_set)?;
+
+                // If the attractor set doesn't grow for the opposing player then we can pre-emptively conclude
+                // that the dominions don't change, without recursing further. See "An Improved Recursive Algorithm for Parity Games".
+                if b_attr == *not_attraction_owner_set {
+                    *attraction_owner_set = attraction_owner_set.or(&attraction_set)?;
+                    return Ok((even, odd))
+                }
+                
                 let sub_game = game.create_subgame(&b_attr)?;
 
                 let (mut even, mut odd) = self.zielonka(&sub_game)?;

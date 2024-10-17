@@ -25,6 +25,8 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         self.vertex_count()
     }
 
+    fn original_game(&self) -> &Self::Parent;
+    
     fn vertex_count(&self) -> usize;
 
     fn edge_count(&self) -> usize;
@@ -287,6 +289,10 @@ impl ParityGame {
 impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGame<Ix, VertexSoa> {
     type Parent = Self;
 
+    fn original_game(&self) -> &Self::Parent {
+        self
+    }
+
     #[inline(always)]
     fn vertex_count(&self) -> usize {
         self.graph.node_count()
@@ -414,6 +420,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
 
     fn original_vertex_count(&self) -> usize {
         self.parent.vertex_count()
+    }
+
+    fn original_game(&self) -> &Self::Parent {
+        self.parent
     }
 
     #[inline(always)]

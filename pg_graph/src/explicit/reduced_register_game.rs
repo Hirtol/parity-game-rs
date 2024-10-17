@@ -211,6 +211,10 @@ impl<'a> ReducedRegisterGame<'a> {
 impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
     type Parent = Self;
 
+    fn original_game(&self) -> &Self::Parent {
+        self
+    }
+
     fn vertex_count(&self) -> usize {
         self.vertices.len()
     }

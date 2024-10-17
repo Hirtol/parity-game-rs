@@ -3,6 +3,7 @@ use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
 }, Owner};
+use itertools::Itertools;
 
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
@@ -41,12 +42,12 @@ impl<'a> ZielonkaSolver<'a> {
             let sub_game = game.create_subgame_bit(&attraction_set);
 
             let (mut even, mut odd) = self.zielonka(&sub_game);
+
             let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
                 (&mut even, &mut odd)
             } else {
                 (&mut odd, &mut even)
             };
-
             if not_attraction_owner_set.is_clear() {
                 attraction_owner_set.union_with(&attraction_set);
                 (even, odd)
@@ -56,6 +57,14 @@ impl<'a> ZielonkaSolver<'a> {
                     attraction_owner.other(),
                     not_attraction_owner_set.ones_vertices(),
                 );
+
+                // If the attractor set doesn't grow for the opposing player then we can pre-emptively conclude
+                // that the dominions don't change, without recursing further. See "An Improved Recursive Algorithm for Parity Games".
+                if b_attr == *not_attraction_owner_set {
+                    attraction_owner_set.union_with(&attraction_set);
+                    return (even, odd)
+                }
+
                 let sub_game = game.create_subgame_bit(&b_attr);
 
                 let (mut even, mut odd) = self.zielonka(&sub_game);
@@ -74,13 +83,12 @@ impl<'a> ZielonkaSolver<'a> {
 
 #[cfg(test)]
 pub mod test {
-    use std::time::Instant;
-
     use crate::{
         explicit::solvers::zielonka::ZielonkaSolver,
         tests::load_example,
         Owner,
     };
+    use std::time::Instant;
 
     #[test]
     pub fn test_solve_tue_example() {
