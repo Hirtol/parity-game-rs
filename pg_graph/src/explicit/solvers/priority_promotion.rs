@@ -79,7 +79,7 @@ impl<'a> PPSolver<'a, VertexVec> {
 
         loop {
             let region_owner = Owner::from_priority(region_priority);
-            let starting_set = current_game
+            let starting_set = partial_subgame
                 .vertices_index()
                 .filter(|v| region[v.index()] == region_priority)
                 .collect_vec();
@@ -135,9 +135,9 @@ impl<'a> PPSolver<'a, VertexVec> {
                 for v_id in attraction_set.ones() {
                     region[v_id] = next_priority;
                 }
-                for (v_id, rp) in region.iter_mut().enumerate() {
+                for (rp, original_priority) in region.iter_mut().zip(&self.game.vertices.priority) {
                     if *rp < next_priority {
-                        *rp = self.game.vertices.priority[v_id]
+                        *rp = *original_priority
                     }
                 }
 
@@ -172,7 +172,7 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
     }
 
     /// Return (W_even, W_odd)
-    fn priority_promotion<T: RegisterParityGraph<u32>>(&mut self, game: &T) -> (FixedBitSet, FixedBitSet) 
+    fn priority_promotion<T: RegisterParityGraph<u32>>(&mut self, game: &T) -> (FixedBitSet, FixedBitSet)
         where T::Parent: RegisterParityGraph<u32> {
         let (mut winning_even, mut winning_odd) = (
             FixedBitSet::with_capacity(game.vertex_count()),
@@ -219,7 +219,7 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
 
         loop {
             let region_owner = Owner::from_priority(region_priority);
-            let starting_set = current_game
+            let starting_set = partial_subgame
                 .vertices_index()
                 .filter(|v| region[v.index()] == region_priority)
                 .collect_vec();
@@ -227,7 +227,7 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
             let attraction_set =
                 self.attract
                     .attractor_set(&partial_subgame, region_owner, starting_set.iter().copied());
-            
+
             // Find all vertices where alpha-bar can 'escape' the quasi-dominion
             let base_escape_targets = attraction_set
                 .ones_vertices()
@@ -279,9 +279,9 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
                 for v_id in attraction_set.ones() {
                     region[v_id] = next_priority;
                 }
-                for (v_id, rp) in region.iter_mut().enumerate() {
+                for (rp, original_priority) in region.iter_mut().zip(&self.game.vertices.priority) {
                     if *rp < next_priority {
-                        *rp = self.game.vertices.priority[v_id]
+                        *rp = *original_priority
                     }
                 }
 
@@ -305,7 +305,7 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
                 //         full_dominion.insert(non.index())
                 //     }
                 // }
-                
+
                 return Dominion {
                     dominating_p: region_priority,
                     vertices: full_dominion,
