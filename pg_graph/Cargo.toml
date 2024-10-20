@@ -24,7 +24,8 @@ dynqueue = { version = "0.3.0", features = ["crossbeam-queue"] }
 soa_derive = "0.13.0"
 
 roaring = "0.10.6"
-fixedbitset = "0.5.7"
+#fixedbitset = "0.5.7"
+fixedbitset = {git = "https://github.com/Hirtol/fixedbitset"}
 hi_sparse_bitset = "0.6.1"
 
 petgraph = "0.6.4"
