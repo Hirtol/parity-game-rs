@@ -9,6 +9,7 @@ use crate::{
 };
 use ahash::HashSet;
 use ecow::{eco_vec, EcoVec};
+use fixedbitset::generic::BitSet;
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::graph::{EdgeReference, IndexType, NodeIndex};
@@ -283,6 +284,10 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
 
     fn edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = NodeIndex<u32>> + '_ {
         self.grouped_edges(v).flatten()
+    }
+
+    fn edges_bit(&self, v: VertexId<u32>) -> impl BitSet {
+        todo!()
     }
 
     fn vertex_edge_count(&self, v: NodeIndex<u32>) -> usize {

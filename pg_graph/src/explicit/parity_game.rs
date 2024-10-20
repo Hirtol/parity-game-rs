@@ -1,4 +1,5 @@
 use crate::{datatypes::Priority, visualize::VisualVertex, Owner, ParityVertexSoa, Vertex, VertexVec};
+use fixedbitset::generic::BitSet;
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::{
@@ -26,7 +27,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     }
 
     fn original_game(&self) -> &Self::Parent;
-    
+
     fn vertex_count(&self) -> usize;
 
     fn edge_count(&self) -> usize;
@@ -119,6 +120,8 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
 
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
+    fn edges_bit(&self, v: VertexId<Ix>) -> impl fixedbitset::generic::BitSet;
+
     fn vertex_edge_count(&self, v: NodeIndex<Ix>) -> usize {
         self.edges(v).count()
     }
@@ -166,8 +169,13 @@ impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
         for _ in 0..self.edge_indexes.len() {
             graph.add_node(());
         }
+
+        // let mut edge_owner = fixedbitset::OffsetBitSetCollection::new();
+        let mut edge_owner = fixedbitset::sparse::SparseBitSetCollection::new();
+
         for (source_vertex, window) in self.edge_indexes.windows(2).enumerate() {
             let source = VertexId::new(source_vertex);
+            edge_owner.push_collection_itr(self.edges[window[0]..window[1]].iter().map(|i| i.index()).sorted_unstable());
             for &edge in &self.edges[window[0]..window[1]] {
                 graph.add_edge(source, edge, ());
             }
@@ -175,6 +183,7 @@ impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
         // The last edge can never be in the window
         if let Some(&last) = self.edge_indexes.last() { 
             let source = VertexId::new(self.edge_indexes.len() - 1);
+            edge_owner.push_collection_itr(self.edges[last..].iter().map(|i| i.index()).sorted_unstable());
             for &edge in &self.edges[last..] {
                 graph.add_edge(source, edge, ());
             }
@@ -183,6 +192,7 @@ impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
         ParityGame {
             graph,
             vertices: self.vertices,
+            edge_owner,
             inverted_vertices: self.inverted_edges,
             labels: self.labels,
         }
@@ -229,6 +239,8 @@ impl<'a, Ix: IndexType> PgBuilder<'a> for ParityGameBuilder<Ix> {
 pub struct ParityGame<Ix: IndexType = u32, VertexSoa = VertexVec> {
     pub graph: petgraph::Graph<(), (), petgraph::Directed, Ix>,
     pub vertices: VertexSoa,
+    // pub edge_owner: fixedbitset::OffsetBitSetCollection,
+    pub edge_owner: fixedbitset::sparse::SparseBitSetCollection,
     pub(crate) inverted_vertices: Vec<Vec<VertexId<Ix>>>,
     pub(crate) labels: Vec<Option<String>>,
 }
@@ -238,6 +250,7 @@ impl<Ix: IndexType, Vert: Default> ParityGame<Ix, Vert> {
         Self {
             graph: petgraph::Graph::with_capacity(20, 20),
             vertices: Vert::default(),
+            edge_owner: Default::default(),
             inverted_vertices: vec![],
             labels: Vec::new(),
         }
@@ -357,6 +370,10 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
     #[inline(always)]
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
         self.graph.edges(v).map(|e| e.target())
+    }
+
+    fn edges_bit(&self, v: VertexId<Ix>) -> impl BitSet {
+        self.edge_owner.get_set_ref(v.index())
     }
 
     #[inline(always)]
@@ -521,6 +538,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         self.parent.edges(v).filter(|idx| self.game_vertices.contains(idx.index()))
     }
 
+    fn edges_bit(&self, v: VertexId<Ix>) -> impl BitSet {
+        self.parent.edges_bit(v).to_lazy_and(&self.game_vertices)
+    }
+
     #[inline(always)]
     fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
         self.parent
@@ -535,6 +556,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
 pub fn create_subgame<Ix: IndexType, PG: ParityGraph<Ix>>(parent: &PG, exclude: impl IntoIterator<Item=VertexId<Ix>>) -> SubGame<Ix, PG> {
     let mut all_ones_subgame = FixedBitSet::with_capacity(parent.original_vertex_count());
     all_ones_subgame.insert_range(..);
+
     for v in exclude {
         all_ones_subgame.set(v.index(), false);
     }
