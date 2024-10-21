@@ -222,7 +222,7 @@ impl<'a> RegisterGame<'a> {
             }};
         }
 
-        while let Some(expanding) = to_expand.pop_back() {
+        while let Some(expanding) = to_expand.pop_front() {
             match expanding {
                 // Expand the given original vertex as a starting node, aka, assuming fresh registers
                 ToExpand::OriginalVertex(v_id) => {

@@ -102,18 +102,19 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     true
                 } else {
                     let left = game.edges_bit(predecessor).is_subset(&attract_set);
-                    let right = game.edges(predecessor).all(|v| attract_set.contains(v.index()));
-
-                    if left != right {
-                        tracing::debug!("LEFT AND RIGHT DONT AGREE: {} - {}", left, right);
-                        print_type(&game.edges_bit(predecessor));
-                        let state = game.edges_bit(predecessor).as_simd_blocks().collect_vec();
-                        tracing::debug!(?state, "Edges");
-                        tracing::debug!(state=?attract_set.as_simd_blocks().collect_vec(), "Attr");
-                        tracing::debug!(edges=?game.edges(predecessor).collect_vec(), "Actual");
-                        std::process::exit(0);
-                    }
-                    right
+                    // let right = game.edges(predecessor).all(|v| attract_set.contains(v.index()));
+                    // 
+                    // if left != right {
+                    //     tracing::debug!("LEFT AND RIGHT DONT AGREE: {} - {}", left, right);
+                    //     print_type(&game.edges_bit(predecessor));
+                    //     let state = game.edges_bit(predecessor).as_simd_blocks().collect_vec();
+                    //     tracing::debug!(?state, "Edges");
+                    //     tracing::debug!(state=?attract_set.as_simd_blocks().collect_vec(), "Attr");
+                    //     tracing::debug!(edges=?game.edges(predecessor).collect_vec(), "Actual");
+                    //     std::process::exit(0);
+                    // }
+                    // right
+                    left
                 };
 
                 // Only add to the attraction set if we should

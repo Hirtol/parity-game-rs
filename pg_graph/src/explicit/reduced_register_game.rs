@@ -287,7 +287,8 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
     }
 
     fn edges_bit(&self, v: VertexId<u32>) -> impl BitSet {
-        todo!()
+        todo!();
+        FixedBitSet::new()
     }
 
     fn vertex_edge_count(&self, v: NodeIndex<u32>) -> usize {
