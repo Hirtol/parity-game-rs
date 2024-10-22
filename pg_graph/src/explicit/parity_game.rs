@@ -1,3 +1,4 @@
+use crate::explicit::VertexSet;
 use crate::{datatypes::Priority, visualize::VisualVertex, Owner, ParityVertexSoa, Vertex, VertexVec};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
@@ -392,14 +393,35 @@ impl<Ix: IndexType, T: ParityGraph<Ix>> crate::visualize::VisualGraph<Ix> for T 
     }
 }
 
-pub struct SubGame<'a, Ix: IndexType, Parent: ParityGraph<Ix>> {
+#[derive(Debug)]
+pub struct SubGame<'a, Ix: IndexType, Parent> {
     pub(crate) parent: &'a Parent,
     pub(crate) game_vertices: fixedbitset::FixedBitSet,
-    pub(crate) _phant: PhantomData<Ix>,
     pub(crate) len: usize,
+    pub(crate) _phant: PhantomData<Ix>,
+}
+
+impl<'a, Ix: IndexType, Parent> Clone for SubGame<'a, Ix, Parent> {
+    fn clone(&self) -> Self {
+        Self {
+            parent: &self.parent,
+            game_vertices: self.game_vertices.clone(),
+            len: self.len,
+            _phant: Default::default(),
+        }
+    }
 }
 
 impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
+    pub fn from_vertex_set(parent: &'a Parent, set: VertexSet) -> Self {
+        SubGame {
+            parent,
+            len: set.count_ones(..),
+            game_vertices: set,
+            _phant: Default::default(),
+        }
+    }
+
     pub fn parent(&self) -> &'a Parent {
         self.parent
     }
@@ -409,8 +431,14 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> SubGame<'a, Ix, Parent> {
     }
 
     /// Similar to [Self::create_subgame()], but `self` is not borrowed for the new subgame, and instead modified in place.
-    pub fn shrink_subgame(&mut self, exclude: &FixedBitSet) {
+    pub fn shrink_subgame(&mut self, exclude: &VertexSet) {
         self.game_vertices.difference_with(exclude);
+        self.len = self.game_vertices.count_ones(..);
+    }
+
+    /// Create a new [SubGame] by intersecting self with the given [VertexSet] 
+    pub fn intersect_subgame(&mut self, intersect: &VertexSet) {
+        self.game_vertices.intersect_with(intersect);
         self.len = self.game_vertices.count_ones(..);
     }
 }

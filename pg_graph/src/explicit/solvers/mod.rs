@@ -1,13 +1,9 @@
-use crate::explicit::{BitsetExtensions, VertexSet};
-use crate::{
-    explicit::{
-        reduced_register_game::RegisterParityGraph,
-        register_game::RegisterGame,
-        ParityGraph, VertexId,
-    },
-    Owner,
-};
-use fixedbitset::FixedBitSet;
+use crate::explicit::{BitsetExtensions, SubGame, VertexSet};
+use crate::{explicit::{
+    reduced_register_game::RegisterParityGraph,
+    register_game::RegisterGame,
+    ParityGraph, VertexId,
+}, Owner, Priority};
 use petgraph::graph::IndexType;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -54,6 +50,12 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         }
     }
 
+    pub fn make_starting_set<T: ParityGraph<Ix>>(game: &T, starting_set: impl IntoIterator<Item = VertexId<Ix>>) -> VertexSet {
+        let mut attract_set = VertexSet::empty_game(game);
+        attract_set.extend(starting_set.into_iter().map(|v| v.index()));
+        attract_set
+    }
+
     /// Calculate the attraction set for the given starting set.
     ///
     /// This resulting set will contain all vertices which:
@@ -65,6 +67,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         player: Owner,
         starting_set: impl IntoIterator<Item = VertexId<Ix>>,
     ) -> VertexSet {
+        // TODO: Cache this and just hand out a reference
         let mut attract_set = VertexSet::empty_game(game);
         attract_set.extend(starting_set.into_iter().map(|v| v.index()));
 
@@ -81,7 +84,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         &mut self,
         game: &T,
         player: Owner,
-        starting_set: Cow<'_, FixedBitSet>
+        starting_set: Cow<'_, VertexSet>
     ) -> VertexSet {
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
@@ -103,6 +106,59 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                 if should_add {
                     attract_set.insert(predecessor.index());
                     self.queue.push_back(predecessor);
+                }
+            }
+        }
+
+        attract_set
+    }
+
+    #[inline]
+    pub fn attractor_set_tangle<'a, T: ParityGraph<Ix>>(
+        &mut self,
+        game: &SubGame<Ix, T>,
+        player: Owner,
+        starting_set: Cow<'_, VertexSet>,
+        player_tangles: impl Iterator<Item=&'a tangle_learning::Tangle> + Clone,
+        strategy: &mut [VertexId<Ix>]
+    ) -> VertexSet {
+        self.queue.extend(starting_set.ones_vertices());
+        let mut attract_set = starting_set.into_owned();
+
+        while let Some(next_item) = self.queue.pop_back() {
+            for predecessor in game.predecessors(next_item) {
+                if attract_set.contains(predecessor.index()) {
+                    continue;
+                }
+
+                let should_add = if game.owner(predecessor) == player {
+                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                    strategy[predecessor.index()] = next_item;
+                    true
+                } else {
+                    game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                };
+
+                // Only add to the attraction set if we should
+                if should_add {
+                    attract_set.insert(predecessor.index());
+                    self.queue.push_back(predecessor);
+                }
+            }
+
+            for tangle in player_tangles.clone() {
+                let mut valid_escapes = tangle.escapes.iter().filter(|v| game.game_vertices.contains(v.index()));
+                // let restricted_set = game.game_vertices.lazy_and(&tangle.escapes);
+                // if restricted_set.is_subset(&attract_set) {
+                //     attract_set.union_with(&tangle.vertices)
+                // }
+                if valid_escapes.clone().count() > 0 && valid_escapes.all(|v| attract_set.contains(v.index())) {
+                    tracing::debug!(?tangle, "Attracting tangle");
+                    // Add all vertices to the queue which were not already in the attraction set.
+                    for v in tangle.vertices.difference(&attract_set) {
+                        self.queue.push_back(VertexId::new(v));
+                    }
+                    attract_set.union_with(&tangle.vertices);
                 }
             }
         }
@@ -274,4 +330,9 @@ mod tests {
 
         Ok(())
     }
+}
+
+pub struct Dominion {
+    pub dominating_p: Priority,
+    pub vertices: VertexSet,
 }

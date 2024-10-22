@@ -1,5 +1,6 @@
 use crate::explicit::reduced_register_game::RegisterParityGraph;
 use crate::explicit::register_game::GameRegisterVertexVec;
+use crate::explicit::solvers::Dominion;
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     BitsetExtensions, ParityGame, ParityGraph, VertexId, VertexSet,
@@ -313,11 +314,6 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
             }
         }
     }
-}
-
-struct Dominion {
-    dominating_p: Priority,
-    vertices: VertexSet,
 }
 
 #[cfg(test)]
