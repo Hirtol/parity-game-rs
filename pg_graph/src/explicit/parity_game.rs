@@ -120,7 +120,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
 
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_;
 
-    fn edges_bit(&self, v: VertexId<Ix>) -> impl fixedbitset::generic::BitSet;
+    fn edges_bit(&self, v: VertexId<Ix>) -> impl fixedbitset::specific::SubBitSet;
 
     fn vertex_edge_count(&self, v: NodeIndex<Ix>) -> usize {
         self.edges(v).count()
@@ -372,7 +372,7 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
         self.graph.edges(v).map(|e| e.target())
     }
 
-    fn edges_bit(&self, v: VertexId<Ix>) -> impl BitSet {
+    fn edges_bit(&self, v: VertexId<Ix>) -> impl fixedbitset::specific::SubBitSet {
         self.edge_owner.get_set_ref(v.index())
     }
 
@@ -538,8 +538,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         self.parent.edges(v).filter(|idx| self.game_vertices.contains(idx.index()))
     }
 
-    fn edges_bit(&self, v: VertexId<Ix>) -> impl BitSet {
-        self.parent.edges_bit(v).to_lazy_and(&self.game_vertices)
+    fn edges_bit(&self, v: VertexId<Ix>) -> impl fixedbitset::specific::SubBitSet {
+        use fixedbitset::specific::SubBitSet;
+        fixedbitset::specific::LazyAnd::new(self.parent.edges_bit(v).to_sparse_set(), &self.game_vertices)
+        // self.parent.edges_bit(v).to_lazy_and(&self.game_vertices)
     }
 
     #[inline(always)]

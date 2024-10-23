@@ -101,20 +101,24 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                     true
                 } else {
-                    let left = game.edges_bit(predecessor).is_subset(&attract_set);
+                    use fixedbitset::specific::SubBitSet;
+                    // let left = game.edges_bit(predecessor).is_subset(&attract_set);
                     // let right = game.edges(predecessor).all(|v| attract_set.contains(v.index()));
                     // 
                     // if left != right {
                     //     tracing::debug!("LEFT AND RIGHT DONT AGREE: {} - {}", left, right);
                     //     print_type(&game.edges_bit(predecessor));
-                    //     let state = game.edges_bit(predecessor).as_simd_blocks().collect_vec();
-                    //     tracing::debug!(?state, "Edges");
+                    //     // let state = game.edges_bit(predecessor).as_simd_blocks().collect_vec();
+                    //     // tracing::debug!(?state, "Edges");
                     //     tracing::debug!(state=?attract_set.as_simd_blocks().collect_vec(), "Attr");
                     //     tracing::debug!(edges=?game.edges(predecessor).collect_vec(), "Actual");
                     //     std::process::exit(0);
                     // }
                     // right
-                    left
+                    // left
+
+                    game.edges_bit(predecessor).is_subset(&attract_set)
+                    // game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                 };
 
                 // Only add to the attraction set if we should

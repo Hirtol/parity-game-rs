@@ -286,7 +286,7 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         self.grouped_edges(v).flatten()
     }
 
-    fn edges_bit(&self, v: VertexId<u32>) -> impl BitSet {
+    fn edges_bit(&self, v: VertexId<u32>) -> impl fixedbitset::specific::SubBitSet {
         todo!();
         FixedBitSet::new()
     }
