@@ -200,7 +200,9 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
                             .all(|v| attract_set.contains(v.index()))
                     } else {
-                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                        use fixedbitset::specific::SubBitSet;
+                        game.edges_bit(predecessor).is_subset(&attract_set)
+                        // game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                     }
                 };
 

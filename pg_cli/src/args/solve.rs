@@ -209,7 +209,7 @@ impl SolveCommand {
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                                     "Constructed Register Game"
                                 );
-                                let rg_pg = rg.to_small_game()?;
+                                let rg_pg = rg.to_grv_game()?;
 
                                 tracing::debug!(
                                     from_vertex = rg.original_game.vertex_count(),
@@ -232,7 +232,7 @@ impl SolveCommand {
                                     RegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
                                     "Constructed Partial Reduced Register Game"
                                 );
-                                let rg_pg = rg.to_small_game()?;
+                                let rg_pg = rg.to_grv_game()?;
 
                                 tracing::debug!(
                                     from_vertex = rg.original_game.vertex_count(),

@@ -451,7 +451,7 @@ impl<'a> RegisterGame<'a> {
     }
 
     #[tracing::instrument(name = "Convert to Parity Game (Small)", skip(self))]
-    pub fn to_small_game(&self) -> eyre::Result<crate::explicit::ParityGame<u32, GameRegisterVertexVec>> {
+    pub fn to_grv_game(&self) -> eyre::Result<crate::explicit::ParityGame<u32, GameRegisterVertexVec>> {
         let mut out = ParityGame::<u32, GameRegisterVertexVec>::empty();
 
         let vertices: Vec<_> = self.vertices
@@ -467,9 +467,11 @@ impl<'a> RegisterGame<'a> {
             })
             .collect();
 
+        let mut edge_owner = fixedbitset::sparse::SparseBitSetCollection::new();
         for v_idx in vertices {
             let edges = self.edges.get(&v_idx).context("No edges for vertex")?;
-
+            use itertools::Itertools;
+            edge_owner.push_collection_itr(edges.iter().map(|i| i.index()).sorted_unstable());
             for &target_v in edges {
                 out.graph.add_edge(v_idx, target_v, ());
             }
@@ -485,7 +487,7 @@ impl<'a> RegisterGame<'a> {
 
         out.inverted_vertices = inverted_graph;
         out.labels = self.vertices.iter().map(|v| self.original_game.label(VertexId::from(v.original_graph_id)).map(|v| v.into())).collect();
-
+        out.edge_owner = edge_owner;
         Ok(out)
     }
 
