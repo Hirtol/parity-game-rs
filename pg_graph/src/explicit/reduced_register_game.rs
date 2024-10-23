@@ -475,6 +475,17 @@ pub mod reg_v {
     }
 
     impl<Ix: IndexType> ParityVertexSoa<Ix> for RegisterVertexVec {
+        type Vertex = RegisterVertex;
+
+        fn push_v(&mut self, item: Self::Vertex) {
+            self.push(item)
+        }
+
+        #[inline]
+        fn get_v(&self, idx: VertexId<Ix>) -> Self::Vertex {
+            self.get(idx.index()).unwrap().to_owned()
+        }
+
         fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
             self.priority.get(idx.index()).copied()
         }

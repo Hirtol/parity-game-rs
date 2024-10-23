@@ -64,6 +64,12 @@ impl TryFrom<u8> for Owner {
 }
 
 pub trait ParityVertexSoa<Ix> {
+    type Vertex;
+    
+    fn push_v(&mut self, item: Self::Vertex);
+    
+    fn get_v(&self, idx: VertexId<Ix>) -> Self::Vertex;
+    
     #[inline(always)]
     fn priority(&self, idx: VertexId<Ix>) -> Priority {
         self.get_priority(idx).unwrap()
@@ -86,6 +92,18 @@ pub struct Vertex {
 }
 
 impl<Ix: IndexType> ParityVertexSoa<Ix> for VertexVec {
+    type Vertex = Vertex;
+
+    #[inline]
+    fn push_v(&mut self, item: Self::Vertex) {
+        self.push(item)
+    }
+
+    #[inline]
+    fn get_v(&self, idx: VertexId<Ix>) -> Self::Vertex {
+        self.get(idx.index()).unwrap().to_owned()
+    }
+
     #[inline(always)]
     fn priority(&self, idx: VertexId<Ix>) -> Priority {
         unsafe {

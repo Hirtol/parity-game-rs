@@ -39,6 +39,17 @@ pub struct GameRegisterVertex {
 }
 
 impl<Ix: IndexType> ParityVertexSoa<Ix> for GameRegisterVertexVec {
+    type Vertex = GameRegisterVertex;
+
+    fn push_v(&mut self, item: Self::Vertex) {
+        self.push(item)
+    }
+
+    #[inline]
+    fn get_v(&self, idx: VertexId<Ix>) -> Self::Vertex {
+        self.get(idx.index()).unwrap().to_owned()
+    }
+
     fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
         self.priority.get(idx.index()).copied()
     }
@@ -428,11 +439,7 @@ impl<'a> RegisterGame<'a> {
         let mut output = vec![None; self.original_game.vertex_count()];
 
         for (reg_id, &winner) in game_winners.iter().enumerate() {
-            // Only persist the result of the 0-initialised registers, as they're the starting registers
             let reg_v = &self.vertices[reg_id];
-            // if reg_v.register_state.iter().any(|r| *r != 0) {
-            //     continue;
-            // }
 
             let original_id = reg_v.original_graph_id;
             let current_winner = &mut output[original_id.index()];
@@ -472,6 +479,7 @@ impl<'a> RegisterGame<'a> {
             let edges = self.edges.get(&v_idx).context("No edges for vertex")?;
             use itertools::Itertools;
             edge_owner.push_collection_itr(edges.iter().map(|i| i.index()).sorted_unstable());
+
             for &target_v in edges {
                 out.graph.add_edge(v_idx, target_v, ());
             }

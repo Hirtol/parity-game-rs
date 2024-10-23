@@ -158,7 +158,7 @@ pub struct ParityGameBuilder<Ix: IndexType = u32, VertexSoa = VertexVec> {
     labels: Vec<Option<String>>,
 }
 
-impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
+impl<Ix: IndexType, Vert: Default + ParityVertexSoa<Ix>> ParityGameBuilder<Ix, Vert> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -196,6 +196,47 @@ impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
             inverted_vertices: self.inverted_edges,
             labels: self.labels,
         }
+    }
+    
+    /// Remap all vertices based on the amount of edges pointing towards them.
+    /// 
+    /// Lowers memory usage when using bitsets.
+    pub fn remap_by_indegree(&mut self) {
+        let vertex_order = (0..self.edge_indexes.len()).sorted_unstable_by_key(|v| std::cmp::Reverse(self.inverted_edges[*v].len()));
+        let mut remap = vec![VertexId::new(0); self.edge_indexes.len()];
+        for (new_id, old_id) in vertex_order.into_iter().enumerate() {
+            remap[old_id] = VertexId::new(new_id);
+        }
+        
+        self.remap_vertices(&remap);
+    }
+
+    /// Remap the current vertex set by using the given `mapping`.
+    ///
+    /// This will change IDs around.
+    pub fn remap_vertices(&mut self, mapping: &[VertexId<Ix>]) {
+        let mut new_builder = Self::new();
+        let vertex_count = self.edge_indexes.len();
+        new_builder.labels = Vec::with_capacity(vertex_count);
+        new_builder.inverted_edges = Vec::with_capacity(vertex_count);
+        new_builder.edges = Vec::with_capacity(vertex_count);
+        new_builder.edge_indexes = Vec::with_capacity(vertex_count);
+
+        for (original_id, new_id) in mapping.iter().enumerate().sorted_unstable_by_key(|i| i.1) {
+            new_builder.vertices.push_v(self.vertices.get_v(VertexId::new(original_id)));
+            new_builder.labels.push(self.labels[original_id].clone());
+            new_builder.inverted_edges.push(self.inverted_edges[original_id].iter().copied().map(|v| mapping[v.index()]).collect());
+
+            // Add edges
+            new_builder.edge_indexes.push(new_builder.edges.len());
+            let outgoing_edges = self.edge_indexes.get(original_id).copied().unwrap()..self.edge_indexes.get(original_id + 1).copied().unwrap_or(self.edges.len());
+            
+            for &edge in &self.edges[outgoing_edges] {
+                new_builder.edges.push(mapping[edge.index()]);
+            }
+        }
+
+        *self = new_builder;
     }
 }
 
