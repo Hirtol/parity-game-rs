@@ -1,8 +1,7 @@
 //! Iterative implementation of Pearce's algorithm based on the one from Petgraph, and https://whileydave.com/publications/Pea16_IPL_preprint.pdf
 
 use crate::explicit::{ParityGraph, VertexId, VertexSet};
-use std::collections::VecDeque;
-use std::num::NonZeroU32;
+use std::{collections::VecDeque, num::NonZeroU32};
 
 pub struct PearceScc {
     index: u32,
@@ -43,11 +42,18 @@ impl PearceScc {
 
     #[profiling::function]
     #[inline]
-    fn visit(&mut self, v_id: VertexId<u32>, graph: &impl ParityGraph<u32>, mut scc_found: impl FnMut(PearceSccIter<'_>)) {
+    fn visit(
+        &mut self,
+        v_id: VertexId<u32>,
+        graph: &impl ParityGraph<u32>,
+        mut scc_found: impl FnMut(PearceSccIter<'_>),
+    ) {
         self.begin_visit(v_id);
 
         while let Some(&to_explore) = self.v_s.front() {
-            self.visit_loop(to_explore, graph, &mut scc_found);
+            unsafe {
+                self.visit_loop(to_explore, graph, &mut scc_found);
+            }
         }
     }
 
@@ -63,34 +69,27 @@ impl PearceScc {
 
     #[profiling::function]
     #[inline]
-    fn visit_loop(&mut self, v_id: VertexId<u32>, graph: &impl ParityGraph<u32>, scc_found: impl FnMut(PearceSccIter<'_>)) {
+    unsafe fn visit_loop(
+        &mut self,
+        v_id: VertexId<u32>,
+        graph: &impl ParityGraph<u32>,
+        scc_found: impl FnMut(PearceSccIter<'_>),
+    ) {
         let edge_i = *self.i_s.front().expect("Impossible Invariant Violation");
-        let edge_count = graph.edges(v_id).count();
 
-        for i in edge_i..=edge_count as u32 {
-            let edge = graph.edges(v_id).nth(i as usize);
-            if i > 0 {
-                // TODO: Make this better
-                let edge_to_finish = graph.edges(v_id).nth((i - 1) as usize).expect("Invariant Violation");
-                self.finish_edge(v_id, edge_to_finish)
-            }
-
+        for (i, edge) in graph.edges(v_id).enumerate().skip(edge_i as usize) {
             // First check if `i` was in range
-            if let Some(edge) = edge {
-                let begun_new_edge = {
-                    // New node to explore
-                    if self.root_index[edge.index()].is_none() {
-                        self.i_s.pop_front();
-                        self.i_s.push_front(i + 1);
-                        self.begin_visit(edge);
-                        true
-                    } else {
-                        false
-                    }
-                };
-
-                if begun_new_edge {
-                    return;
+            // New node to explore, restart visit loop, begin edge
+            if self.root_index.get_unchecked(edge.index()).is_none() {
+                // Add the current index back in order to `finish_edge` after we finish exploring this new node.
+                *self.i_s.front_mut().expect("impossible") = i as u32;
+                self.begin_visit(edge);
+                return;
+            } else {
+                // Finish edge
+                if self.root_index(edge) < self.root_index(v_id) {
+                    self.root_index[v_id.index()] = self.root_index[edge.index()];
+                    self.root.remove(v_id.index());
                 }
             }
         }
@@ -100,21 +99,20 @@ impl PearceScc {
 
     #[profiling::function]
     #[inline]
-    fn finish_visit(&mut self, v_id: VertexId<u32>, mut scc_found: impl FnMut(PearceSccIter<'_>)) {
+    unsafe fn finish_visit(&mut self, v_id: VertexId<u32>, mut scc_found: impl FnMut(PearceSccIter<'_>)) {
         // Take the current vertex of the stack
         self.v_s.pop_front();
         self.i_s.pop_front();
         // Update a new component
-        if self.root[v_id.index()] {
+        if self.root.contains(v_id.index()) {
             let c = NonZeroU32::new(self.component_count);
             let mut index_adjust = 1;
             let root_indexes = &mut self.root_index;
-
             let start = self
                 .v_s
                 .iter()
                 .rposition(|&part_of_scc| {
-                    if root_indexes[v_id.index()] > root_indexes[part_of_scc.index()] {
+                    if root_indexes.get_unchecked(v_id.index()) > root_indexes.get_unchecked(part_of_scc.index()) {
                         true
                     } else {
                         root_indexes[part_of_scc.index()] = c;
@@ -131,19 +129,10 @@ impl PearceScc {
 
             self.v_s.truncate(start);
             self.index -= index_adjust;
-            self.root_index[v_id.index()] = c;
+            *self.root_index.get_unchecked_mut(v_id.index()) = c;
             self.component_count -= 1;
         } else {
             self.v_s.push_back(v_id);
-        }
-    }
-
-    #[profiling::function]
-    #[inline]
-    fn finish_edge(&mut self, v_id: VertexId<u32>, edge: VertexId<u32>) {
-        if self.root_index(edge) < self.root_index(v_id) {
-            self.root_index[v_id.index()] = self.root_index[edge.index()];
-            self.root.remove(v_id.index());
         }
     }
 
@@ -155,9 +144,10 @@ impl PearceScc {
 
 #[cfg(test)]
 mod tests {
-    use crate::explicit::pearce::PearceScc;
-    use crate::explicit::ParityGraph;
-    use crate::{load_example, tests};
+    use crate::{
+        explicit::{pearce::PearceScc, ParityGraph},
+        load_example, tests,
+    };
     use itertools::Itertools;
 
     #[test]
@@ -182,6 +172,41 @@ mod tests {
     }
 
     #[test]
+    pub fn bench_pearce() {
+        const ROUNDS: usize = 1000;
+        let game = load_example("TwoCountersInRangeA6.tlsf.ehoa.pg ");
+        let now = std::time::Instant::now();
+        let mut sccs = Vec::new();
+        for i in 0..ROUNDS {
+            sccs = petgraph::algo::tarjan_scc(&game.graph);
+        }
+        let elapsed = now.elapsed();
+        println!(
+            "Pet Elapsed: {elapsed:?} - per: {} ms",
+            elapsed.as_secs_f32() * 1000. / ROUNDS as f32
+        );
+
+        let mut own_sccs = Vec::new();
+        let now = std::time::Instant::now();
+        for i in 0..ROUNDS {
+            let mut pearce = PearceScc::new(game.original_vertex_count());
+            own_sccs = Vec::new();
+
+            pearce.run(&game, |found| {
+                let data = found.copied().collect_vec();
+                own_sccs.push(data)
+            });
+        }
+        let elapsed = now.elapsed();
+        println!(
+            "Own Elapsed: {elapsed:?} - per: {} ms",
+            elapsed.as_secs_f32() * 1000. / ROUNDS as f32
+        );
+
+        assert_eq!(sccs, own_sccs);
+    }
+
+    #[test]
     pub fn test_pearce_correct() {
         for name in tests::examples_iter() {
             println!("Running test for: {name}...");
@@ -195,7 +220,7 @@ mod tests {
             let now = std::time::Instant::now();
             let sccs = petgraph::algo::tarjan_scc(&game.graph);
             println!("Petgraph took: {:?}", now.elapsed());
-            
+
             let mut pearce = PearceScc::new(game.original_vertex_count());
             let mut own_sccs = Vec::new();
             let now = std::time::Instant::now();

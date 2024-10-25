@@ -8,7 +8,6 @@ use crate::{
 };
 use std::{
     borrow::Cow,
-    collections::VecDeque,
     num::{NonZeroU32, NonZeroUsize},
 };
 
