@@ -170,11 +170,10 @@ mod tests {
 
         assert_eq!(sccs, own_sccs);
     }
-
-    #[test]
+    
     pub fn bench_pearce() {
         const ROUNDS: usize = 1000;
-        let game = load_example("TwoCountersInRangeA6.tlsf.ehoa.pg ");
+        let game = load_example("TwoCountersInRangeA6.tlsf.ehoa.pg");
         let now = std::time::Instant::now();
         let mut sccs = Vec::new();
         for i in 0..ROUNDS {
