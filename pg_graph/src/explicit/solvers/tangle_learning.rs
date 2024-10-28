@@ -21,8 +21,8 @@ pub struct TangleSolver<'a, Vertex> {
     game: &'a ParityGame<u32, Vertex>,
     attract: AttractionComputer<u32>,
     pearce: PearceTangleScc,
-    tangles_found: u32,
-    dominions_found: u32,
+    pub tangles_found: u32,
+    pub dominions_found: u32,
 }
 
 impl<'a, Vertex> TangleSolver<'a, Vertex> {
@@ -70,7 +70,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
         while current_game.vertex_count() > 0 {
             let new_dominion = self.search_dominion(&current_game, &mut tangles, strategy.as_mut_slice());
             let owner = Owner::from_priority(new_dominion.dominating_p);
-            
+
             let full_dominion = self.attract.attractor_set_tangle(
                 &current_game,
                 owner,
@@ -94,7 +94,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
             tangles.intersect_tangles(&current_game);
         }
 
-        tracing::info!(tangles_found=?self.tangles_found, "Finished Tangle Learning");
+        tracing::info!(dominions=?self.dominions_found, tangles_found=?self.tangles_found, "Finished Tangle Learning");
 
         (winning_even, winning_odd)
     }
@@ -118,7 +118,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     &partial_subgame,
                     partial_subgame.vertices_index_by_priority(d),
                 );
-                
+
                 let tangle_attractor = self.attract.attractor_set_tangle(
                     &partial_subgame,
                     owner,
@@ -126,7 +126,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     tangles.get_matching_set(owner).iter(),
                     strategy,
                 );
-                tracing::debug!(attr=?tangle_attractor.ones().collect_vec(), "Tangle Attractor");
+                crate::info!(attr=?tangle_attractor.ones().collect_vec(), "Tangle Attractor");
                 let mut greatest_vertices = tangle_attractor.ones_vertices().filter(|v| current_game.priority(*v) == d);
                 // Check if there are any escapes from this region, or if it's locally closed.
                 let leaks = greatest_vertices.any(|v| {
@@ -138,7 +138,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
                             .any(|succ| !tangle_attractor.contains(succ.index()))
                     }
                 });
-                tracing::debug!(?leaks, "Leaks");
+                crate::debug!(?leaks, "Leaks");
 
                 // If there are any leaks from our region then there's no point in finding tangles
                 if leaks {
@@ -149,7 +149,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
                 let mut tangle_subgame = partial_subgame.clone();
                 tangle_subgame.intersect_subgame(&tangle_attractor);
                 let possible_dominion = self.extract_tangles(current_game, &tangle_attractor, &tangle_subgame, d, strategy, &mut temp_tangles);
-                
+
                 if let Some(dominion) = possible_dominion {
                     tangles.merge(temp_tangles);
                     return dominion;
@@ -157,7 +157,8 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     partial_subgame.shrink_subgame(&tangle_attractor);
                 }
             }
-            tracing::info!("Finished iteration, next");
+
+            crate::info!("Finished iteration, next");
             tangles.merge(temp_tangles);
         }
     }
@@ -178,16 +179,14 @@ impl<'a> TangleSolver<'a, VertexVec> {
         self.pearce.run(tangle_sub_game, region_owner, top_vertices, strategy, |tangle, top_vertex| {
             // Ensure non-trivial SCC (more than one vertex OR self-loop
             let tangle_size = tangle.len();
-            let id = self.tangles_found;
             let is_tangle = tangle_size != 1 || strategy[top_vertex.index()] == top_vertex || current_game.has_edge(top_vertex, top_vertex);
             if !is_tangle {
-                let tangle_data = tangle.collect_vec();
-                tracing::warn!(?tangle_data, "Skipping trivial tangle");
+                crate::trace!("Skipping trivial tangle");
                 return;
             }
 
+            let id = self.tangles_found;
             let full_tangle = tangle.collect_vec();
-            tracing::info!(id, ?tangle_size, ?region_owner, ?region_priority, ?full_tangle, "Found new tangle");
 
             // Count all escapes that remain in the GREATER unsolved game
             let mut final_tangle = current_game.empty_vertex_set();
@@ -209,11 +208,13 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     }
                 }
             }
-            // For faster compute later on
+
+            // Check if there are any escapes in our greater game, if not we already know it's a dominion.
+            // We can then just merge it with other found dominating tangles this cycle
             if target_escapes.is_empty() {
-                tracing::info!("Tangle was a dominion");
+                crate::info!("Found a tangle which was a dominion");
                 self.dominions_found += 1;
-                
+
                 if let Some(existing) = &mut dominion {
                     existing.vertices.union_with(&final_tangle);
                 } else {
@@ -225,7 +226,6 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     )
                 }
             } else {
-                tracing::info!(escapes=?target_escapes.len(), "Tangle has escapes");
                 let new_tangle = Tangle {
                     id,
                     owner: region_owner,
@@ -233,6 +233,8 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     vertices: final_tangle,
                     escape_targets: target_escapes,
                 };
+
+                crate::info!(?new_tangle, "Found new tangle");
 
                 self.tangles_found += 1;
                 tangles.insert_tangle(new_tangle);
@@ -274,7 +276,7 @@ impl TangleCollection {
             Owner::Odd => &mut self.odd_tangles,
         }
     }
-    
+
     #[inline]
     pub fn get_matching_set_mut(&mut self, owner: Owner) -> &mut Vec<Tangle> {
         match owner {

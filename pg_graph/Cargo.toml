@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [features]
 statistics = ["oxidd-cache/statistics", "oxidd-rules-bdd/statistics", "oxidd/statistics"]
+verbose = []
 
 [dependencies]
 eyre.workspace = true

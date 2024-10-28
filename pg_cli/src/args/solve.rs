@@ -115,7 +115,9 @@ pub enum ExplicitSolvers {
     /// Use the recursive Zielonka algorithm
     Zielonka,
     /// Use the Priority Promotion algorithm
-    PP
+    PP,
+    /// Use Tangle Learning
+    TL
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -169,6 +171,13 @@ impl SolveCommand {
 
                             let out = timed_solve!(solver.run());
                             tracing::info!(n = solver.promotions, "Solved with promotions");
+                            out.winners
+                        }
+                        ExplicitSolvers::TL => {
+                            let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&parity_game);
+
+                            let out = timed_solve!(solver.run());
+                            tracing::info!(tangles = solver.tangles_found, dominions = solver.dominions_found, "Solved");
                             out.winners
                         }
                     }
@@ -291,6 +300,9 @@ impl SolveCommand {
                                 let solution = timed_solve!(solver.run());
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                                 rg.project_winners_original(&solution.winners)
+                            }
+                            ExplicitSolvers::TL => {
+                                unimplemented!();
                             }
                         }
                     }
