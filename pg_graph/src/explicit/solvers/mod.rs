@@ -128,6 +128,10 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         while let Some(next_item) = self.queue.pop_back() {
             for predecessor in game.predecessors(next_item) {
                 if attract_set.contains(predecessor.index()) {
+                    // Update strategy if `predecessor` was part of the original starting_set
+                    if game.owner(predecessor) == player && strategy[predecessor.index()].index() == tangle_learning::NO_STRATEGY as usize {
+                        strategy[predecessor.index()] = next_item;
+                    }
                     continue;
                 }
 
@@ -147,7 +151,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
             }
 
             for tangle in player_tangles.clone() {
-                let mut valid_escapes = tangle.escapes.iter().filter(|v| game.game_vertices.contains(v.index()));
+                let mut valid_escapes = tangle.escape_targets.iter().filter(|v| game.game_vertices.contains(v.index()));
                 // let restricted_set = game.game_vertices.lazy_and(&tangle.escapes);
                 // if restricted_set.is_subset(&attract_set) {
                 //     attract_set.union_with(&tangle.vertices)
@@ -156,6 +160,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     tracing::debug!(?tangle, "Attracting tangle");
                     // Add all vertices to the queue which were not already in the attraction set.
                     for v in tangle.vertices.difference(&attract_set) {
+                        //TODO: Strategy?
                         self.queue.push_back(VertexId::new(v));
                     }
                     attract_set.union_with(&tangle.vertices);

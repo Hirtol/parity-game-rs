@@ -1,4 +1,4 @@
-use crate::explicit::VertexSet;
+use crate::explicit::{BitsetExtensions, VertexSet};
 use crate::{datatypes::Priority, visualize::VisualVertex, Owner, ParityVertexSoa, Vertex, VertexVec};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
@@ -27,6 +27,10 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     }
 
     fn original_game(&self) -> &Self::Parent;
+    
+    fn empty_vertex_set(&self) -> VertexSet {
+        VertexSet::empty_game(self)
+    }
     
     fn vertex_count(&self) -> usize;
 

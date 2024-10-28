@@ -26,7 +26,7 @@ soa_derive = "0.13.0"
 roaring = "0.10.6"
 #fixedbitset = "0.5.7"
 fixedbitset = {git = "https://github.com/Hirtol/fixedbitset"}
-hi_sparse_bitset = "0.6.1"
+tracing-test = "0.2.5"
 
 petgraph = "0.6.4"
 oxidd = { git = "https://github.com/Hirtol/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
