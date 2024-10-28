@@ -157,9 +157,11 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                 //     attract_set.union_with(&tangle.vertices)
                 // }
                 if valid_escapes.clone().count() > 0 && valid_escapes.all(|v| attract_set.contains(v.index())) {
-                    tracing::debug!(?tangle, "Attracting tangle");
+                    // let mut current_tangle = tangle.vertices.clone();
+                    // current_tangle.intersect_with(&game.game_vertices);
                     // Add all vertices to the queue which were not already in the attraction set.
                     for v in tangle.vertices.difference(&attract_set) {
+                        tracing::debug!(?v, ?tangle.id, "Attracting tangle");
                         //TODO: Strategy?
                         self.queue.push_back(VertexId::new(v));
                     }
