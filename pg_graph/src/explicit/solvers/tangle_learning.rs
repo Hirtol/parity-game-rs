@@ -8,6 +8,7 @@ use crate::{
     Owner, VertexVec,
 };
 use itertools::Itertools;
+use petgraph::graph::IndexType;
 use std::collections::VecDeque;
 use std::{
     borrow::Cow,
@@ -63,33 +64,25 @@ impl<'a> TangleSolver<'a, VertexVec> {
         );
 
         let mut current_game = game.create_subgame([]);
-        let mut tangles = Vec::new();
+        let mut tangles = TangleCollection::default();
         let mut strategy = vec![VertexId::new(NO_STRATEGY as usize); game.original_vertex_count()];
 
         while current_game.vertex_count() > 0 {
-            let new_tangles = self.search_dominion(&current_game, tangles, strategy.as_mut_slice());
-            tangles = new_tangles;
+            let new_dominion = self.search_dominion(&current_game, &mut tangles, strategy.as_mut_slice());
+            let owner = Owner::from_priority(new_dominion.dominating_p);
             
-            let (full_dominion, priority) = tangles.iter().filter(|t| t.escape_targets.is_empty()).fold((VertexSet::empty_game(&current_game), 0), |mut acc, tangle| {
-                acc.0.union_with(&tangle.vertices);
-                (acc.0, tangle.priority)
-            });
-            let owner = Owner::from_priority(priority);
-            
-            self.dominions_found += 1;
-            let filtered_tangles = tangles.iter().filter(|t| t.owner == owner);
             let full_dominion = self.attract.attractor_set_tangle(
                 &current_game,
-                Owner::from_priority(priority),
-                Cow::Borrowed(&full_dominion),
-                filtered_tangles,
+                owner,
+                Cow::Owned(new_dominion.vertices),
+                tangles.get_matching_set(owner).iter(),
                 strategy.as_mut_slice()
             );
 
             tracing::debug!(
-                priority = priority,
+                priority = new_dominion.dominating_p,
                 size = full_dominion.count_ones(..),
-                "Found dominion"
+                "Found greater dominion"
             );
 
             match owner {
@@ -98,33 +91,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
             }
 
             current_game.shrink_subgame(&full_dominion);
-            
-            
-            // for dominion in tangles.iter().filter(|t| t.escape_targets.is_empty()) {
-            //     self.dominions_found += 1;
-            //     let full_dominion = self.attract.attractor_set_tangle(
-            //         &current_game,
-            //         Owner::from_priority(dominion.priority),
-            //         Cow::Borrowed(&dominion.vertices),
-            //         tangles.iter(),
-            //         strategy.as_mut_slice()
-            //     );
-            // 
-            //     tracing::debug!(
-            //         priority = dominion.priority,
-            //         size = full_dominion.count_ones(..),
-            //         "Found dominion"
-            //     );
-            // 
-            //     match Owner::from_priority(dominion.priority) {
-            //         Owner::Even => winning_even.union_with(&full_dominion),
-            //         Owner::Odd => winning_odd.union_with(&full_dominion),
-            //     }
-            // 
-            //     current_game.shrink_subgame(&full_dominion);
-            // }
-            
-            tangles.retain(|tangle| tangle.vertices.is_subset(&current_game.game_vertices));
+            tangles.intersect_tangles(&current_game);
         }
 
         tracing::info!(tangles_found=?self.tangles_found, "Finished Tangle Learning");
@@ -135,12 +102,12 @@ impl<'a> TangleSolver<'a, VertexVec> {
     fn search_dominion(
         &mut self,
         current_game: &impl ParityGraph<u32>,
-        mut tangles: Vec<Tangle>,
+        tangles: &mut TangleCollection,
         strategy: &mut [VertexId<u32>],
-    ) -> Vec<Tangle> {
+    ) -> Dominion {
         loop {
             let mut partial_subgame = current_game.create_subgame([]);
-            let mut temp_tangles = Vec::new();
+            let mut temp_tangles = TangleCollection::default();
             strategy.fill(VertexId::new(NO_STRATEGY as usize));
 
             while partial_subgame.vertex_count() != 0 {
@@ -151,12 +118,12 @@ impl<'a> TangleSolver<'a, VertexVec> {
                     &partial_subgame,
                     partial_subgame.vertices_index_by_priority(d),
                 );
-                let filtered_tangles = tangles.iter().filter(|t| t.owner == owner);
+                
                 let tangle_attractor = self.attract.attractor_set_tangle(
                     &partial_subgame,
                     owner,
                     Cow::Owned(starting_set),
-                    filtered_tangles,
+                    tangles.get_matching_set(owner).iter(),
                     strategy,
                 );
                 tracing::debug!(attr=?tangle_attractor.ones().collect_vec(), "Tangle Attractor");
@@ -181,18 +148,17 @@ impl<'a> TangleSolver<'a, VertexVec> {
 
                 let mut tangle_subgame = partial_subgame.clone();
                 tangle_subgame.intersect_subgame(&tangle_attractor);
-                let (new_tangles, contains_dominion) = self.extract_tangles(current_game, &tangle_attractor, &tangle_subgame, d, strategy);
-
-                temp_tangles.extend(new_tangles);
-                if contains_dominion {
-                    tangles.extend(temp_tangles);
-                    return tangles;
+                let possible_dominion = self.extract_tangles(current_game, &tangle_attractor, &tangle_subgame, d, strategy, &mut temp_tangles);
+                
+                if let Some(dominion) = possible_dominion {
+                    tangles.merge(temp_tangles);
+                    return dominion;
                 } else {
                     partial_subgame.shrink_subgame(&tangle_attractor);
                 }
             }
             tracing::info!("Finished iteration, next");
-            tangles.extend(temp_tangles);
+            tangles.merge(temp_tangles);
         }
     }
 
@@ -203,11 +169,11 @@ impl<'a> TangleSolver<'a, VertexVec> {
         tangle_sub_game: &SubGame<u32, T::Parent>,
         region_priority: Priority,
         strategy: &mut [VertexId<u32>],
-    ) -> (Vec<Tangle>, bool) {
+        tangles: &mut TangleCollection,
+    ) -> Option<Dominion> {
         let top_vertices = tangle_attractor.ones_vertices().filter(|v| current_game.priority(*v) == region_priority);
-        let mut tangles = Vec::new();
+        let mut dominion: Option<Dominion> = None;
         let region_owner = Owner::from_priority(region_priority);
-        let mut has_dominion = false;
 
         self.pearce.run(tangle_sub_game, region_owner, top_vertices, strategy, |tangle, top_vertex| {
             // Ensure non-trivial SCC (more than one vertex OR self-loop
@@ -219,10 +185,10 @@ impl<'a> TangleSolver<'a, VertexVec> {
                 tracing::warn!(?tangle_data, "Skipping trivial tangle");
                 return;
             }
-            
+
             let full_tangle = tangle.collect_vec();
             tracing::info!(id, ?tangle_size, ?region_owner, ?region_priority, ?full_tangle, "Found new tangle");
-            
+
             // Count all escapes that remain in the GREATER unsolved game
             let mut final_tangle = current_game.empty_vertex_set();
             for v in full_tangle {
@@ -247,24 +213,74 @@ impl<'a> TangleSolver<'a, VertexVec> {
             if target_escapes.is_empty() {
                 tracing::info!("Tangle was a dominion");
                 self.dominions_found += 1;
-                has_dominion = true;
+                
+                if let Some(existing) = &mut dominion {
+                    existing.vertices.union_with(&final_tangle);
+                } else {
+                    dominion = Some(
+                        Dominion {
+                            dominating_p: region_priority,
+                            vertices: final_tangle,
+                        }
+                    )
+                }
             } else {
                 tracing::info!(escapes=?target_escapes.len(), "Tangle has escapes");
+                let new_tangle = Tangle {
+                    id,
+                    owner: region_owner,
+                    priority: region_priority,
+                    vertices: final_tangle,
+                    escape_targets: target_escapes,
+                };
+
                 self.tangles_found += 1;
+                tangles.insert_tangle(new_tangle);
             }
-
-            let new_tangle = Tangle {
-                id,
-                owner: region_owner,
-                priority: region_priority,
-                vertices: final_tangle,
-                escape_targets: target_escapes,
-            };
-
-            tangles.push(new_tangle);
         });
 
-        (tangles, has_dominion)
+        dominion
+    }
+}
+
+#[derive(Default)]
+pub struct TangleCollection {
+    even_tangles: Vec<Tangle>,
+    odd_tangles: Vec<Tangle>
+}
+
+impl TangleCollection {
+    #[inline]
+    pub fn insert_tangle(&mut self, tangle: Tangle) {
+        self.get_matching_set_mut(tangle.owner).push(tangle);
+    }
+
+    /// Merge with a different set
+    pub fn merge(&mut self, other: TangleCollection) {
+        self.even_tangles.extend(other.even_tangles);
+        self.odd_tangles.extend(other.odd_tangles);
+    }
+
+    /// Shrink the current set of tangles to only retain those which are a subset of the given `subgame`.
+    pub fn intersect_tangles<Ix: IndexType, Parent: ParityGraph<Ix>>(&mut self, subgame: &SubGame<Ix, Parent>) {
+        self.even_tangles.retain(|tangle| tangle.vertices.is_subset(&subgame.game_vertices));
+        self.odd_tangles.retain(|tangle| tangle.vertices.is_subset(&subgame.game_vertices));
+    }
+
+    #[inline]
+    pub fn get_matching_set(&mut self, owner: Owner) -> &[Tangle] {
+        match owner {
+            Owner::Even => &mut self.even_tangles,
+            Owner::Odd => &mut self.odd_tangles,
+        }
+    }
+    
+    #[inline]
+    pub fn get_matching_set_mut(&mut self, owner: Owner) -> &mut Vec<Tangle> {
+        match owner {
+            Owner::Even => &mut self.even_tangles,
+            Owner::Odd => &mut self.odd_tangles,
+        }
     }
 }
 
@@ -346,7 +362,7 @@ impl PearceTangleScc {
         if graph.owner(v_id) == region_owner {
             let edge_i = *self.i_s.front().expect("Impossible Invariant Violation");
             let edge = strategy[v_id.index()];
-            
+
             // We have only one edge, namely the strategy, so we can simply elide the loop.
             if edge_i == 0 && self.root_index[edge.index()].is_none() {
                 // Add the current index back in order to `finish_edge` after we finish exploring this new node.
@@ -449,8 +465,8 @@ pub mod test {
     #[test]
     #[tracing_test::traced_test]
     pub fn test_solve_action_converter() {
-        // let game = load_example("ActionConverter.tlsf.ehoa.pg");
-        let game = load_example("ltl2dpa13.tlsf.ehoa.pg");
+        let game = load_example("amba_decomposed_arbiter_10.tlsf.ehoa.pg");
+        // let game = load_example("ltl2dpa13.tlsf.ehoa.pg");
         let mut solver = TangleSolver::new(&game);
 
         let now = Instant::now();
