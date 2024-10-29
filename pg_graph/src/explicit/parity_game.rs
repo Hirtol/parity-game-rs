@@ -142,7 +142,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
                 priority = self.priority(v_id),
                 owner = self.owner(v_id) as u8,
                 edges = self.edges(v_id).map(|target| target.index()).join(","),
-                label = self.label(v_id).unwrap_or_default(),
+                label = v_id.index(),
             )
             .unwrap();
         }

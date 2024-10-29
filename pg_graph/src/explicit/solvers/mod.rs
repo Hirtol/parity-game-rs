@@ -119,57 +119,84 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         game: &SubGame<Ix, T>,
         player: Owner,
         starting_set: Cow<'_, VertexSet>,
-        player_tangles: impl Iterator<Item=&'a tangle_learning::Tangle> + Clone,
+        player_tangles: &[tangle_learning::Tangle],
         strategy: &mut [VertexId<Ix>]
     ) -> VertexSet {
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
 
-        while let Some(next_item) = self.queue.pop_back() {
-            for predecessor in game.predecessors(next_item) {
-                if attract_set.contains(predecessor.index()) {
-                    // Update strategy if `predecessor` was part of the original starting_set
-                    if game.owner(predecessor) == player && strategy[predecessor.index()].index() == tangle_learning::NO_STRATEGY as usize {
-                        strategy[predecessor.index()] = next_item;
+        loop {
+            while let Some(next_item) = self.queue.pop_back() {
+                for predecessor in game.predecessors(next_item) {
+                    if attract_set.contains(predecessor.index()) {
+                        // Update strategy if `predecessor` was part of the original starting_set
+                        if game.owner(predecessor) == player && strategy[predecessor.index()].index() == tangle_learning::NO_STRATEGY as usize {
+                            strategy[predecessor.index()] = next_item;
+                        }
+                        continue;
                     }
-                    continue;
-                }
 
-                let should_add = if game.owner(predecessor) == player {
-                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
-                    strategy[predecessor.index()] = next_item;
-                    true
-                } else {
-                    game.edges(predecessor).all(|v| attract_set.contains(v.index()))
-                };
+                    let should_add = if game.owner(predecessor) == player {
+                        // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                        strategy[predecessor.index()] = next_item;
+                        true
+                    } else {
+                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                    };
 
-                // Only add to the attraction set if we should
-                if should_add {
-                    attract_set.insert(predecessor.index());
-                    self.queue.push_back(predecessor);
+                    // Only add to the attraction set if we should
+                    if should_add {
+                        attract_set.insert(predecessor.index());
+                        self.queue.push_back(predecessor);
+                    }
                 }
             }
-
-            for tangle in player_tangles.clone() {
+            
+            let mut had_change = false;
+            for tangle in player_tangles {
                 let mut valid_escapes = tangle.escape_targets.iter().filter(|v| game.game_vertices.contains(v.index()));
                 // let restricted_set = game.game_vertices.lazy_and(&tangle.escapes);
                 // if restricted_set.is_subset(&attract_set) {
                 //     attract_set.union_with(&tangle.vertices)
                 // }
                 if valid_escapes.clone().count() > 0 && valid_escapes.all(|v| attract_set.contains(v.index())) {
-                    // let mut current_tangle = tangle.vertices.clone();
-                    // current_tangle.intersect_with(&game.game_vertices);
-                    // Add all vertices to the queue which were not already in the attraction set.
-                    for v in tangle.vertices.difference(&attract_set) {
-                        crate::debug!(?v, ?tangle.id, "Attracting tangle");
-                        //TODO: Strategy?
-                        self.queue.push_back(VertexId::new(v));
+                    crate::debug!(?tangle.id, "Might attract tangle");
+                    
+                    // So this shouldn't work, but it does for our entire game benchmark set, it makes two counters non-exponential.
+                    // No clue why. TODO: Ask Tom
+                    // let remaining_vertices = tangle.vertices.intersection(&game.game_vertices);
+                    // for v in remaining_vertices {
+                    //     if !attract_set.contains(v) {
+                    //         attract_set.insert(v);
+                    //         crate::debug!(?v, ?tangle.id, "Attracting tangle");
+                    //         self.queue.push_back(VertexId::new(v));
+                    //         had_change = true;
+                    //     }
+                    // }
+
+                    // We might have attracted vertices in this tangle to a higher region
+                    let remaining_vertices = tangle.vertices.intersection_count(&game.game_vertices);
+                    let original_vertices = tangle.vertices.count_ones(..);
+                    if remaining_vertices == original_vertices {
+                        for v in tangle.vertices.difference(&attract_set) {
+                            crate::debug!(?v, ?tangle.id, "Attracting tangle");
+                            self.queue.push_back(VertexId::new(v));
+                            had_change = true;
+                        }
+                    
+                        attract_set.union_with(&tangle.vertices);
                     }
-                    attract_set.union_with(&tangle.vertices);
+                    //TODO: Strategy?
+                    // I presume we need to replicate what oink does (e.g., set all vertices to point to each other)
+                    // I hope that fixes the Two counters cases being instant
                 }
             }
+            
+            if !had_change {
+                break;
+            }
         }
-
+        
         attract_set
     }
 
