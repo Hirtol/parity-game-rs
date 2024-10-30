@@ -157,7 +157,7 @@ pub struct ParityGameBuilder<V: Soars, Ix: IndexType = u32> {
     /// Will always have the last element indicate the end `len` of `edges`
     edge_indexes: Vec<usize>,
     edges: Vec<VertexId<Ix>>,
-    // inverted_edges: Vec<Vec<VertexId<Ix>>>,
+    in_degrees: Vec<u32>,
     labels: Vec<Option<String>>,
 }
 
@@ -167,38 +167,28 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
             vertices: Soa::default(),
             edge_indexes: vec![0],
             edges: vec![],
-            // inverted_edges: vec![],
+            in_degrees: vec![],
             labels: vec![],
         }
     }
 
     pub fn build(self) -> ParityGame<Ix, Vert> {
-        // let inverted_indexes = Vec::with_capacity(self.vertices.len());
-        // let inverted_edges = Vec::with_capacity(self.edges.len());
         let num_vertices = self.vertices.len();
-        // Step 1: Count in-degrees for each vertex to determine the number of incoming edges
-        let mut in_degree = vec![0; num_vertices];
-        for dest in &self.edges {
-            in_degree[dest.index()] += 1;
-        }
-
-        // Step 2: Compute cumulative start indices for the transposed edges
-        let mut index_start_transposed = vec![0; num_vertices + 1];
+        // Compute the start indexes for our inverted edges
+        let mut inverted_indexes = vec![0; num_vertices + 1];
         for i in 0..num_vertices {
-            index_start_transposed[i + 1] = index_start_transposed[i] + in_degree[i];
+            inverted_indexes[i + 1] = inverted_indexes[i] + self.in_degrees[i] as usize;
         }
 
-        // Allocate space for transposed edges
-        let mut edges_transposed = vec![VertexId::default(); self.edges.len()];
-
-        // Step 3: Place edges in transposed position
-        let mut current_position = index_start_transposed.clone();
+        // Ensure we have a fully populated CSR inverted indexes array.
+        let mut inverted_edges = vec![VertexId::default(); self.edges.len()];
+        let mut current_position = inverted_indexes.clone();
         for u in 0..num_vertices {
             let start = self.edge_indexes[u];
             let end = self.edge_indexes[u + 1];
-            for &v in &self.edges[start..end] {
+            for v in &self.edges[start..end] {
                 let pos = current_position[v.index()];
-                edges_transposed[pos] = VertexId::new(u);
+                inverted_edges[pos] = VertexId::new(u);
                 current_position[v.index()] += 1;
             }
         }
@@ -207,16 +197,16 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
             vertices: self.vertices,
             edge_indexes: self.edge_indexes,
             edges: self.edges,
-            inverted_indexes: index_start_transposed,
-            inverted_edges: edges_transposed,
-            // inverted_vertices: self.inverted_edges,
+            inverted_indexes,
+            inverted_edges,
             labels: self.labels,
         }
     }
 
+    /// Allocate enough room to accommodate `vertex_count` vertices without having to do intermediate re-allocations.
     pub fn preallocate(&mut self, vertex_count: usize) {
         self.labels = Vec::with_capacity(vertex_count);
-        // self.inverted_edges = vec![Vec::new(); vertex_count];
+        self.in_degrees = vec![0; vertex_count];
         self.edges = Vec::with_capacity(vertex_count);
         self.edge_indexes.reserve(vertex_count);
     }
@@ -240,11 +230,11 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
     pub fn push_edges(&mut self, edges: impl Iterator<Item=VertexId<Ix>>) {
         for edge in edges {
             // The header is not guaranteed to be correct
-            // while self.inverted_edges.len() <= edge.index() {
-            //     self.inverted_edges.push(Vec::new());
-            // }
+            while self.in_degrees.len() <= edge.index() {
+                self.in_degrees.push(0);
+            }
             self.edges.push(edge);
-            // self.inverted_edges[edge.index()].push(VertexId::new(self.vertices.len() - 1));
+            self.in_degrees[edge.index()] += 1;
         }
 
         // Maintain invariant that the last element in `self.edge_indexes` is always the len of `edges`.
