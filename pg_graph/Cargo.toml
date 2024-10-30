@@ -23,6 +23,7 @@ tracing = { version = "0.1.40" }
 itertools.workspace = true
 dynqueue = { version = "0.3.0", features = ["crossbeam-queue"] }
 soa_derive = "0.13.0"
+soa-rs = "0.7.2"
 
 roaring = "0.10.6"
 #fixedbitset = "0.5.7"

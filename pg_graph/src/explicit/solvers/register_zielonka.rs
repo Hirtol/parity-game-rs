@@ -1,5 +1,5 @@
 use crate::explicit::reduced_register_game::RegisterParityGraph;
-use crate::explicit::register_game::{GameRegisterVertexVec, RegisterGame};
+use crate::explicit::register_game::{GameRegisterVertex, RegisterGame};
 use crate::explicit::{BitsetExtensions, VertexSet};
 use crate::{
     explicit::{
@@ -11,13 +11,13 @@ use crate::{
 
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
-    game: &'a ParityGame<u32, GameRegisterVertexVec>,
+    game: &'a ParityGame<u32, GameRegisterVertex>,
     rg: &'a RegisterGame<'a>,
     attract: AttractionComputer<u32>,
 }
 
 impl<'a> ZielonkaSolver<'a> {
-    pub fn new(game: &'a ParityGame<u32, GameRegisterVertexVec>, rg: &'a RegisterGame<'a>) -> Self {
+    pub fn new(game: &'a ParityGame<u32, GameRegisterVertex>, rg: &'a RegisterGame<'a>) -> Self {
         ZielonkaSolver {
             game,
             recursive_calls: 0,

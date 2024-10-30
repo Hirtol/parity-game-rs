@@ -1,13 +1,14 @@
 use crate::explicit::{BitsetExtensions, VertexSet};
-use crate::{datatypes::Priority, visualize::VisualVertex, Owner, ParityVertexSoa, Vertex, VertexVec};
+use crate::{datatypes::Priority, visualize::VisualVertex, Owner, ParityVertexSoa, Vertex};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::{
     adj::IndexType,
-    graph::{EdgeReference, NodeIndex},
-    prelude::EdgeRef,
+    graph::NodeIndex
+    ,
 };
 use pg_parser::PgBuilder;
+use soa_rs::{Soa, Soars};
 use std::marker::PhantomData;
 use std::{
     collections::HashMap,
@@ -128,7 +129,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         self.edges(v).count()
     }
 
-    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>>;
+    fn graph_edges(&self) -> impl Iterator<Item = (VertexId<Ix>, VertexId<Ix>)>;
 
     fn to_pg(&self) -> String {
         use std::fmt::Write;
@@ -151,147 +152,119 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
     }
 }
 
-#[derive(Default)]
-pub struct ParityGameBuilder<Ix: IndexType = u32, VertexSoa = VertexVec> {
-    vertices: VertexSoa,
+pub struct ParityGameBuilder<V: Soars, Ix: IndexType = u32> {
+    vertices: Soa<V>,
+    /// Will always have the last element indicate the end `len` of `edges`
     edge_indexes: Vec<usize>,
     edges: Vec<VertexId<Ix>>,
     inverted_edges: Vec<Vec<VertexId<Ix>>>,
     labels: Vec<Option<String>>,
 }
 
-impl<Ix: IndexType, Vert: Default> ParityGameBuilder<Ix, Vert> {
+impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            vertices: Soa::default(),
+            edge_indexes: vec![0],
+            edges: vec![],
+            inverted_edges: vec![],
+            labels: vec![],
+        }
     }
 
     pub fn build(self) -> ParityGame<Ix, Vert> {
-        // Construct the petgraph first
-        let mut graph = petgraph::Graph::with_capacity(self.inverted_edges.len(), self.edges.len());
-        for _ in 0..self.edge_indexes.len() {
-            graph.add_node(());
-        }
-        for (source_vertex, window) in self.edge_indexes.windows(2).enumerate() {
-            let source = VertexId::new(source_vertex);
-            for &edge in &self.edges[window[0]..window[1]] {
-                graph.add_edge(source, edge, ());
-            }
-        }
-        // The last edge can never be in the window
-        if let Some(&last) = self.edge_indexes.last() { 
-            let source = VertexId::new(self.edge_indexes.len() - 1);
-            for &edge in &self.edges[last..] {
-                graph.add_edge(source, edge, ());
-            }
-        }
-
         ParityGame {
-            graph,
             vertices: self.vertices,
+            edge_indexes: self.edge_indexes,
+            edges: self.edges,
             inverted_vertices: self.inverted_edges,
             labels: self.labels,
         }
     }
-}
 
-impl<'a, Ix: IndexType> PgBuilder<'a> for ParityGameBuilder<Ix> {
-    fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()> {
+    pub fn preallocate(&mut self, vertex_count: usize) {
         self.labels = Vec::with_capacity(vertex_count);
         self.inverted_edges = vec![Vec::new(); vertex_count];
         self.edges = Vec::with_capacity(vertex_count);
-        self.edge_indexes = Vec::with_capacity(vertex_count);
+        self.edge_indexes.reserve(vertex_count);
+    }
+
+    /// Add a vertex to the end of the list.
+    ///
+    /// Any outgoing edges from this vertex need to be added before the next `add_vertex` call.
+    #[inline]
+    pub fn push_vertex(&mut self, id: usize, vertex: Vert) -> eyre::Result<VertexId<Ix>> {
+        if self.vertices.len() != id {
+            eyre::bail!("Non-contiguous vertex IDs!")
+        }
+
+        self.vertices.push(vertex);
+
+        Ok(VertexId::new(id))
+    }
+
+    /// These edges will be added to the most recently added vertex.
+    #[inline]
+    pub fn push_edges(&mut self, edges: impl Iterator<Item=VertexId<Ix>>) {
+        for edge in edges {
+            // The header is not guaranteed to be correct
+            while self.inverted_edges.len() <= edge.index() {
+                self.inverted_edges.push(Vec::new());
+            }
+            self.edges.push(edge);
+            self.inverted_edges[edge.index()].push(VertexId::new(self.vertices.len() - 1));
+        }
+
+        // Maintain invariant that the last element in `self.edge_indexes` is always the len of `edges`.
+        self.edge_indexes.push(self.edges.len());
+    }
+}
+
+impl<'a, Ix: IndexType> PgBuilder<'a> for ParityGameBuilder<Vertex, Ix> {
+    fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()> {
+        self.preallocate(vertex_count);
         Ok(())
     }
 
     #[inline(always)]
     fn add_vertex(&mut self, id: usize, vertex: pg_parser::Vertex<'a>) -> eyre::Result<()> {
-        if self.vertices.len() != id {
-            eyre::bail!("Non-contiguous vertex IDs!")
-        }
-
-        self.vertices.push(Vertex {
+        self.push_vertex(id, Vertex {
             priority: vertex.priority as Priority,
             owner: vertex.owner.try_into()?,
-        });
+        })?;
         self.labels.push(vertex.label.map(|v| v.into()));
         
         // Add edges
-        self.edge_indexes.push(self.edges.len());
-        for edge in vertex.outgoing_edges {
-            // The header is not guaranteed to be correct
-            while self.inverted_edges.len() <= edge {
-                self.inverted_edges.push(Vec::new());
-            }
-            self.edges.push(VertexId::new(edge));
-            self.inverted_edges[edge].push(VertexId::new(id));
-        }
+        self.push_edges(vertex.outgoing_edges.into_iter().map(VertexId::new));
 
         Ok(())
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ParityGame<Ix: IndexType = u32, VertexSoa = VertexVec> {
-    pub graph: petgraph::Graph<(), (), petgraph::Directed, Ix>,
-    pub vertices: VertexSoa,
+pub struct ParityGame<Ix: IndexType = u32, V: Soars = Vertex> {
+    pub vertices: Soa<V>,
+    /// Stored in CSR format, where the last element of edge_indexes is not an actual vertex, thus it is always safe to
+    /// index with `[v_id, v_id + 1]`.
+    pub edge_indexes: Vec<usize>,
+    pub edges: Vec<VertexId<Ix>>,
     pub(crate) inverted_vertices: Vec<Vec<VertexId<Ix>>>,
     pub(crate) labels: Vec<Option<String>>,
 }
 
-impl<Ix: IndexType, Vert: Default> ParityGame<Ix, Vert> {
+impl<Ix: IndexType, Vert: Soars> ParityGame<Ix, Vert> {
     pub fn empty() -> Self {
         Self {
-            graph: petgraph::Graph::with_capacity(20, 20),
-            vertices: Vert::default(),
+            vertices: Soa::default(),
+            edge_indexes: vec![],
+            edges: vec![],
             inverted_vertices: vec![],
             labels: Vec::new(),
         }
     }
 }
 
-impl ParityGame {
-    pub fn new(parsed_game: Vec<pg_parser::Vertex>) -> eyre::Result<Self> {
-        // Ensure the ids are correctly ordered
-        if !parsed_game.is_sorted_by(|a, b| a.id < b.id) {
-            eyre::bail!("Parsed game is not ordered by ids as expected!");
-        }
-
-        let mut out = Self::empty();
-
-        let vertices: Vec<_> = parsed_game
-            .iter()
-            .map(|v| Vertex {
-                priority: v.priority.try_into().expect("Priority too large"),
-                owner: v.owner.try_into().expect("Impossible failure"),
-            })
-            .map(|v| {
-                out.vertices.push(v);
-                out.graph.add_node(())
-            })
-            .collect();
-
-        for (p_v, v_idx) in parsed_game.iter().zip(vertices) {
-            for &target_v in &p_v.outgoing_edges {
-                out.graph.add_edge(v_idx, NodeIndex::new(target_v), ());
-            }
-        }
-
-        let mut inverted_graph = vec![Vec::new(); out.graph.node_count()];
-
-        for vertex in out.graph.node_indices() {
-            for edge in out.graph.edges(vertex) {
-                inverted_graph[edge.target().index()].push(vertex);
-            }
-        }
-
-        out.inverted_vertices = inverted_graph;
-        out.labels = parsed_game.into_iter().map(|v| v.label.map(|v| v.into())).collect();
-
-        Ok(out)
-    }
-}
-
-impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGame<Ix, VertexSoa> {
+impl<Ix: IndexType, Vert: Soars> ParityGraph<Ix> for ParityGame<Ix, Vert>
+    where Soa<Vert>: ParityVertexSoa<Ix> {
     type Parent = Self;
 
     fn original_game(&self) -> &Self::Parent {
@@ -300,16 +273,17 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
 
     #[inline(always)]
     fn vertex_count(&self) -> usize {
-        self.graph.node_count()
+        self.vertices.len()
     }
 
+    #[inline]
     fn edge_count(&self) -> usize {
-        self.graph.edge_count()
+        self.edges.len()
     }
 
     #[inline(always)]
-    fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.graph.node_indices()
+    fn vertices_index(&self) -> impl Iterator<Item = VertexId<Ix>> + '_ {
+        (0..self.vertex_count()).map(VertexId::new)
     }
 
     #[inline(always)]
@@ -324,7 +298,7 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
 
     #[inline(always)]
     fn priority(&self, id: NodeIndex<Ix>) -> Priority {
-        self.vertices.priority(id)
+        self.vertices.priority_of(id)
     }
 
     #[inline(always)]
@@ -334,7 +308,7 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
 
     #[inline(always)]
     fn owner(&self, id: NodeIndex<Ix>) -> Owner {
-        self.vertices.owner(id)
+        self.vertices.owner_of(id)
     }
 
     #[inline(always)]
@@ -356,17 +330,22 @@ impl<Ix: IndexType, VertexSoa: ParityVertexSoa<Ix>> ParityGraph<Ix> for ParityGa
 
     #[inline(always)]
     fn has_edge(&self, from: NodeIndex<Ix>, to: NodeIndex<Ix>) -> bool {
-        self.graph.contains_edge(from, to)
+        self.edges(from).contains(&to)
     }
 
     #[inline(always)]
     fn edges(&self, v: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.graph.edges(v).map(|e| e.target())
+        let (edges_start, edges_end) = (self.edge_indexes[v.index()], self.edge_indexes[v.index() + 1]);
+        self.edges[edges_start..edges_end].iter().copied()
     }
 
     #[inline(always)]
-    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
-        self.graph.edge_references()
+    fn graph_edges(&self) -> impl Iterator<Item = (VertexId<Ix>, VertexId<Ix>)> {
+        self.edge_indexes.windows(2).enumerate().flat_map(|(source, targets)| {
+            let source = VertexId::new(source);
+
+            self.edges[targets[0]..targets[1]].iter().map(move |target| (source, *target))
+        })
     }
 }
 
@@ -379,7 +358,7 @@ impl<Ix: IndexType, T: ParityGraph<Ix>> crate::visualize::VisualGraph<Ix> for T 
     }
 
     fn edges(&self) -> Box<dyn Iterator<Item = (VertexId<Ix>, VertexId<Ix>)> + '_> {
-        Box::new(self.graph_edges().map(|e| (e.source(), e.target())))
+        Box::new(self.graph_edges())
     }
 
     fn node_text(&self, node: VertexId<Ix>, sink: &mut dyn Write) -> std::fmt::Result {
@@ -400,7 +379,7 @@ impl<Ix: IndexType, T: ParityGraph<Ix>> crate::visualize::VisualGraph<Ix> for T 
 #[derive(Debug)]
 pub struct SubGame<'a, Ix: IndexType, Parent> {
     pub(crate) parent: &'a Parent,
-    pub(crate) game_vertices: fixedbitset::FixedBitSet,
+    pub(crate) game_vertices: VertexSet,
     pub(crate) len: usize,
     pub(crate) _phant: PhantomData<Ix>,
 }
@@ -471,11 +450,7 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
 
     #[inline(always)]
     fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        // self.parent.vertices_index().filter(|ix| !self.ignored.contains(ix.index()))
-        // let mut out = self.game_vertices.ones().map(VertexId::new).collect_vec();
-        // tracing::warn!(?out, "Hey");
-        self.game_vertices.ones().map(VertexId::new)
-        // out.into_iter()
+        self.game_vertices.ones_vertices()
     }
 
     #[inline(always)]
@@ -550,11 +525,10 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         self.parent.edges(v).filter(|idx| self.game_vertices.contains(idx.index()))
     }
 
-    #[inline(always)]
-    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), Ix>> {
+    fn graph_edges(&self) -> impl Iterator<Item=(VertexId<Ix>, VertexId<Ix>)> {
         self.parent
             .graph_edges()
-            .filter(|edge| self.game_vertices.contains(edge.source().index()) && self.game_vertices.contains(edge.target().index()))
+            .filter(|edge| self.game_vertices.contains(edge.0.index()) && self.game_vertices.contains(edge.1.index()))
     }
 }
 

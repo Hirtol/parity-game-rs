@@ -1,11 +1,9 @@
 //! See [RegisterGame]
 use crate::{datatypes::Priority, explicit::{ParityGame, ParityGraph, VertexId}, visualize::VisualVertex, Owner, ParityVertexSoa};
 use ecow::{eco_vec, EcoVec};
-use eyre::ContextCompat;
 use petgraph::graph::IndexType;
-use petgraph::prelude::EdgeRef;
 use pg_parser::PgBuilder;
-use soa_derive::StructOfArray;
+use soa_rs::{Soa, Soars};
 use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
 
 /// The value type for `k` in a register game.
@@ -31,20 +29,22 @@ pub struct RegisterGame<'a> {
     pub edges: ahash::HashMap<VertexId, Vec<VertexId>>,
 }
 
-#[derive(Debug, Clone, StructOfArray)]
+#[derive(Debug, Clone, Soars)]
 pub struct GameRegisterVertex {
     pub priority: Priority,
     pub owner: Owner,
     pub original_v: VertexId,
 }
 
-impl<Ix: IndexType> ParityVertexSoa<Ix> for GameRegisterVertexVec {
+impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<GameRegisterVertex> {
+    #[inline]
     fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
-        self.priority.get(idx.index()).copied()
+        self.priority().get(idx.index()).copied()
     }
 
+    #[inline]
     fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner> {
-        self.owner.get(idx.index()).copied()
+        self.owner().get(idx.index()).copied()
     }
 }
 
@@ -451,42 +451,25 @@ impl<'a> RegisterGame<'a> {
     }
 
     #[tracing::instrument(name = "Convert to Parity Game (Small)", skip(self))]
-    pub fn to_small_game(&self) -> eyre::Result<crate::explicit::ParityGame<u32, GameRegisterVertexVec>> {
-        let mut out = ParityGame::<u32, GameRegisterVertexVec>::empty();
-
-        let vertices: Vec<_> = self.vertices
+    pub fn to_small_game(&self) -> eyre::Result<ParityGame<u32, GameRegisterVertex>> {
+        let mut parity_builder = crate::explicit::ParityGameBuilder::new();
+        parity_builder.preallocate(self.vertices.len());
+        
+        for (v_id, v, edges) in self
+            .vertices
             .iter()
-            .map(|v| GameRegisterVertex {
+            .enumerate()
+            .flat_map(|(v_id, v)| self.edges.get(&VertexId::new(v_id)).map(|edg| (v_id, v, edg)))
+        {
+            parity_builder.push_vertex(v_id, GameRegisterVertex {
                 priority: v.priority,
                 owner: v.owner,
                 original_v: v.original_graph_id,
-            })
-            .map(|v| {
-                out.vertices.push(v);
-                out.graph.add_node(())
-            })
-            .collect();
-
-        for v_idx in vertices {
-            let edges = self.edges.get(&v_idx).context("No edges for vertex")?;
-
-            for &target_v in edges {
-                out.graph.add_edge(v_idx, target_v, ());
-            }
+            })?;
+            parity_builder.push_edges(edges.iter().copied())
         }
 
-        let mut inverted_graph = vec![Vec::new(); out.graph.node_count()];
-
-        for vertex in out.graph.node_indices() {
-            for edge in out.graph.edges(vertex) {
-                inverted_graph[edge.target().index()].push(vertex);
-            }
-        }
-
-        out.inverted_vertices = inverted_graph;
-        out.labels = self.vertices.iter().map(|v| self.original_game.label(VertexId::from(v.original_graph_id)).map(|v| v.into())).collect();
-
-        Ok(out)
+        Ok(parity_builder.build())
     }
 
 

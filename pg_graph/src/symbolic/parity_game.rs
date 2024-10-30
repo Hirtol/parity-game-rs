@@ -102,10 +102,10 @@ where
         tracing::debug!("Starting edge BDD construction");
         // Edges
         let mut s_edges = base_false.clone();
-        for edge in explicit.graph_edges() {
+        for (source, target) in explicit.graph_edges() {
             let (source, target) = (
-                var_encoder.encode(edge.source().index())?,
-                e_var_encoder.encode(edge.target().index())?,
+                var_encoder.encode(source.index())?,
+                e_var_encoder.encode(target.index())?,
             );
             s_edges = s_edges.or(&source.and(target)?)?;
         }

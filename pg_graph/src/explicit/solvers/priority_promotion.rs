@@ -1,23 +1,24 @@
 use crate::explicit::reduced_register_game::RegisterParityGraph;
-use crate::explicit::register_game::GameRegisterVertexVec;
+use crate::explicit::register_game::GameRegisterVertex;
 use crate::explicit::solvers::Dominion;
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     BitsetExtensions, ParityGame, ParityGraph, VertexId, VertexSet,
-}, Owner, Priority, VertexVec};
+}, Owner, Priority, Vertex};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::graph::IndexType;
+use soa_rs::Soars;
 use std::borrow::Cow;
 
-pub struct PPSolver<'a, Vertex> {
+pub struct PPSolver<'a, Vertex: Soars> {
     pub promotions: usize,
     game: &'a ParityGame<u32, Vertex>,
     attract: AttractionComputer<u32>,
 }
 
-impl<'a, VertexSOA> PPSolver<'a, VertexSOA> {
-    pub fn new(game: &'a ParityGame<u32, VertexSOA>) -> Self {
+impl<'a, Vert: Soars> PPSolver<'a, Vert> {
+    pub fn new(game: &'a ParityGame<u32, Vert>) -> Self {
         PPSolver {
             game,
             promotions: 0,
@@ -26,7 +27,7 @@ impl<'a, VertexSOA> PPSolver<'a, VertexSOA> {
     }
 }
 
-impl<'a> PPSolver<'a, VertexVec> {
+impl<'a> PPSolver<'a, Vertex> {
     #[tracing::instrument(name = "Run Priority Promotion", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.priority_promotion(self.game);
@@ -44,7 +45,7 @@ impl<'a> PPSolver<'a, VertexVec> {
         while current_game.vertex_count() > 0 {
             let d = current_game.priority_max();
             // Mapping from Vertex id -> Priority region
-            let mut region = self.game.vertices.priority.clone();
+            let mut region = self.game.vertices.priority().to_vec();
 
             let dominion = self.search_dominion(&current_game, &mut region, d);
 
@@ -136,7 +137,7 @@ impl<'a> PPSolver<'a, VertexVec> {
                 for v_id in attraction_set.ones() {
                     region[v_id] = next_priority;
                 }
-                for (rp, original_priority) in region.iter_mut().zip(&self.game.vertices.priority) {
+                for (rp, original_priority) in region.iter_mut().zip(self.game.vertices.priority()) {
                     if *rp < next_priority {
                         *rp = *original_priority
                     }
@@ -165,7 +166,7 @@ impl<'a> PPSolver<'a, VertexVec> {
     }
 }
 
-impl<'a> PPSolver<'a, GameRegisterVertexVec> {
+impl<'a> PPSolver<'a, GameRegisterVertex> {
     #[tracing::instrument(name = "Run Priority Promotion Register", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.priority_promotion(self.game);
@@ -184,7 +185,7 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
         while current_game.vertex_count() > 0 {
             let d = current_game.priority_max();
             // Mapping from Vertex id -> Priority region
-            let mut region = self.game.vertices.priority.clone();
+            let mut region = self.game.vertices.priority().to_vec();
 
             let dominion = self.search_dominion(&current_game, &mut region, d);
 
@@ -280,7 +281,7 @@ impl<'a> PPSolver<'a, GameRegisterVertexVec> {
                 for v_id in attraction_set.ones() {
                     region[v_id] = next_priority;
                 }
-                for (rp, original_priority) in region.iter_mut().zip(&self.game.vertices.priority) {
+                for (rp, original_priority) in region.iter_mut().zip(self.game.vertices.priority()) {
                     if *rp < next_priority {
                         *rp = *original_priority
                     }

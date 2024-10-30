@@ -1254,6 +1254,7 @@ dependencies = [
  "profiling",
  "rayon",
  "roaring",
+ "soa-rs",
  "soa_derive",
  "thiserror",
  "tracing",
@@ -1612,6 +1613,26 @@ name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+
+[[package]]
+name = "soa-rs"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4939f07b10e0cd91f0f70f5dc2544065d8279ecf2e195bd3e5d55d764ec28899"
+dependencies = [
+ "soa-rs-derive",
+]
+
+[[package]]
+name = "soa-rs-derive"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "539cc8d56115e692ae25ed4dc15a0091f8855c8c768133001b4badf08a2c322b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.85",
+]
 
 [[package]]
 name = "soa_derive"

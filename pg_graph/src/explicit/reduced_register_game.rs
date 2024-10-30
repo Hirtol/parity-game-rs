@@ -1,4 +1,6 @@
 //! See [ReducedRegisterGame]
+use crate::explicit::parity_game;
+use crate::explicit::register_game::GameRegisterVertex;
 use crate::{
     datatypes::Priority,
     explicit::{
@@ -11,7 +13,8 @@ use ahash::HashSet;
 use ecow::{eco_vec, EcoVec};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
-use petgraph::graph::{EdgeReference, IndexType, NodeIndex};
+use petgraph::graph::{IndexType, NodeIndex};
+pub use reg_v::RegisterVertex;
 use std::{cmp::Ordering, collections::VecDeque};
 
 /// The value type for `k` in a register game.
@@ -289,7 +292,7 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         self.original_game.vertex_edge_count(self.underlying_vertex_id(v)) * self.reg_quantity
     }
 
-    fn graph_edges(&self) -> impl Iterator<Item = EdgeReference<'_, (), u32>> {
+    fn graph_edges(&self) -> impl Iterator<Item = (VertexId<u32>, VertexId<u32>)> {
         std::iter::empty()
     }
 }
@@ -360,7 +363,7 @@ impl<'a, Parent: RegisterParityGraph<u32>> RegisterParityGraph<u32> for SubGame<
     }
 }
 
-impl RegisterParityGraph<u32> for ParityGame<u32, GameRegisterVertexVec> {
+impl RegisterParityGraph<u32> for ParityGame<u32, GameRegisterVertex> {
     #[inline]
     fn grouped_edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = impl Iterator<Item = NodeIndex<u32>> + '_> + '_ {
         std::iter::once(self.edges(v))
@@ -371,12 +374,12 @@ impl RegisterParityGraph<u32> for ParityGame<u32, GameRegisterVertexVec> {
         register_v: VertexId<u32>,
         root_vertex: VertexId<u32>,
     ) -> impl Iterator<Item = VertexId<u32>> + '_ {
-        self.edges(register_v).filter(move |v| self.vertices.original_v[v.index()] == root_vertex)
+        self.edges(register_v).filter(move |v| self.vertices.original_v()[v.index()] == root_vertex)
     }
 
     #[inline(always)]
     fn underlying_vertex_id(&self, register_v: VertexId<u32>) -> VertexId<u32> {
-        self.vertices.original_v[register_v.index()]
+        self.vertices.original_v()[register_v.index()]
     }
 }
 
@@ -478,6 +481,3 @@ pub mod reg_v {
         }
     }
 }
-
-use crate::explicit::{parity_game, register_game::GameRegisterVertexVec};
-pub use reg_v::RegisterVertex;

@@ -1,15 +1,12 @@
-use crate::{
-    datatypes::Priority,
-    explicit::{
-        solvers::{AttractionComputer, Dominion, SolverOutput},
-        BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId, VertexSet,
-    },
-    Owner, VertexVec,
-};
+use crate::{datatypes::Priority, explicit::{
+    solvers::{AttractionComputer, Dominion, SolverOutput},
+    BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId, VertexSet,
+}, Owner, Vertex};
 use fixedbitset::sparse::SparseBitSetRef;
 use fixedbitset::{sparse::SparseBitSetCollection, specific::SubBitSet};
 use itertools::Itertools;
 use petgraph::graph::IndexType;
+use soa_rs::Soars;
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -18,7 +15,7 @@ use std::{
 
 pub const NO_STRATEGY: u32 = u32::MAX;
 
-pub struct TangleSolver<'a, Vertex> {
+pub struct TangleSolver<'a, Vertex: Soars> {
     game: &'a ParityGame<u32, Vertex>,
     attract: AttractionComputer<u32>,
     pearce: PearceTangleScc,
@@ -28,7 +25,7 @@ pub struct TangleSolver<'a, Vertex> {
     pub iterations: u32,
 }
 
-impl<'a, Vertex> TangleSolver<'a, Vertex> {
+impl<'a, Vertex: Soars> TangleSolver<'a, Vertex> {
     pub fn new(game: &'a ParityGame<u32, Vertex>) -> Self {
         TangleSolver {
             pearce: PearceTangleScc::new(game.inverted_vertices.len()),
@@ -55,7 +52,7 @@ pub struct Tangle {
     pub escape_set: usize,
 }
 
-impl<'a> TangleSolver<'a, VertexVec> {
+impl<'a> TangleSolver<'a, Vertex> {
     #[tracing::instrument(name = "Run Tangle Learning", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.tangle_solver(self.game);
@@ -244,7 +241,7 @@ impl<'a> TangleSolver<'a, VertexVec> {
                         .tangles
                         .escape_list
                         .push_collection_itr(target_escapes.iter().map(|v| v.index()));
-                    
+
                     let new_tangle = Tangle {
                         id,
                         owner: region_owner,
@@ -281,10 +278,10 @@ impl TangleManager {
     #[inline]
     pub fn tangle_attracted_to<Ix: IndexType, Parent: ParityGraph<Ix>>(&self, tangle: &Tangle, game: &SubGame<Ix, Parent>, in_set: &VertexSet) -> bool {
         // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
-        // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations. 
+        // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
         self.all_escapes_to(tangle, game, in_set) && tangle.vertices.is_subset(&game.game_vertices)
     }
-    
+
     /// Return `true` if the given tangle has all escapes valid within `game` pointing to the `in_set`.
     #[inline]
     pub fn all_escapes_to<Ix: IndexType, Parent: ParityGraph<Ix>>(&self, tangle: &Tangle, game: &SubGame<Ix, Parent>, in_set: &VertexSet) -> bool {

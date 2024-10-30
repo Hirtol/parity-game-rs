@@ -1,6 +1,6 @@
 use crate::explicit::VertexId;
 use petgraph::graph::IndexType;
-use soa_derive::StructOfArray;
+use soa_rs::{Soa, Soars};
 
 pub type Priority = u32;
 
@@ -64,13 +64,14 @@ impl TryFrom<u8> for Owner {
 }
 
 pub trait ParityVertexSoa<Ix> {
+
     #[inline(always)]
-    fn priority(&self, idx: VertexId<Ix>) -> Priority {
+    fn priority_of(&self, idx: VertexId<Ix>) -> Priority {
         self.get_priority(idx).unwrap()
     }
 
     #[inline(always)]
-    fn owner(&self, idx: VertexId<Ix>) -> Owner {
+    fn owner_of(&self, idx: VertexId<Ix>) -> Owner {
         self.get_owner(idx).unwrap()
     }
 
@@ -79,34 +80,34 @@ pub trait ParityVertexSoa<Ix> {
     fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner>;
 }
 
-#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, StructOfArray)]
+#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, Soars)]
 pub struct Vertex {
     pub priority: Priority,
     pub owner: Owner,
 }
 
-impl<Ix: IndexType> ParityVertexSoa<Ix> for VertexVec {
+impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<Vertex> {
     #[inline(always)]
-    fn priority(&self, idx: VertexId<Ix>) -> Priority {
+    fn priority_of(&self, idx: VertexId<Ix>) -> Priority {
         unsafe {
-            *self.priority.get_unchecked(idx.index())
+            *self.priority().get_unchecked(idx.index())
         }
     }
 
     #[inline(always)]
-    fn owner(&self, idx: VertexId<Ix>) -> Owner {
+    fn owner_of(&self, idx: VertexId<Ix>) -> Owner {
         unsafe {
-            *self.owner.get_unchecked(idx.index())
+            *self.owner().get_unchecked(idx.index())
         }
     }
     
     #[inline(always)]
     fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
-        self.priority.get(idx.index()).copied()
+        self.priority().get(idx.index()).copied()
     }
 
     #[inline(always)]
     fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner> {
-        self.owner.get(idx.index()).copied()
+        self.owner().get(idx.index()).copied()
     }
 }

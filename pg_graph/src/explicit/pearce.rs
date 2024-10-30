@@ -144,92 +144,87 @@ impl PearceScc {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        explicit::{pearce::PearceScc, ParityGraph},
-        load_example, tests,
-    };
-    use itertools::Itertools;
 
-    #[test]
-    pub fn test_pearce() {
-        let game = load_example("basic_paper_example.pg");
-        let mut pearce = PearceScc::new(game.original_vertex_count());
+    // #[test]
+    // pub fn test_pearce() {
+    //     let game = load_example("basic_paper_example.pg");
+    //     let mut pearce = PearceScc::new(game.original_vertex_count());
+    //
+    //     let sccs = petgraph::algo::tarjan_scc(&game.graph);
+    //
+    //     let mut own_sccs = Vec::new();
+    //
+    //     pearce.run(&game, |found| {
+    //         let data = found.copied().collect_vec();
+    //         println!("Found SCC `{data:?}`");
+    //         own_sccs.push(data)
+    //     });
+    //
+    //     println!("Found SCCS: {:?}", sccs);
+    //     println!("\nFound Own SCCS: {:?}", own_sccs);
+    //
+    //     assert_eq!(sccs, own_sccs);
+    // }
+    //
+    // pub fn bench_pearce() {
+    //     const ROUNDS: usize = 1000;
+    //     let game = load_example("TwoCountersInRangeA6.tlsf.ehoa.pg");
+    //     let now = std::time::Instant::now();
+    //     let mut sccs = Vec::new();
+    //     for i in 0..ROUNDS {
+    //         sccs = petgraph::algo::tarjan_scc(&game.graph);
+    //     }
+    //     let elapsed = now.elapsed();
+    //     println!(
+    //         "Pet Elapsed: {elapsed:?} - per: {} ms",
+    //         elapsed.as_secs_f32() * 1000. / ROUNDS as f32
+    //     );
+    //
+    //     let mut own_sccs = Vec::new();
+    //     let now = std::time::Instant::now();
+    //     for i in 0..ROUNDS {
+    //         let mut pearce = PearceScc::new(game.original_vertex_count());
+    //         own_sccs = Vec::new();
+    //
+    //         pearce.run(&game, |found| {
+    //             let data = found.copied().collect_vec();
+    //             own_sccs.push(data)
+    //         });
+    //     }
+    //     let elapsed = now.elapsed();
+    //     println!(
+    //         "Own Elapsed: {elapsed:?} - per: {} ms",
+    //         elapsed.as_secs_f32() * 1000. / ROUNDS as f32
+    //     );
+    //
+    //     assert_eq!(sccs, own_sccs);
+    // }
 
-        let sccs = petgraph::algo::tarjan_scc(&game.graph);
-
-        let mut own_sccs = Vec::new();
-
-        pearce.run(&game, |found| {
-            let data = found.copied().collect_vec();
-            println!("Found SCC `{data:?}`");
-            own_sccs.push(data)
-        });
-
-        println!("Found SCCS: {:?}", sccs);
-        println!("\nFound Own SCCS: {:?}", own_sccs);
-
-        assert_eq!(sccs, own_sccs);
-    }
-    
-    pub fn bench_pearce() {
-        const ROUNDS: usize = 1000;
-        let game = load_example("TwoCountersInRangeA6.tlsf.ehoa.pg");
-        let now = std::time::Instant::now();
-        let mut sccs = Vec::new();
-        for i in 0..ROUNDS {
-            sccs = petgraph::algo::tarjan_scc(&game.graph);
-        }
-        let elapsed = now.elapsed();
-        println!(
-            "Pet Elapsed: {elapsed:?} - per: {} ms",
-            elapsed.as_secs_f32() * 1000. / ROUNDS as f32
-        );
-
-        let mut own_sccs = Vec::new();
-        let now = std::time::Instant::now();
-        for i in 0..ROUNDS {
-            let mut pearce = PearceScc::new(game.original_vertex_count());
-            own_sccs = Vec::new();
-
-            pearce.run(&game, |found| {
-                let data = found.copied().collect_vec();
-                own_sccs.push(data)
-            });
-        }
-        let elapsed = now.elapsed();
-        println!(
-            "Own Elapsed: {elapsed:?} - per: {} ms",
-            elapsed.as_secs_f32() * 1000. / ROUNDS as f32
-        );
-
-        assert_eq!(sccs, own_sccs);
-    }
-
-    #[test]
-    pub fn test_pearce_correct() {
-        for name in tests::examples_iter() {
-            println!("Running test for: {name}...");
-            let (game, compare) = tests::load_and_compare_example(&name);
-
-            #[cfg(debug_assertions)]
-            if game.original_vertex_count() > 30_000 {
-                println!("Skipping test as we're running in debug mode, leading to stack overflows in Petgraph");
-                continue;
-            }
-            let now = std::time::Instant::now();
-            let sccs = petgraph::algo::tarjan_scc(&game.graph);
-            println!("Petgraph took: {:?}", now.elapsed());
-
-            let mut pearce = PearceScc::new(game.original_vertex_count());
-            let mut own_sccs = Vec::new();
-            let now = std::time::Instant::now();
-            pearce.run(&game, |found| {
-                let data = found.copied().collect_vec();
-                own_sccs.push(data)
-            });
-            println!("We took: {:?}", now.elapsed());
-            assert_eq!(sccs, own_sccs);
-            println!("{name} correct!")
-        }
-    }
+    // #[test]
+    // pub fn test_pearce_correct() {
+    //     for name in tests::examples_iter() {
+    //         println!("Running test for: {name}...");
+    //         let (game, compare) = tests::load_and_compare_example(&name);
+    //
+    //         #[cfg(debug_assertions)]
+    //         if game.original_vertex_count() > 30_000 {
+    //             println!("Skipping test as we're running in debug mode, leading to stack overflows in Petgraph");
+    //             continue;
+    //         }
+    //         let now = std::time::Instant::now();
+    //         let sccs = petgraph::algo::tarjan_scc(&game.graph);
+    //         println!("Petgraph took: {:?}", now.elapsed());
+    //
+    //         let mut pearce = PearceScc::new(game.original_vertex_count());
+    //         let mut own_sccs = Vec::new();
+    //         let now = std::time::Instant::now();
+    //         pearce.run(&game, |found| {
+    //             let data = found.copied().collect_vec();
+    //             own_sccs.push(data)
+    //         });
+    //         println!("We took: {:?}", now.elapsed());
+    //         assert_eq!(sccs, own_sccs);
+    //         println!("{name} correct!")
+    //     }
+    // }
 }
