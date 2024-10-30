@@ -297,7 +297,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
                             .all(|v| attract_set.contains(v.index()))
                     } else {
-                        !self.has_escapes(game, predecessor)
+                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                     }
                 };
 
@@ -353,7 +353,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
                             .all(|v| attract_set.contains(v.index()))
                     } else {
-                        !self.has_escapes(game, predecessor)
+                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
                     }
                 };
 
