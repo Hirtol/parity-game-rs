@@ -397,7 +397,7 @@ mod tests {
         let attr_set_vertices = s_tue.pg.vertices_of_bdd(&attr_set);
 
         println!("Attraction set: {:#?}", s_tue.pg.vertices_of_bdd(&attr_set));
-        let mut real_attraction = AttractionComputer::new();
+        let mut real_attraction = AttractionComputer::new(s_tue.original.vertex_count());
         let underlying_attr_set = real_attraction.attractor_set(
             &s_tue.original,
             Owner::Odd,
@@ -422,7 +422,7 @@ mod tests {
         let attr_set_vertices = s.pg.vertices_of_bdd(&attr_set);
 
         println!("Attraction set: {:#?}", s.pg.vertices_of_bdd(&attr_set));
-        let mut real_attraction = AttractionComputer::new();
+        let mut real_attraction = AttractionComputer::new(s.original.vertex_count());
         let underlying_attr_set = real_attraction.attractor_set(
             &s.original,
             Owner::Even,

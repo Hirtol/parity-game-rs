@@ -21,7 +21,7 @@ impl<'a, VertexSOA> PPSolver<'a, VertexSOA> {
         PPSolver {
             game,
             promotions: 0,
-            attract: AttractionComputer::new(),
+            attract: AttractionComputer::new(game.inverted_vertices.len()),
         }
     }
 }

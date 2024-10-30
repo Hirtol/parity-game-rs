@@ -15,7 +15,7 @@ impl<'a> ZielonkaSolver<'a> {
     pub fn new(rg: &'a ReducedRegisterGame<'a>) -> Self {
         ZielonkaSolver {
             recursive_calls: 0,
-            attract: AttractionComputer::new(),
+            attract: AttractionComputer::new(rg.original_vertex_count()),
             rg,
         }
     }

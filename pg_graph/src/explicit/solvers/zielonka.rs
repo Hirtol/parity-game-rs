@@ -16,7 +16,7 @@ impl<'a> ZielonkaSolver<'a> {
         ZielonkaSolver {
             game,
             recursive_calls: 0,
-            attract: AttractionComputer::new(),
+            attract: AttractionComputer::new(game.vertex_count()),
         }
     }
 

@@ -7,6 +7,7 @@ use crate::{explicit::{
 use petgraph::graph::IndexType;
 use std::borrow::Cow;
 use std::collections::VecDeque;
+use std::num::NonZeroU32;
 
 pub mod fully_reduced_reg_zielonka;
 pub mod register_zielonka;
@@ -41,13 +42,19 @@ impl SolverOutput {
 #[derive(Default)]
 pub struct AttractionComputer<Ix> {
     queue: VecDeque<VertexId<Ix>>,
+    escapes: Vec<Option<NonZeroU32>>,
 }
 
 impl<Ix: IndexType> AttractionComputer<Ix> {
-    pub fn new() -> Self {
+    pub fn new(vertex_count: usize) -> Self {
         Self {
             queue: Default::default(),
+            escapes: vec![None; vertex_count],
         }
+    }
+
+    pub fn reset_escapes(&mut self) {
+        self.escapes.fill(None);
     }
 
     pub fn make_starting_set<T: ParityGraph<Ix>>(game: &T, starting_set: impl IntoIterator<Item = VertexId<Ix>>) -> VertexSet {
@@ -86,6 +93,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         player: Owner,
         starting_set: Cow<'_, VertexSet>
     ) -> VertexSet {
+        self.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
 
@@ -99,7 +107,25 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                     true
                 } else {
-                    game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                    let escapes = &mut self.escapes[predecessor.index()];
+                    if escapes.is_none() {
+                        let new_escapes = game.edges(predecessor).count();
+
+                        let value = NonZeroU32::new(new_escapes as u32);
+                        *escapes = value;
+                    }
+
+                    if let Some(existing_value) = escapes {
+                        if let Some(new_value) = NonZeroU32::new(existing_value.get().saturating_sub(1)) {
+                            *existing_value = new_value;
+                            false
+                        } else {
+                            *escapes = None;
+                            true
+                        }
+                    } else {
+                        true
+                    }
                 };
 
                 // Only add to the attraction set if we should
@@ -161,7 +187,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                 // }
                 if valid_escapes.clone().count() > 0 && valid_escapes.all(|v| attract_set.contains(v.index())) {
                     crate::debug!(?tangle.id, "Might attract tangle");
-                    
+
                     // So this shouldn't work, but it does for our entire game benchmark set, it makes two counters non-exponential.
                     // No clue why. TODO: Ask Tom
                     // let remaining_vertices = tangle.vertices.intersection(&game.game_vertices);
@@ -183,7 +209,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                             self.queue.push_back(VertexId::new(v));
                             had_change = true;
                         }
-                    
+
                         attract_set.union_with(&tangle.vertices);
                     }
                     //TODO: Strategy?
@@ -340,7 +366,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
 #[cfg(test)]
 mod tests {
-    use crate::explicit::BitsetExtensions;
+    use crate::explicit::{BitsetExtensions, ParityGraph};
     use crate::{
         explicit::VertexId,
         Owner,
@@ -355,7 +381,7 @@ mod tests {
 2 2 0 2 "2";"#;
         let pg = crate::tests::parse_pg_from_str(pg);
 
-        let mut attract = super::AttractionComputer::new();
+        let mut attract = super::AttractionComputer::new(pg.vertex_count());
         let set = attract.attractor_set(&pg, Owner::Even, [VertexId::new(2)]);
 
         assert_eq!(set.ones_vertices::<u32>().collect::<HashSet<_>>(), HashSet::from_iter(vec![VertexId::new(2), VertexId::new(1)]));

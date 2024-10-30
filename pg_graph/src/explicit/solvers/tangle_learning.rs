@@ -31,7 +31,7 @@ impl<'a, Vertex> TangleSolver<'a, Vertex> {
         TangleSolver {
             pearce: PearceTangleScc::new(game.inverted_vertices.len()),
             game,
-            attract: AttractionComputer::new(),
+            attract: AttractionComputer::new(game.inverted_vertices.len()),
             tangles_found: 0,
             dominions_found: 0,
             iterations: 0,
