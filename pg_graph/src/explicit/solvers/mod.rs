@@ -1,3 +1,4 @@
+use crate::explicit::solvers::tangle_learning::TangleManager;
 use crate::explicit::{BitsetExtensions, SubGame, VertexSet};
 use crate::{explicit::{
     reduced_register_game::RegisterParityGraph,
@@ -120,11 +121,11 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
         attract_set
     }
-    
+
     /// Efficiently check whether `v_id` has escape opportunities
     ///
-    /// Only used when `v_id` is owned by the opposing player from the current alpha-attraction set. 
-    /// 
+    /// Only used when `v_id` is owned by the opposing player from the current alpha-attraction set.
+    ///
     /// Equivalent to checking `game.edges(v_id).all(|v| attraction_set.contains(v))`.
     #[inline]
     fn has_escapes<T: ParityGraph<Ix>>(&mut self, game: &T, v_id: VertexId<Ix>) -> bool {
@@ -155,12 +156,13 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         game: &SubGame<Ix, T>,
         player: Owner,
         starting_set: Cow<'_, VertexSet>,
-        player_tangles: &[tangle_learning::Tangle],
+        tangles: &TangleManager,
         strategy: &mut [VertexId<Ix>]
     ) -> VertexSet {
         self.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
+        let player_tangles = tangles.collection.get_matching_set(player);
 
         loop {
             while let Some(next_item) = self.queue.pop_back() {
@@ -191,38 +193,31 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
             
             let mut had_change = false;
             for tangle in player_tangles {
-                let mut valid_escapes = tangle.escape_targets.iter().filter(|v| game.game_vertices.contains(v.index()));
-                // let restricted_set = game.game_vertices.lazy_and(&tangle.escapes);
-                // if restricted_set.is_subset(&attract_set) {
-                //     attract_set.union_with(&tangle.vertices)
+                // if tangles.all_escapes_to(tangle, game, &attract_set) {
+                //     // So this shouldn't work, but it does for our entire game benchmark set, it makes two counters non-exponential.
+                //     // No clue why. TODO: Ask Tom
+                //     // Note that it requires `strategy.fill(VertexId::new(NO_STRATEGY as usize));` at the beginning of every iteration.
+                //     let remaining_vertices = tangle.vertices.intersection(&game.game_vertices);
+                //     for v in remaining_vertices {
+                //         if !attract_set.contains(v) {
+                //             attract_set.insert(v);
+                //             crate::debug!(?v, ?tangle.id, "Attracting tangle");
+                //             self.queue.push_back(VertexId::new(v));
+                //             had_change = true;
+                //         }
+                //     }
                 // }
-                if valid_escapes.clone().count() > 0 && valid_escapes.all(|v| attract_set.contains(v.index())) {
-                    crate::debug!(?tangle.id, "Might attract tangle");
 
-                    // So this shouldn't work, but it does for our entire game benchmark set, it makes two counters non-exponential.
-                    // No clue why. TODO: Ask Tom
-                    // let remaining_vertices = tangle.vertices.intersection(&game.game_vertices);
-                    // for v in remaining_vertices {
-                    //     if !attract_set.contains(v) {
-                    //         attract_set.insert(v);
-                    //         crate::debug!(?v, ?tangle.id, "Attracting tangle");
-                    //         self.queue.push_back(VertexId::new(v));
-                    //         had_change = true;
-                    //     }
-                    // }
-
-                    // We might have (partially) attracted vertices in this tangle to a higher region, if so skip this tangle.
-                    let any_missing_vertices = tangle.vertices.difference(&game.game_vertices).next().is_some();
-                    if !any_missing_vertices {
-                        for v in tangle.vertices.difference(&attract_set) {
-                            crate::debug!(?v, ?tangle.id, "Attracting tangle");
-                            self.queue.push_back(VertexId::new(v));
-                            had_change = true;
-                        }
-
-                        attract_set.union_with(&tangle.vertices);
+                if tangles.tangle_attracted_to(tangle, game, &attract_set) {
+                    for v in tangle.vertices.difference(&attract_set) {
+                        crate::debug!(?v, ?tangle.id, "Attracting tangle");
+                        self.queue.push_back(VertexId::new(v));
+                        had_change = true;
                     }
-                    //TODO: Strategy?
+
+                    attract_set.union_with(&tangle.vertices);
+
+                    // TODO: Strategy
                 }
             }
             
@@ -302,7 +297,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
                             .all(|v| attract_set.contains(v.index()))
                     } else {
-                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                        !self.has_escapes(game, predecessor)
                     }
                 };
 
@@ -358,7 +353,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         game.edges_for_root_vertex(predecessor, game.underlying_vertex_id(next_item))
                             .all(|v| attract_set.contains(v.index()))
                     } else {
-                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                        !self.has_escapes(game, predecessor)
                     }
                 };
 
