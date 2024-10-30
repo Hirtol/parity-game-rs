@@ -22,7 +22,7 @@ impl<'a, Vert: Soars> PPSolver<'a, Vert> {
         PPSolver {
             game,
             promotions: 0,
-            attract: AttractionComputer::new(game.inverted_vertices.len()),
+            attract: AttractionComputer::new(game.vertices.len()),
         }
     }
 }

@@ -28,9 +28,9 @@ pub struct TangleSolver<'a, Vertex: Soars> {
 impl<'a, Vertex: Soars> TangleSolver<'a, Vertex> {
     pub fn new(game: &'a ParityGame<u32, Vertex>) -> Self {
         TangleSolver {
-            pearce: PearceTangleScc::new(game.inverted_vertices.len()),
+            pearce: PearceTangleScc::new(game.vertices.len()),
             game,
-            attract: AttractionComputer::new(game.inverted_vertices.len()),
+            attract: AttractionComputer::new(game.vertices.len()),
             tangles_found: 0,
             dominions_found: 0,
             iterations: 0,

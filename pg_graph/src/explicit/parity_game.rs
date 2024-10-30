@@ -157,7 +157,7 @@ pub struct ParityGameBuilder<V: Soars, Ix: IndexType = u32> {
     /// Will always have the last element indicate the end `len` of `edges`
     edge_indexes: Vec<usize>,
     edges: Vec<VertexId<Ix>>,
-    inverted_edges: Vec<Vec<VertexId<Ix>>>,
+    // inverted_edges: Vec<Vec<VertexId<Ix>>>,
     labels: Vec<Option<String>>,
 }
 
@@ -167,24 +167,56 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
             vertices: Soa::default(),
             edge_indexes: vec![0],
             edges: vec![],
-            inverted_edges: vec![],
+            // inverted_edges: vec![],
             labels: vec![],
         }
     }
 
     pub fn build(self) -> ParityGame<Ix, Vert> {
+        // let inverted_indexes = Vec::with_capacity(self.vertices.len());
+        // let inverted_edges = Vec::with_capacity(self.edges.len());
+        let num_vertices = self.vertices.len();
+        // Step 1: Count in-degrees for each vertex to determine the number of incoming edges
+        let mut in_degree = vec![0; num_vertices];
+        for dest in &self.edges {
+            in_degree[dest.index()] += 1;
+        }
+
+        // Step 2: Compute cumulative start indices for the transposed edges
+        let mut index_start_transposed = vec![0; num_vertices + 1];
+        for i in 0..num_vertices {
+            index_start_transposed[i + 1] = index_start_transposed[i] + in_degree[i];
+        }
+
+        // Allocate space for transposed edges
+        let mut edges_transposed = vec![VertexId::default(); self.edges.len()];
+
+        // Step 3: Place edges in transposed position
+        let mut current_position = index_start_transposed.clone();
+        for u in 0..num_vertices {
+            let start = self.edge_indexes[u];
+            let end = self.edge_indexes[u + 1];
+            for &v in &self.edges[start..end] {
+                let pos = current_position[v.index()];
+                edges_transposed[pos] = VertexId::new(u);
+                current_position[v.index()] += 1;
+            }
+        }
+        
         ParityGame {
             vertices: self.vertices,
             edge_indexes: self.edge_indexes,
             edges: self.edges,
-            inverted_vertices: self.inverted_edges,
+            inverted_indexes: index_start_transposed,
+            inverted_edges: edges_transposed,
+            // inverted_vertices: self.inverted_edges,
             labels: self.labels,
         }
     }
 
     pub fn preallocate(&mut self, vertex_count: usize) {
         self.labels = Vec::with_capacity(vertex_count);
-        self.inverted_edges = vec![Vec::new(); vertex_count];
+        // self.inverted_edges = vec![Vec::new(); vertex_count];
         self.edges = Vec::with_capacity(vertex_count);
         self.edge_indexes.reserve(vertex_count);
     }
@@ -208,11 +240,11 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
     pub fn push_edges(&mut self, edges: impl Iterator<Item=VertexId<Ix>>) {
         for edge in edges {
             // The header is not guaranteed to be correct
-            while self.inverted_edges.len() <= edge.index() {
-                self.inverted_edges.push(Vec::new());
-            }
+            // while self.inverted_edges.len() <= edge.index() {
+            //     self.inverted_edges.push(Vec::new());
+            // }
             self.edges.push(edge);
-            self.inverted_edges[edge.index()].push(VertexId::new(self.vertices.len() - 1));
+            // self.inverted_edges[edge.index()].push(VertexId::new(self.vertices.len() - 1));
         }
 
         // Maintain invariant that the last element in `self.edge_indexes` is always the len of `edges`.
@@ -247,7 +279,9 @@ pub struct ParityGame<Ix: IndexType = u32, V: Soars = Vertex> {
     /// index with `[v_id, v_id + 1]`.
     pub edge_indexes: Vec<usize>,
     pub edges: Vec<VertexId<Ix>>,
-    pub(crate) inverted_vertices: Vec<Vec<VertexId<Ix>>>,
+    pub inverted_indexes: Vec<usize>,
+    pub inverted_edges: Vec<VertexId<Ix>>,
+    // pub(crate) inverted_vertices: Vec<Vec<VertexId<Ix>>>,
     pub(crate) labels: Vec<Option<String>>,
 }
 
@@ -255,9 +289,11 @@ impl<Ix: IndexType, Vert: Soars> ParityGame<Ix, Vert> {
     pub fn empty() -> Self {
         Self {
             vertices: Soa::default(),
-            edge_indexes: vec![],
+            edge_indexes: vec![0],
             edges: vec![],
-            inverted_vertices: vec![],
+            // inverted_vertices: vec![],
+            inverted_indexes: vec![0],
+            inverted_edges: vec![],
             labels: Vec::new(),
         }
     }
@@ -313,11 +349,13 @@ impl<Ix: IndexType, Vert: Soars> ParityGraph<Ix> for ParityGame<Ix, Vert>
 
     #[inline(always)]
     fn predecessors(&self, id: NodeIndex<Ix>) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.inverted_vertices
-            .get(id.index())
-            .map(|v| v.iter().copied())
-            .into_iter()
-            .flatten()
+        let (edges_start, edges_end) = (self.inverted_indexes[id.index()], self.inverted_indexes[id.index() + 1]);
+        self.inverted_edges[edges_start..edges_end].iter().copied()
+        // self.inverted_vertices
+        //     .get(id.index())
+        //     .map(|v| v.iter().copied())
+        //     .into_iter()
+        //     .flatten()
     }
 
     fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<Ix>>) -> SubGame<Ix, Self::Parent> {

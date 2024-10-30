@@ -4,7 +4,7 @@ use crate::explicit::register_game::GameRegisterVertex;
 use crate::{
     datatypes::Priority,
     explicit::{
-        reduced_register_game::reg_v::RegisterVertexVec, register_tree::RegisterTree, ParityGame, ParityGraph, SubGame,
+        register_tree::RegisterTree, ParityGame, ParityGraph, SubGame,
         VertexId,
     },
     Owner,
@@ -15,6 +15,7 @@ use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 use petgraph::graph::{IndexType, NodeIndex};
 pub use reg_v::RegisterVertex;
+use soa_rs::Soa;
 use std::{cmp::Ordering, collections::VecDeque};
 
 /// The value type for `k` in a register game.
@@ -25,7 +26,7 @@ pub type Rank = u8;
 pub struct ReducedRegisterGame<'a> {
     pub original_game: &'a crate::explicit::ParityGame,
     pub controller: Owner,
-    pub vertices: RegisterVertexVec,
+    pub vertices: Soa<RegisterVertex>,
     pub reg_v_index: ahash::HashMap<RegisterVertex, VertexId>,
     /// Mapping from the parity game vertex to all register game vertices with this vertex as root.
     pub original_to_reg_v: ahash::HashMap<VertexId, ahash::HashSet<VertexId>>,
@@ -52,7 +53,7 @@ impl<'a> ReducedRegisterGame<'a> {
 
         let mut reg_v_index: ahash::HashMap<RegisterVertex, VertexId> = ahash::HashMap::default();
         let mut original_to_reg_v = ahash::HashMap::default();
-        let mut final_graph = RegisterVertexVec::new();
+        let mut final_graph: Soa<RegisterVertex> = Soa::new();
         let mut register_tree = RegisterTree::new(game.priority_max());
         for (_, base_reg) in &base_registers {
             register_tree.insert_leaf(base_reg.clone());
@@ -109,9 +110,9 @@ impl<'a> ReducedRegisterGame<'a> {
         while let Some(reg_id) = to_expand.pop_back() {
             // NOTE: It is currently assumed that the edges are added such that the edges with the same
             // `edge_node` original vertex are consecutive. See `register_attractor`.
-            for edge_node in game.edges(final_graph.original_graph_id[reg_id.index()]) {
+            for edge_node in game.edges(final_graph.original_graph_id()[reg_id.index()]) {
                 for r in 0..reg_quantity {
-                    let reg_state = &final_graph.register_state[reg_id.index()];
+                    let reg_state = &final_graph.register_state()[reg_id.index()];
                     let next_v = &game.vertex(edge_node);
                     let new_priority = reset_to_priority_2021(r as Rank, reg_state[r], next_v.priority, controller);
 
@@ -168,7 +169,7 @@ impl<'a> ReducedRegisterGame<'a> {
         let mut output = vec![None; self.original_game.vertex_count()];
 
         for (reg_id, &winner) in game_winners.iter().enumerate() {
-            let original_id = self.vertices.original_graph_id[reg_id];
+            let original_id = self.vertices.original_graph_id()[reg_id];
             let current_winner = &mut output[original_id.index()];
 
             if let Some(curr_win) = current_winner {
@@ -235,15 +236,15 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
     }
 
     fn get_priority(&self, id: NodeIndex<u32>) -> Option<Priority> {
-        self.vertices.priority.get(id.index()).copied()
+        self.vertices.priority().get(id.index()).copied()
     }
 
     fn get_owner(&self, id: NodeIndex<u32>) -> Option<Owner> {
-        self.vertices.owner.get(id.index()).copied()
+        self.vertices.owner().get(id.index()).copied()
     }
 
     fn predecessors(&self, id: NodeIndex<u32>) -> impl Iterator<Item = NodeIndex<u32>> + '_ {
-        let original_graph_id = self.vertices.original_graph_id[id.index()];
+        let original_graph_id = self.vertices.original_graph_id()[id.index()];
         let original_v_priority = self.original_game.priority(original_graph_id);
         self.original_game.predecessors(original_graph_id).flat_map(move |v| {
             let register_game_vs = self.original_to_reg_v.get(&v).unwrap();
@@ -251,10 +252,10 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
                 .iter()
                 .filter(move |v| {
                     can_be_next_registers(
-                        &self.vertices.register_state[v.index()],
-                        self.vertices.rank_reset[id.index()],
-                        self.vertices.priority[id.index()],
-                        &self.vertices.register_state[id.index()],
+                        &self.vertices.register_state()[v.index()],
+                        self.vertices.rank_reset()[id.index()],
+                        self.vertices.priority()[id.index()],
+                        &self.vertices.register_state()[id.index()],
                         original_v_priority,
                         self.controller,
                     )
@@ -272,11 +273,11 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
     }
 
     fn priority_max(&self) -> Priority {
-        self.vertices.priority.iter().max().copied().unwrap_or_default()
+        self.vertices.priority().iter().max().copied().unwrap_or_default()
     }
 
     fn priorities_unique(&self) -> impl Iterator<Item = Priority> + '_ {
-        self.vertices.priority.iter().unique().copied()
+        self.vertices.priority().iter().unique().copied()
     }
 
     fn has_edge(&self, from: NodeIndex<u32>, to: NodeIndex<u32>) -> bool {
@@ -315,8 +316,8 @@ impl<'a> RegisterParityGraph<u32> for ReducedRegisterGame<'a> {
     #[inline]
     fn grouped_edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = impl Iterator<Item = NodeIndex<u32>> + '_> + '_ {
         self.original_game
-            .edges(self.vertices.original_graph_id[v.index()])
-            .map(move |original| self.edges_for_root_vertex_rg(&self.vertices.register_state[v.index()], original))
+            .edges(self.vertices.original_graph_id()[v.index()])
+            .map(move |original| self.edges_for_root_vertex_rg(&self.vertices.register_state()[v.index()], original))
     }
 
     fn edges_for_root_vertex(
@@ -324,12 +325,12 @@ impl<'a> RegisterParityGraph<u32> for ReducedRegisterGame<'a> {
         register_v: VertexId<u32>,
         root_vertex: VertexId<u32>,
     ) -> impl Iterator<Item = VertexId<u32>> + '_ {
-        self.edges_for_root_vertex_rg(&self.vertices.register_state[register_v.index()], root_vertex)
+        self.edges_for_root_vertex_rg(&self.vertices.register_state()[register_v.index()], root_vertex)
     }
 
     #[inline(always)]
     fn underlying_vertex_id(&self, register_v: VertexId<u32>) -> VertexId<u32> {
-        self.vertices.original_graph_id[register_v.index()]
+        self.vertices.original_graph_id()[register_v.index()]
     }
 }
 
@@ -460,9 +461,9 @@ pub mod reg_v {
     };
     use ecow::EcoVec;
     use petgraph::adj::IndexType;
-    use soa_derive::StructOfArray;
+    use soa_rs::{Soa, Soars};
 
-    #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq, StructOfArray)]
+    #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq, Soars)]
     pub struct RegisterVertex {
         pub original_graph_id: VertexId,
         pub priority: Priority,
@@ -471,13 +472,13 @@ pub mod reg_v {
         pub rank_reset: Rank,
     }
 
-    impl<Ix: IndexType> ParityVertexSoa<Ix> for RegisterVertexVec {
+    impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<RegisterVertex> {
         fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
-            self.priority.get(idx.index()).copied()
+            self.priority().get(idx.index()).copied()
         }
 
         fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner> {
-            self.owner.get(idx.index()).copied()
+            self.owner().get(idx.index()).copied()
         }
     }
 }
