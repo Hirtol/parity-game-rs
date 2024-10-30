@@ -107,25 +107,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
                     true
                 } else {
-                    let escapes = &mut self.escapes[predecessor.index()];
-                    if escapes.is_none() {
-                        let new_escapes = game.edges(predecessor).count();
-
-                        let value = NonZeroU32::new(new_escapes as u32);
-                        *escapes = value;
-                    }
-
-                    if let Some(existing_value) = escapes {
-                        if let Some(new_value) = NonZeroU32::new(existing_value.get().saturating_sub(1)) {
-                            *existing_value = new_value;
-                            false
-                        } else {
-                            *escapes = None;
-                            true
-                        }
-                    } else {
-                        true
-                    }
+                    !self.has_escapes(game, predecessor)
                 };
 
                 // Only add to the attraction set if we should
@@ -138,6 +120,34 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
         attract_set
     }
+    
+    /// Efficiently check whether `v_id` has escape opportunities
+    ///
+    /// Only used when `v_id` is owned by the opposing player from the current alpha-attraction set. 
+    /// 
+    /// Equivalent to checking `game.edges(v_id).all(|v| attraction_set.contains(v))`.
+    #[inline]
+    fn has_escapes<T: ParityGraph<Ix>>(&mut self, game: &T, v_id: VertexId<Ix>) -> bool {
+        let escapes = &mut self.escapes[v_id.index()];
+        if escapes.is_none() {
+            let new_escapes = game.edges(v_id).count();
+
+            let value = NonZeroU32::new(new_escapes as u32);
+            *escapes = value;
+        }
+
+        if let Some(existing_value) = escapes {
+            if let Some(new_value) = NonZeroU32::new(existing_value.get().saturating_sub(1)) {
+                *existing_value = new_value;
+                true
+            } else {
+                *escapes = None;
+                false
+            }
+        } else {
+            false
+        }
+    }
 
     #[inline]
     pub fn attractor_set_tangle<'a, T: ParityGraph<Ix>>(
@@ -148,6 +158,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         player_tangles: &[tangle_learning::Tangle],
         strategy: &mut [VertexId<Ix>]
     ) -> VertexSet {
+        self.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
 
@@ -167,7 +178,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         strategy[predecessor.index()] = next_item;
                         true
                     } else {
-                        game.edges(predecessor).all(|v| attract_set.contains(v.index()))
+                        !self.has_escapes(game, predecessor)
                     };
 
                     // Only add to the attraction set if we should
@@ -200,10 +211,9 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                     //     }
                     // }
 
-                    // We might have attracted vertices in this tangle to a higher region
-                    let remaining_vertices = tangle.vertices.intersection_count(&game.game_vertices);
-                    let original_vertices = tangle.vertices.count_ones(..);
-                    if remaining_vertices == original_vertices {
+                    // We might have (partially) attracted vertices in this tangle to a higher region, if so skip this tangle.
+                    let any_missing_vertices = tangle.vertices.difference(&game.game_vertices).next().is_some();
+                    if !any_missing_vertices {
                         for v in tangle.vertices.difference(&attract_set) {
                             crate::debug!(?v, ?tangle.id, "Attracting tangle");
                             self.queue.push_back(VertexId::new(v));
