@@ -187,8 +187,6 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         attract_set.union_with(&tangle.vertices);
                     }
                     //TODO: Strategy?
-                    // I presume we need to replicate what oink does (e.g., set all vertices to point to each other)
-                    // I hope that fixes the Two counters cases being instant
                 }
             }
             

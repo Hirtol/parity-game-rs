@@ -235,7 +235,32 @@ impl SolveCommand {
                                 tracing::info!(n = solver.promotions, "Solved with promotions");
                                 
                                 rg.project_winners_original(&out.winners)
-                            }
+                            },
+                            ExplicitSolvers::TL => {
+                                // PP can't handle the reduced game properly (as it needs to handle the controller vertices)
+                                // So we construct the full game instead.
+                                let rg = timed_solve!(
+                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
+                                    "Constructed Register Game"
+                                );
+                                let rg_pg = rg.to_normal_game()?;
+
+                                tracing::debug!(
+                                    from_vertex = rg.original_game.vertex_count(),
+                                    to_vertex = rg_pg.vertex_count(),
+                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                                    from_edges = rg.original_game.edge_count(),
+                                    to_edges = rg_pg.edge_count(),
+                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                                    "Converted from parity game to register game"
+                                );
+
+                                let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&rg_pg);
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(tangles = solver.tangles_found, dominions = solver.dominions_found, "Solved");
+
+                                rg.project_winners_original(&out.winners)
+                            },
                             ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),

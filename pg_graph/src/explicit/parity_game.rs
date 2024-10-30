@@ -460,9 +460,6 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
 
     #[inline(always)]
     fn vertex_count(&self) -> usize {
-        // More efficient than doing a `.count()` call on `vertices_index()`
-        // self.game_vertices.count_ones(..)
-        // self.parent.vertex_count() - self.ignored.len()
         self.len
     }
 
