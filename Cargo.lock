@@ -597,7 +597,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 [[package]]
 name = "fixedbitset"
 version = "0.5.7"
-source = "git+https://github.com/Hirtol/fixedbitset#2c901858f2964bb4fad2267f4a58bc5fb3aafcfa"
+source = "git+https://github.com/Hirtol/fixedbitset#b9491e16dfe41bb30a0d3258cbea18afe40cec2c"
 
 [[package]]
 name = "flume"

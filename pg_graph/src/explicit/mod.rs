@@ -1,3 +1,4 @@
+use fixedbitset::sparse::SparseBitSetRef;
 use fixedbitset::FixedBitSet;
 pub use parity_game::*;
 use petgraph::graph::IndexType;
@@ -18,8 +19,6 @@ pub trait BitsetExtensions {
     fn empty_game<Ix: IndexType, PG: ParityGraph<Ix>>(pg: &PG) -> Self;
 
     fn ones_vertices<Ix: IndexType>(&self) -> impl DoubleEndedIterator<Item = VertexId<Ix>>;
-    
-    fn zero_vertices<Ix: IndexType>(&self) -> impl Iterator<Item = VertexId<Ix>>;
 }
 
 impl BitsetExtensions for FixedBitSet {
@@ -30,8 +29,14 @@ impl BitsetExtensions for FixedBitSet {
     fn ones_vertices<Ix: IndexType>(&self) -> impl DoubleEndedIterator<Item=VertexId<Ix>> {
         self.ones().map(VertexId::new)
     }
+}
 
-    fn zero_vertices<Ix: IndexType>(&self) -> impl Iterator<Item=VertexId<Ix>> {
-        self.zeroes().map(VertexId::new)
+impl<'a> BitsetExtensions for SparseBitSetRef<'a> {
+    fn empty_game<Ix: IndexType, PG: ParityGraph<Ix>>(pg: &PG) -> Self {
+        todo!()
+    }
+
+    fn ones_vertices<Ix: IndexType>(&self) -> impl DoubleEndedIterator<Item=VertexId<Ix>> {
+        self.ones().map(VertexId::new)
     }
 }
