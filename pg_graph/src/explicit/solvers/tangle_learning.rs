@@ -1,9 +1,15 @@
-use crate::{datatypes::Priority, explicit::{
-    solvers::{AttractionComputer, Dominion, SolverOutput},
-    BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId, VertexSet,
-}, Owner, Vertex};
-use fixedbitset::sparse::SparseBitSetRef;
-use fixedbitset::{sparse::SparseBitSetCollection, specific::SubBitSet};
+use crate::{
+    datatypes::Priority,
+    explicit::{
+        solvers::{AttractionComputer, Dominion, SolverOutput},
+        BitsetExtensions, ParityGame, ParityGraph, SubGame, VertexId, VertexSet,
+    },
+    Owner, Vertex,
+};
+use fixedbitset::{
+    sparse::{SparseBitSetCollection, SparseBitSetRef},
+    specific::SubBitSet,
+};
 use itertools::Itertools;
 use petgraph::graph::IndexType;
 use soa_rs::Soars;
@@ -129,19 +135,21 @@ impl<'a> TangleSolver<'a, Vertex> {
                     strategy,
                 );
                 crate::info!(?d, attr=?tangle_attractor.ones().collect_vec(), "Tangle Attractor");
-                let mut greatest_vertices = tangle_attractor
-                    .ones_vertices()
-                    .filter(|v| current_game.priority(*v) == d);
+                
                 // Check if there are any escapes from this region, or if it's locally closed.
-                let leaks = greatest_vertices.any(|v| {
-                    if current_game.owner(v) == owner {
-                        strategy[v.index()].index() == NO_STRATEGY as usize
-                    } else {
-                        partial_subgame
-                            .edges(v)
-                            .any(|succ| !tangle_attractor.contains(succ.index()))
-                    }
-                });
+                // We only care about the vertices with the region priority.
+                let leaks = tangle_attractor
+                    .ones_vertices()
+                    .filter(|v| current_game.priority(*v) == d)
+                    .any(|v| {
+                        if current_game.owner(v) == owner {
+                            strategy[v.index()].index() == NO_STRATEGY as usize
+                        } else {
+                            partial_subgame
+                                .edges(v)
+                                .any(|succ| !tangle_attractor.contains(succ.index()))
+                        }
+                    });
                 crate::debug!(?leaks, "Leaks");
 
                 // If there are any leaks from our region then it's not worth finding tangles.
@@ -150,8 +158,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                     continue;
                 }
 
-                let mut tangle_subgame = partial_subgame.clone();
-                tangle_subgame.intersect_subgame(&tangle_attractor);
+                let tangle_subgame = SubGame::from_vertex_set(partial_subgame.parent, tangle_attractor);
                 let possible_dominion =
                     self.extract_tangles(current_game, &tangle_subgame, d, strategy, &mut temp_tangles);
 
@@ -159,7 +166,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                     self.tangles.collection.merge(temp_tangles);
                     return dominion;
                 } else {
-                    partial_subgame.shrink_subgame(&tangle_attractor);
+                    partial_subgame.shrink_subgame(&tangle_subgame.game_vertices);
                 }
             }
 
@@ -198,13 +205,8 @@ impl<'a> TangleSolver<'a, Vertex> {
                 }
 
                 let id = self.tangles_found;
-                let full_tangle = tangle.collect_vec();
-
                 // Count all escapes that remain in the GREATER unsolved game
-                let mut final_tangle = current_game.empty_vertex_set();
-                for v in full_tangle {
-                    final_tangle.insert(v.index());
-                }
+                let final_tangle = AttractionComputer::make_starting_set(current_game, tangle.copied());
                 let mut target_escapes = Vec::new();
 
                 for v in final_tangle.ones_vertices() {
@@ -213,7 +215,6 @@ impl<'a> TangleSolver<'a, Vertex> {
                     if current_game.owner(v) != region_owner {
                         for target in current_game.edges(v) {
                             // Only mark as escapes those vertices which actually _are_ escapes.
-                            // TODO: Make this more efficient.
                             if !final_tangle.contains(target.index()) && !target_escapes.contains(&target) {
                                 target_escapes.push(target);
                             }
@@ -270,13 +271,21 @@ pub struct TangleManager {
 
 impl TangleManager {
     #[inline]
-    pub fn tangles_with_escapes(&self, owner: Owner) -> impl Iterator<Item=(&Tangle, SparseBitSetRef<'_>)> {
-        self.collection.get_matching_set(owner).iter().map(|tangle| (tangle, self.escape_list.get_set_ref(tangle.escape_set)))
+    pub fn tangles_with_escapes(&self, owner: Owner) -> impl Iterator<Item = (&Tangle, SparseBitSetRef<'_>)> {
+        self.collection
+            .get_matching_set(owner)
+            .iter()
+            .map(|tangle| (tangle, self.escape_list.get_set_ref(tangle.escape_set)))
     }
 
     /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
     #[inline]
-    pub fn tangle_attracted_to<Ix: IndexType, Parent: ParityGraph<Ix>>(&self, tangle: &Tangle, game: &SubGame<Ix, Parent>, in_set: &VertexSet) -> bool {
+    pub fn tangle_attracted_to<Ix: IndexType, Parent: ParityGraph<Ix>>(
+        &self,
+        tangle: &Tangle,
+        game: &SubGame<Ix, Parent>,
+        in_set: &VertexSet,
+    ) -> bool {
         // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
         // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
         self.all_escapes_to(tangle, game, in_set) && tangle.vertices.is_subset(&game.game_vertices)
@@ -284,7 +293,12 @@ impl TangleManager {
 
     /// Return `true` if the given tangle has all escapes valid within `game` pointing to the `in_set`.
     #[inline]
-    pub fn all_escapes_to<Ix: IndexType, Parent: ParityGraph<Ix>>(&self, tangle: &Tangle, game: &SubGame<Ix, Parent>, in_set: &VertexSet) -> bool {
+    pub fn all_escapes_to<Ix: IndexType, Parent: ParityGraph<Ix>>(
+        &self,
+        tangle: &Tangle,
+        game: &SubGame<Ix, Parent>,
+        in_set: &VertexSet,
+    ) -> bool {
         let escapes = self.escape_list.get_set_ref(tangle.escape_set);
         let restricted_set = fixedbitset::specific::LazyAnd::new(escapes, &game.game_vertices);
         restricted_set.is_subset(in_set)
@@ -462,7 +476,7 @@ impl PearceTangleScc {
     #[profiling::function]
     #[inline]
     fn finish_visit(&mut self, v_id: VertexId<u32>, mut scc_found: impl FnMut(PearceSccIter<'_>, VertexId<u32>)) {
-        // Take the current vertex of the stack
+        // Take the current vertex off the stack
         self.v_s.pop_front();
         self.i_s.pop_front();
         // Update a new component

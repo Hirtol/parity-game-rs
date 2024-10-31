@@ -100,7 +100,7 @@ impl PearceScc {
     #[profiling::function]
     #[inline]
     unsafe fn finish_visit(&mut self, v_id: VertexId<u32>, mut scc_found: impl FnMut(PearceSccIter<'_>)) {
-        // Take the current vertex of the stack
+        // Take the current vertex off the stack
         self.v_s.pop_front();
         self.i_s.pop_front();
         // Update a new component
