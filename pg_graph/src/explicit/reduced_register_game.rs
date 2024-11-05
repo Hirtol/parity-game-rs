@@ -473,6 +473,11 @@ pub mod reg_v {
     }
 
     impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<RegisterVertex> {
+        #[inline]
+        fn priority_slice(&self) -> &[Priority] {
+            self.priority()
+        }
+
         fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
             self.priority().get(idx.index()).copied()
         }

@@ -38,6 +38,11 @@ pub struct GameRegisterVertex {
 
 impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<GameRegisterVertex> {
     #[inline]
+    fn priority_slice(&self) -> &[Priority] {
+        self.priority()
+    }
+
+    #[inline]
     fn get_priority(&self, idx: VertexId<Ix>) -> Option<Priority> {
         self.priority().get(idx.index()).copied()
     }

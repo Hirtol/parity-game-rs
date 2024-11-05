@@ -70,6 +70,8 @@ pub trait ParityVertexSoa<Ix> {
         self.get_priority(idx).unwrap()
     }
 
+    fn priority_slice(&self) -> &[Priority];
+
     #[inline(always)]
     fn owner_of(&self, idx: VertexId<Ix>) -> Owner {
         self.get_owner(idx).unwrap()
@@ -92,6 +94,11 @@ impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<Vertex> {
         unsafe {
             *self.priority().get_unchecked(idx.index())
         }
+    }
+
+    #[inline]
+    fn priority_slice(&self) -> &[Priority] {
+        self.priority()
     }
 
     #[inline(always)]

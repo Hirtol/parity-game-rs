@@ -46,6 +46,15 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         self.vertices_index().filter(move |&v| self.priority(v) == priority)
     }
 
+    /// Return the max priority alongside all vertices associated with said priority in the current game.
+    /// 
+    /// This can be more efficient than querying `vertices_index_by_priority` directly with `max_priority`.
+    #[inline(always)]
+    fn vertices_max_priority(&self) -> (Priority, impl Iterator<Item = NodeIndex<Ix>> + '_) {
+        let p = self.priority_max();
+        (p, self.vertices_index_by_priority(p))
+    }
+
     /// Get the full vertex
     #[inline(always)]
     fn get_vertex(&self, id: NodeIndex<Ix>) -> Option<Vertex> {
@@ -164,7 +173,10 @@ pub struct ParityGameBuilder<V: Soars, Ix: IndexType = u32> {
     labels: Vec<Option<String>>,
 }
 
-impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
+impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix>
+where
+    Soa<Vert>: ParityVertexSoa<Ix>,
+{
     pub fn new() -> Self {
         Self {
             vertices: Soa::default(),
@@ -175,7 +187,21 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
         }
     }
 
-    pub fn build(self) -> ParityGame<Ix, Vert> {
+    pub fn build(mut self) -> ParityGame<Ix, Vert> {
+        // TODO: For register games we need to care about the remapping as it messes up projection!
+        // println!("Start:");
+        // println!("Edge Idx: {:?}", self.edge_indexes);
+        // println!("Edges: {:?}", self.edges);
+        let now = std::time::Instant::now();
+        self.remap_by_priority();
+        tracing::info!("Remapping took: {:?}", now.elapsed());
+        let vertices = (0..self.vertices.len().min(10))
+            .map(|v| (v, self.vertices.priority_of(VertexId::new(v))))
+            .collect_vec();
+        tracing::info!("First ten: {vertices:?}");
+        // println!("Start After:");
+        // println!("Edge Idx: {:?}", self.edge_indexes);
+        // println!("Edges: {:?}", self.edges);
         let num_vertices = self.vertices.len();
         // Compute the start indexes for our inverted edges
         let mut inverted_indexes = vec![0; num_vertices + 1];
@@ -242,6 +268,97 @@ impl<Ix: IndexType, Vert: Soars> ParityGameBuilder<Vert, Ix> {
 
         // Maintain invariant that the last element in `self.edge_indexes` is always the len of `edges`.
         self.edge_indexes.push(self.edges.len());
+    }
+
+    /// Remap all vertices based on the amount of edges pointing towards them.
+    ///
+    /// Lowers memory usage when using bitsets.
+    pub fn remap_by_indegree(&mut self) {
+        let vertex_order = (0..self.vertices.len()).sorted_unstable_by_key(|v| std::cmp::Reverse(self.in_degrees[*v]));
+        let mut remap = vec![0; self.vertices.len()];
+        for (new_id, old_id) in vertex_order.into_iter().enumerate() {
+            remap[old_id] = new_id;
+        }
+
+        self.remap_vertices(remap);
+    }
+
+    /// Remap vertices such that they are sorted from lowest to highest priority, allowing swift iteration.
+    pub fn remap_by_priority(&mut self) {
+        let vertex_order =
+            (0..self.vertices.len()).sorted_unstable_by_key(|v| self.vertices.priority_of(VertexId::new(*v)));
+        let mut remap = vec![0; self.vertices.len()];
+        for (new_id, old_id) in vertex_order.into_iter().enumerate() {
+            remap[old_id] = new_id;
+        }
+
+        self.remap_vertices(remap);
+    }
+
+    /// Remap the current vertex set by using the given `mapping`.
+    ///
+    /// This will change IDs around.
+    pub fn remap_vertices(&mut self, mut mapping: Vec<usize>) {
+        let mut new_edges = Vec::with_capacity(self.edges.len());
+        let mut new_edge_indexes = Vec::with_capacity(self.vertices.len() + 1);
+        
+        // Assign remapped edges and indexes back to the struct
+        for (original_id, _new_id) in mapping.iter().enumerate().sorted_unstable_by_key(|i| i.1) {
+            let outgoing_edges = self.edge_indexes[original_id]..self.edge_indexes[original_id + 1];
+            new_edge_indexes.push(new_edges.len());
+
+            for &edge in &self.edges[outgoing_edges] {
+                new_edges.push(VertexId::new(mapping[edge.index()]));
+            }
+        }
+        new_edge_indexes.push(new_edges.len());
+        self.edges = new_edges;
+        self.edge_indexes = new_edge_indexes;
+
+        self.apply_remap_vertices(&mut mapping);
+    }
+
+    /// Taken from the `permutation` crate to handle remapping for all arrays in one go.
+    fn apply_remap_vertices(&mut self, mapping: &mut [usize]) {
+        #[inline(always)]
+        fn toggle_mark_idx(idx: usize) -> usize {
+            idx ^ isize::min_value() as usize
+        }
+
+        #[inline(always)]
+        fn idx_is_marked(idx: usize) -> bool {
+            (idx & (isize::min_value() as usize)) != 0
+        }
+
+        for i in 0..mapping.len() {
+            let i_idx = mapping[i];
+
+            if idx_is_marked(i_idx) {
+                continue;
+            }
+
+            let mut j = i;
+            let mut j_idx = i_idx;
+
+            // When we loop back to the first index, we stop
+            while j_idx != i {
+                mapping[j] = toggle_mark_idx(j_idx);
+
+                // Swap all our values.
+                self.vertices.swap(i, j_idx);
+                self.in_degrees.swap(i, j_idx);
+                self.labels.swap(i, j_idx);
+
+                j = j_idx;
+                j_idx = mapping[j];
+            }
+
+            mapping[j] = toggle_mark_idx(j_idx);
+        }
+
+        for idx in mapping.iter_mut() {
+            *idx = toggle_mark_idx(*idx);
+        }
     }
 }
 
@@ -325,6 +442,31 @@ where
         self.labels.get(vertex_id.index()).and_then(|i| i.as_deref())
     }
 
+    #[inline]
+    fn vertices_index_by_priority(&self, priority: Priority) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        let partition = self.vertices.priority_slice().partition_point(|&p| p < priority);
+        (partition..self.vertices.len())
+            .map(VertexId::new)
+            .take_while(move |&v_id| self.vertices.priority_of(v_id) == priority)
+    }
+
+    #[inline]
+    fn vertices_max_priority(&self) -> (Priority, impl Iterator<Item = NodeIndex<Ix>> + '_) {
+        let max_p = self.priority_max();
+        // We assume that our parity game is remapped to have sorted priorities
+        // The highest priorities will be at the end, thus we can simply do a reverse iteration.
+        (
+            max_p,
+            self.vertices
+                .priority_slice()
+                .iter()
+                .enumerate()
+                .rev()
+                .take_while(move |(_, p)| **p == max_p)
+                .map(|(v_id, _)| VertexId::new(v_id)),
+        )
+    }
+
     #[inline(always)]
     fn get_priority(&self, id: NodeIndex<Ix>) -> Option<Priority> {
         self.vertices.get_priority(id)
@@ -362,6 +504,11 @@ where
 
     fn create_subgame_bit(&self, exclude: &FixedBitSet) -> SubGame<Ix, Self::Parent> {
         create_subgame_bit(self, exclude)
+    }
+
+    #[inline(always)]
+    fn priority_max(&self) -> Priority {
+        *self.vertices.priority_slice().last().unwrap()
     }
 
     #[inline(always)]
@@ -425,7 +572,7 @@ pub struct SubGame<'a, Ix: IndexType, Parent> {
 impl<'a, Ix: IndexType, Parent> Clone for SubGame<'a, Ix, Parent> {
     fn clone(&self) -> Self {
         Self {
-            parent: &self.parent,
+            parent: self.parent,
             game_vertices: self.game_vertices.clone(),
             len: self.len,
             _phant: Default::default(),
@@ -502,6 +649,19 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
         }
     }
 
+    #[inline]
+    fn vertices_index_by_priority(&self, priority: Priority) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        self.parent
+            .vertices_index_by_priority(priority)
+            .filter(|v_id| self.game_vertices.contains(v_id.index()))
+    }
+
+    #[inline]
+    fn vertices_max_priority(&self) -> (Priority, impl Iterator<Item=NodeIndex<Ix>> + '_) {
+        let max_p = self.priority_max();
+        (max_p, self.game_vertices.ones_vertices().rev().take_while(move |v_id| self.priority(*v_id) == max_p))
+    }
+
     #[inline(always)]
     fn get_priority(&self, id: NodeIndex<Ix>) -> Option<Priority> {
         self.parent.get_priority(id)
@@ -554,6 +714,11 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
             game_vertices: new_game,
             _phant: Default::default(),
         }
+    }
+
+    #[inline]
+    fn priority_max(&self) -> Priority {
+        self.priority(self.game_vertices.ones_vertices().next_back().unwrap())
     }
 
     #[inline(always)]

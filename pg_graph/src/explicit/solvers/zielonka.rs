@@ -33,9 +33,8 @@ impl<'a> ZielonkaSolver<'a> {
         if game.vertex_count() == 0 {
             (VertexSet::empty_game(game), VertexSet::empty_game(game))
         } else {
-            let d = game.priority_max();
+            let (d, starting_set) = game.vertices_max_priority();
             let attraction_owner = Owner::from_priority(d);
-            let starting_set = game.vertices_index_by_priority(d);
             
             let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
 
