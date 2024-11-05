@@ -55,6 +55,16 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         (p, self.vertices_index_by_priority(p))
     }
 
+    /// Return the max priority alongside all vertices associated with said priority in the current game.
+    /// It will also return any vertices with priorities lower than `p`, so long as there are no priorities from the opposing
+    /// player between `p` and the lower priority.
+    ///
+    /// This can be more efficient than querying `vertices_index_by_priority` directly with `max_priority`.
+    #[inline]
+    fn vertices_max_aligned(&self) -> (Priority, impl Iterator<Item = NodeIndex<Ix>> + '_) {
+        self.vertices_max_priority()
+    }
+
     /// Get the full vertex
     #[inline(always)]
     fn get_vertex(&self, id: NodeIndex<Ix>) -> Option<Vertex> {
@@ -467,6 +477,24 @@ where
         )
     }
 
+    #[inline]
+    fn vertices_max_aligned(&self) -> (Priority, impl Iterator<Item=NodeIndex<Ix>> + '_) {
+        let max_p = self.priority_max();
+        let owner = Owner::from_priority(max_p);
+        // We assume that our parity game is remapped to have sorted priorities
+        // The highest priorities will be at the end, thus we can simply do a reverse iteration.
+        (
+            max_p,
+            self.vertices
+                .priority_slice()
+                .iter()
+                .enumerate()
+                .rev()
+                .take_while(move |(_, p)| Owner::from_priority(**p) == owner)
+                .map(|(v_id, _)| VertexId::new(v_id)),
+        )
+    }
+
     #[inline(always)]
     fn get_priority(&self, id: NodeIndex<Ix>) -> Option<Priority> {
         self.vertices.get_priority(id)
@@ -660,6 +688,13 @@ impl<'a, Ix: IndexType, Parent: ParityGraph<Ix>> ParityGraph<Ix> for SubGame<'a,
     fn vertices_max_priority(&self) -> (Priority, impl Iterator<Item=NodeIndex<Ix>> + '_) {
         let max_p = self.priority_max();
         (max_p, self.game_vertices.ones_vertices().rev().take_while(move |v_id| self.priority(*v_id) == max_p))
+    }
+
+    #[inline]
+    fn vertices_max_aligned(&self) -> (Priority, impl Iterator<Item=NodeIndex<Ix>> + '_) {
+        let max_p = self.priority_max();
+        let owner = Owner::from_priority(max_p);
+        (max_p, self.game_vertices.ones_vertices().rev().take_while(move |v_id| Owner::from_priority(self.priority(*v_id)) == owner))
     }
 
     #[inline(always)]

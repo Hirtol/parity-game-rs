@@ -115,12 +115,12 @@ impl<'a> TangleSolver<'a, Vertex> {
             // strategy.fill(VertexId::new(NO_STRATEGY as usize));
 
             while partial_subgame.vertex_count() != 0 {
-                let d = partial_subgame.priority_max();
+                let (d, starting_set) = partial_subgame.vertices_max_priority();
                 let owner = Owner::from_priority(d);
 
                 let starting_set = AttractionComputer::make_starting_set(
                     &partial_subgame,
-                    partial_subgame.vertices_index_by_priority(d),
+                    starting_set,
                 );
 
                 for v in starting_set.ones() {
