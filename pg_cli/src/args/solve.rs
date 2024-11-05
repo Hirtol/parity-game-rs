@@ -177,7 +177,7 @@ impl SolveCommand {
                             let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&parity_game);
 
                             let out = timed_solve!(solver.run());
-                            tracing::info!(tangles = solver.tangles_found, dominions = solver.dominions_found, "Solved");
+                            tracing::info!(tangles = solver.tangles_found, dominions = solver.dominions_found, iterations = solver.iterations, "Solved");
                             out.winners
                         }
                     }
@@ -257,7 +257,7 @@ impl SolveCommand {
 
                                 let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&rg_pg);
                                 let out = timed_solve!(solver.run());
-                                tracing::info!(tangles = solver.tangles_found, dominions = solver.dominions_found, "Solved");
+                                tracing::info!(tangles = solver.tangles_found, dominions = solver.dominions_found, iterations = solver.iterations, "Solved");
 
                                 rg.project_winners_original(&out.winners)
                             },

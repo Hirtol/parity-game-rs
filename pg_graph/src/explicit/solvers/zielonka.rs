@@ -31,7 +31,7 @@ impl<'a> ZielonkaSolver<'a> {
         self.recursive_calls += 1;
         // If all the vertices are ignord
         if game.vertex_count() == 0 {
-            (VertexSet::empty_game(game), VertexSet::empty_game(game))
+            (VertexSet::default(), VertexSet::default())
         } else {
             let d = game.priority_max();
             let attraction_owner = Owner::from_priority(d);
