@@ -61,15 +61,15 @@ pub mod tests {
         (game_to_run, compare)
     }
 
-    pub fn compare_solutions(left: SolverOutput, right: SolverOutput) {
+    pub fn compare_solutions(authoritative_solution: SolverOutput, right: SolverOutput) {
         assert_eq!(
-            left.winners, right.winners,
-            "Solutions of left and right solver don't match"
+            authoritative_solution.winners, right.winners,
+            "Solutions of authoritative (left) and right solver don't match"
         );
 
         // println!("Solution: {:#?}", left.winners);
 
-        if let (Some(strat_l), Some(strat_r)) = (left.strategy, right.strategy) {
+        if let (Some(strat_l), Some(strat_r)) = (authoritative_solution.strategy, right.strategy) {
             assert_eq!(strat_l, strat_r, "Strategies of left and right solver don't match");
         }
     }

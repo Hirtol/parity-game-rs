@@ -4,6 +4,7 @@ use crate::{explicit::{
     ParityGame, ParityGraph,
 }, Owner};
 use itertools::Itertools;
+use std::borrow::Cow;
 
 pub struct ZielonkaSolver<'a> {
     pub recursive_calls: usize,
@@ -52,10 +53,10 @@ impl<'a> ZielonkaSolver<'a> {
                 attraction_owner_set.union_with(&attraction_set);
                 (even, odd)
             } else {
-                let b_attr = self.attract.attractor_set(
+                let b_attr = self.attract.attractor_set_bit(
                     game,
                     attraction_owner.other(),
-                    not_attraction_owner_set.ones_vertices(),
+                    Cow::Borrowed(not_attraction_owner_set)
                 );
 
                 // If the attractor set doesn't grow for the opposing player then we can pre-emptively conclude
