@@ -96,7 +96,7 @@ impl BenchCommand {
                 );
 
                 let rg_pg = odd_game.to_normal_game()?;
-                let mut solver = ZielonkaSolver::new(&rg_pg);
+                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
                 let (output_odd, time_solve_odd) = timed_solve!(solver.run(), "Solved Zielonka on Odd register game");
                 let solution_rg_odd = odd_game.project_winners_original(&output_odd.winners);
                 let (even_wins, odd_wins) = solution_rg_odd.iter().fold((0, 0), |acc, win| match win {
@@ -110,7 +110,7 @@ impl BenchCommand {
                     "Constructed Even register game"
                 );
                 let rg_pg = even_game.to_normal_game()?;
-                let mut solver = ZielonkaSolver::new(&rg_pg);
+                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
                 let (output_even, time_solve_even) =
                     timed_solve!(solver.run(), "Solved Zielonka on Even register game");
                 let solution_rg_even = even_game.project_winners_original(&output_even.winners);

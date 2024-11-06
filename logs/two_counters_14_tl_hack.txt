@@ -1,0 +1,13 @@
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}:load_parity_game: pg_cli::utils: Loaded parity game size=658 edges=1428
+0.0s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Using explicit solver solver=TL
+0.0s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Constructing with register index k=2
+0.9s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Constructed Register Game elapsed=963.769ms
+1.4s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Converted from parity game to register game from_vertex=658 to_vertex=1792497 ratio=2724 from_edges=1428 to_edges=4611671 ratio=3229.4614845938377
+1036.6s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}:Run Tangle Learning: pg_graph::explicit::solvers::tangle_learning: Found greater dominion priority=4 size=906719
+1178.7s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}:Run Tangle Learning: pg_graph::explicit::solvers::tangle_learning: Found greater dominion priority=5 size=885718
+1179.1s DEBUG Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}:Run Tangle Learning: pg_graph::explicit::solvers::tangle_learning: Found greater dominion priority=1 size=60
+1179.1s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}:Run Tangle Learning: pg_graph::explicit::solvers::tangle_learning: Finished Tangle Learning dominions=3 tangles_found=25484
+1179.1s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Solving done elapsed=1177.7536155s
+1179.1s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Solved tangles=25484 dominions=3 iterations=299
+1179.4s  INFO Solve Parity Game{path=".\\game_examples\\two_counters_14.pg"}: pg_cli::args::solve: Results even_wins=329 odd_wins=329
+1179.4s  INFO pg_cli: Runtime: 1179.45s - Peak Memory Usage: 5160.497 MB

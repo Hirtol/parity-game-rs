@@ -114,6 +114,8 @@ pub enum ExplicitSolvers {
     Spm,
     /// Use the recursive Zielonka algorithm
     Zielonka,
+    /// Use the quasi-polynomial Zielonka algorithm
+    QZielonka,
     /// Use the Priority Promotion algorithm
     PP,
     /// Use Tangle Learning
@@ -164,6 +166,13 @@ impl SolveCommand {
 
                             let out = timed_solve!(solver.run());
                             tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                            out.winners
+                        }
+                        ExplicitSolvers::QZielonka => {
+                            let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&parity_game);
+
+                            let out = timed_solve!(solver.run());
+                            tracing::info!(n = solver.iterations, "Solved with iterations");
                             out.winners
                         }
                         ExplicitSolvers::PP => {
@@ -237,8 +246,6 @@ impl SolveCommand {
                                 rg.project_winners_original(&out.winners)
                             },
                             ExplicitSolvers::TL => {
-                                // PP can't handle the reduced game properly (as it needs to handle the controller vertices)
-                                // So we construct the full game instead.
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                                     "Constructed Register Game"
@@ -261,6 +268,28 @@ impl SolveCommand {
 
                                 rg.project_winners_original(&out.winners)
                             },
+                            ExplicitSolvers::QZielonka => {
+                                let rg = timed_solve!(
+                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
+                                    "Constructed Register Game"
+                                );
+                                let rg_pg = rg.to_normal_game()?;
+
+                                tracing::debug!(
+                                    from_vertex = rg.original_game.vertex_count(),
+                                    to_vertex = rg_pg.vertex_count(),
+                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                                    from_edges = rg.original_game.edge_count(),
+                                    to_edges = rg_pg.edge_count(),
+                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                                    "Converted from parity game to register game"
+                                );
+                                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(n = solver.iterations, "Solved with iterations");
+                                rg.project_winners_original(&out.winners)
+                            }
                             ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
