@@ -3,6 +3,7 @@ use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
 }, Owner, Priority};
+use fixedbitset::specific::SubBitSet;
 use itertools::Itertools;
 use std::borrow::Cow;
 
@@ -30,7 +31,12 @@ impl<'a> ZielonkaSolver<'a> {
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
-        let (_, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
+        let (even, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
+        tracing::debug!("Even Winning: {:?}", even.printable_vertices());
+        tracing::debug!("Odd Winning: {:?}", odd.printable_vertices());
+        // if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
+        //     panic!("Fewer vertices than expected were in the winning regions");
+        // }
         SolverOutput::from_winning(self.game.vertex_count(), &odd)
     }
     
@@ -69,6 +75,14 @@ impl<'a> ZielonkaSolver<'a> {
             };
             if can_skip {
                 crate::debug!(n = game.vertex_count(), new_p_odd, new_p_even, "Returning early, less than half remain");
+                match region_owner {
+                    Owner::Even => {
+                        result_even.union_with(&game.game_vertices)
+                    }
+                    Owner::Odd => {
+                        result_odd.union_with(&game.game_vertices)
+                    }
+                }
                 return (result_even, result_odd);
             }
 
@@ -82,9 +96,17 @@ impl<'a> ZielonkaSolver<'a> {
                 while self.zielonka_step(game, d, &mut result_even, &mut result_odd, new_p_even, new_p_odd) {}
             } else {
                 crate::debug!("Did not discover greater dominion ({d}), returning: {:?} == {:?}", result_even.printable_vertices(), result_odd.printable_vertices());
-                return (result_even, result_odd);
+                // return (result_even, result_odd);
             }
-
+            
+            match region_owner {
+                Owner::Even => {
+                    result_even.union_with(&game.game_vertices)
+                }
+                Owner::Odd => {
+                    result_odd.union_with(&game.game_vertices)
+                }
+            }
             crate::debug!("Ending: {d}");
             
             (result_even, result_odd)
@@ -119,18 +141,18 @@ impl<'a> ZielonkaSolver<'a> {
 
         if not_attraction_owner_set.is_clear() {
             crate::debug!("Alpha {d}\n{:?}", attraction_set.printable_vertices());
-            attraction_owner_set.union_with(&attraction_set);
+            // attraction_owner_set.union_with(&attraction_set);
 
-            if attraction_owner.is_even() {
-                result_even.union_with(attraction_owner_set);
-            } else {
-                result_odd.union_with(attraction_owner_set);
-            }
+            // if attraction_owner.is_even() {
+            //     result_even.union_with(attraction_owner_set);
+            // } else {
+            //     result_odd.union_with(attraction_owner_set);
+            // }
             // Not sure if we should shrink the sub-game here or not.
             // As we've found a locally closed region it would make sense to, mirroring the case of `!not_attraction_owner_set.is_clear()`,
             // but it also shrinks the total iterative calls substantially to the point where it feels like it might be incorrect.
             // We get valid results either way with or without the below, but if we stumble upon a magical counter-example consider removing this call.
-            game.shrink_subgame(attraction_owner_set);
+            // game.shrink_subgame(attraction_owner_set);
             false
         } else {
             let b_attr = self.attract.attractor_set_bit(
@@ -162,6 +184,7 @@ pub mod test {
     use std::time::Instant;
 
     #[test]
+    // #[tracing_test::traced_test]
     pub fn verify_correctness() {
         for name in tests::examples_iter() {
             if name.contains("two_counters_14p") {
