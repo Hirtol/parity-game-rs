@@ -31,74 +31,70 @@ impl<'a> ZielonkaSolver<'a> {
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
-        let (even, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
-        tracing::debug!("Even Winning: {:?}", even.printable_vertices());
-        tracing::debug!("Odd Winning: {:?}", odd.printable_vertices());
-        // if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
-        //     panic!("Fewer vertices than expected were in the winning regions");
-        // }
+        let ((even, odd), _) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
+        // tracing::debug!("Even Winning: {:?}", even.printable_vertices());
+        // tracing::debug!("Odd Winning: {:?}", odd.printable_vertices());
+        if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
+            panic!("Fewer vertices than expected were in the winning regions");
+        }
         SolverOutput::from_winning(self.game.vertex_count(), &odd)
     }
     
-    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &mut SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet) {
+    /// Returns the winning regions `(W_even, W_odd)` as well as a flag indicating whether the results that were obtained
+    /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
+    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &mut SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> ((VertexSet, VertexSet), bool) {
         // If all the vertices are ignored
         if game.vertex_count() == 0 {
-            (VertexSet::default(), VertexSet::default())
+            ((VertexSet::default(), VertexSet::default()), true)
         } else {
             let d = game.priority_max();
             let region_owner = Owner::from_priority(d);
             let (new_p_even, new_p_odd) = match region_owner {
                 Owner::Even => if precision_even <= self.min_precision {
-                    crate::trace!("Hitting early exit even");
-                    return (VertexSet::empty_game(game), VertexSet::empty_game(game));
+                    crate::debug!(d, "Hitting early exit even");
+                    return ((VertexSet::empty_game(game), VertexSet::empty_game(game)), false);
                 } else {
                     (precision_even, precision_odd / 2)
                 }
                 Owner::Odd => if precision_odd <= self.min_precision {
-                    crate::trace!("Hitting early exit odd");
-                    return (VertexSet::empty_game(game), VertexSet::empty_game(game));
+                    crate::debug!(d, "Hitting early exit odd");
+                    return ((VertexSet::empty_game(game), VertexSet::empty_game(game)), false);
                 } else {
                     (precision_even / 2, precision_odd)
                 }
             };
 
+            let mut authentic_result = true;
             let (mut result_even, mut result_odd) = (VertexSet::empty_game(game), VertexSet::empty_game(game));
             crate::debug!("Starting: {d}");
             // Half precision calls
-            while self.zielonka_step(game, d, &mut result_even, &mut result_odd, new_p_even, new_p_odd) {}
+            while self.zielonka_step(game, d, &mut result_even, &mut result_odd, new_p_even, new_p_odd, &mut authentic_result) {}
 
             // If the amount of vertices that remain are less than half our original precision then we know that no
             // winning region of size > half the vertices can exist, and we can safely stop here.
             let can_skip = match region_owner {
-                Owner::Even => game.vertex_count() < new_p_odd,
-                Owner::Odd => game.vertex_count() < new_p_even
+                Owner::Even => game.vertex_count() <= new_p_odd,
+                Owner::Odd => game.vertex_count() <= new_p_even
             };
-            if can_skip {
-                crate::debug!(n = game.vertex_count(), new_p_odd, new_p_even, "Returning early, less than half remain");
-                match region_owner {
-                    Owner::Even => {
-                        result_even.union_with(&game.game_vertices)
-                    }
-                    Owner::Odd => {
-                        result_odd.union_with(&game.game_vertices)
-                    }
+            if !can_skip {
+                // Full precision call
+                crate::debug!("Full Precision: {d}");
+                let discovered_dominion = self.zielonka_step(game, d, &mut result_even, &mut result_odd, precision_even, precision_odd, &mut authentic_result);
+
+                if discovered_dominion {
+                    crate::debug!("Discovered greater dominion ({d}), continuing");
+                    // If we found a dominion for the opposing player then we need to do a new sequence of half-precision calls
+                    while self.zielonka_step(game, d, &mut result_even, &mut result_odd, new_p_even, new_p_odd, &mut authentic_result) {}
+                } else {
+                    crate::debug!("Did not discover greater dominion ({d})");
                 }
-                return (result_even, result_odd);
-            }
-
-            // Full precision call
-            crate::debug!("Full Precision: {d}");
-            let discovered_dominion = self.zielonka_step(game, d, &mut result_even, &mut result_odd, precision_even, precision_odd);
-
-            if discovered_dominion {
-                crate::debug!("Discovered greater dominion ({d}), continuing");
-                // If we found a dominion for the opposing player then we need to do a new sequence of half-precision calls
-                while self.zielonka_step(game, d, &mut result_even, &mut result_odd, new_p_even, new_p_odd) {}
             } else {
-                crate::debug!("Did not discover greater dominion ({d}), returning: {:?} == {:?}", result_even.printable_vertices(), result_odd.printable_vertices());
-                // return (result_even, result_odd);
+                crate::debug!(d, n = game.vertex_count(), new_p_odd, new_p_even, "Returning early, less than half remain");
             }
             
+            // Whatever remains is guaranteed _not_ to be an opponent's dominion, so we can add it to our winning region.
+            // Since we've done both our full-precision and half-precision calls we can make the assumption that it is indeed won by us.
+            crate::debug!(remains =?game.game_vertices.printable_vertices(), "Combining remaining game with winning region");
             match region_owner {
                 Owner::Even => {
                     result_even.union_with(&game.game_vertices)
@@ -107,9 +103,9 @@ impl<'a> ZielonkaSolver<'a> {
                     result_odd.union_with(&game.game_vertices)
                 }
             }
-            crate::debug!("Ending: {d}");
+            crate::debug!("Ending: {d}, returning: {:?} == {:?}", result_even.printable_vertices(), result_odd.printable_vertices());
             
-            (result_even, result_odd)
+            ((result_even, result_odd), authentic_result)
         }
     }
 
@@ -122,7 +118,9 @@ impl<'a> ZielonkaSolver<'a> {
                                           result_even: &mut VertexSet,
                                           result_odd: &mut VertexSet,
                                           new_p_even: usize,
-                                          new_p_odd: usize) -> bool {
+                                          new_p_odd: usize,
+                                          authentic: &mut bool,
+    ) -> bool {
         self.iterations += 1;
 
         let attraction_owner = Owner::from_priority(d);
@@ -131,7 +129,8 @@ impl<'a> ZielonkaSolver<'a> {
         let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
         let mut sub_game = game.create_subgame_bit(&attraction_set);
 
-        let (mut even, mut odd) = self.zielonka(&mut sub_game, new_p_even, new_p_odd);
+        let ((mut even, mut odd), recursive_authentic) = self.zielonka(&mut sub_game, new_p_even, new_p_odd);
+        *authentic &= recursive_authentic;
 
         let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
             (&mut even, &mut odd)
@@ -140,7 +139,20 @@ impl<'a> ZielonkaSolver<'a> {
         };
 
         if not_attraction_owner_set.is_clear() {
-            crate::debug!("Alpha {d}\n{:?}", attraction_set.printable_vertices());
+            crate::debug!(recursive_authentic, "Alpha {d} - Attractor: {:?}", attraction_set.printable_vertices());
+            // We can be sure of our result, no undetermined vertices.
+            // This is only `true` if we didn't cut our recursive call tree off prematurely.
+            if recursive_authentic {
+                attraction_owner_set.union_with(&attraction_set);
+
+                if attraction_owner.is_even() {
+                    result_even.union_with(attraction_owner_set);
+                } else {
+                    result_odd.union_with(attraction_owner_set);
+                }
+                
+                game.shrink_subgame(attraction_owner_set);
+            }
             // attraction_owner_set.union_with(&attraction_set);
 
             // if attraction_owner.is_even() {
