@@ -238,7 +238,7 @@ where
                                     base = match ineq {
                                         // Any register which is smaller than priority will get overwritten;
                                         Inequality::Leq => base.and(next_reg_encoder.encode_single(j, priority)?)?,
-                                        Inequality::Gt => {
+                                        Inequality::Gt | Inequality::Geq => {
                                             // Ensure all registers remain the same past the transition
                                             let iff_register_condition = variables
                                                 .register_vars_i(j, register_bits_needed)

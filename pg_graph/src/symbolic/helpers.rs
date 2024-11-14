@@ -1,12 +1,12 @@
-use std::{borrow::Borrow, collections::hash_map::Entry, fmt::Debug, hash::Hash};
 use std::marker::PhantomData;
 use std::ops::Range;
+use std::{borrow::Borrow, collections::hash_map::Entry, fmt::Debug, hash::Hash};
 
 use ecow::EcoVec;
-use oxidd_core::{function::Function, ManagerRef};
 use oxidd_core::util::AllocResult;
+use oxidd_core::{function::Function, ManagerRef};
 
-use crate::symbolic::{BddError, oxidd_extensions::BooleanFunctionExtensions};
+use crate::symbolic::{oxidd_extensions::BooleanFunctionExtensions, BddError};
 
 pub trait SymbolicEncoder<T, F>
     where F: Function {
@@ -237,6 +237,8 @@ pub enum Inequality {
     Leq,
     /// Greater than
     Gt,
+    /// Greater than or equal to
+    Geq,
 }
 
 pub struct CachedInequalityEncoder<T, F: Function> {
@@ -288,7 +290,7 @@ impl<T, F> CachedInequalityEncoder<T, F>
                             let remaining_exclude = if estimated_items_to_exclude.to_usize() > 20 {
                                 // We'll need to exclude values larger than priority up to the next power of two to ensure they don't get included
                                 if significant_bits > 0 {
-                                    Self::recursive_bit_encode_leq(value, significant_bits - 1, &self.variables, &self.base_true, &mut self.value_encoder)?.and(&exclude_bits)?
+                                    Self::recursive_bit_encode_leq(value, significant_bits - 1, &self.variables, &self.base_true)?.and(&exclude_bits)?
                                 } else {
                                     exclude_bits
                                 }
@@ -315,11 +317,35 @@ impl<T, F> CachedInequalityEncoder<T, F>
                     self.cache.get(&(ineq,value)).ok_or(BddError::NoMatchingInput)
                 }
             }
+            Inequality::Geq => Ok(
+                match self.cache.entry((ineq, value)) {
+                    Entry::Occupied(val) => val.into_mut(),
+                    Entry::Vacant(val) => {
+                        // First calculate how many bits are significant
+                        let significant_bits = (value.num_bits() - value.leading_zeros_help()) as usize;
+                        // We must include all states which are binary wise higher than our current `value`
+                        // We just `or` all higher bits together
+                        let include_bits = self.variables[significant_bits..]
+                            .iter()
+                            .try_fold(self.base_true.not()?, |acc, var| acc.or(var))?;
+            
+                        // We'll need to exclude values lower than priority
+                        let geq_inequality = if significant_bits > 0 {
+                            Self::recursive_bit_encode_geq(value, significant_bits - 1, &self.variables, &self.base_true)?.or(&include_bits)?
+                        } else {
+                            include_bits.clone()
+                        };
+            
+            
+                        val.insert(geq_inequality)
+                    }
+                }
+            ),
         }
     }
 
     #[inline]
-    fn recursive_bit_encode_leq(value: T, bit: usize, variables: &[F], base_true: &F, value_encoder: &mut CachedBinaryEncoder<T, F>) -> AllocResult<F> {
+    fn recursive_bit_encode_leq(value: T, bit: usize, variables: &[F], base_true: &F) -> AllocResult<F> {
         let bit_set = (value & (T::from(1) << T::from(bit as u8))) != T::from(0);
         let bit_var = &variables[bit];
         // End recursion
@@ -333,7 +359,7 @@ impl<T, F> CachedInequalityEncoder<T, F>
             }
         }
         
-        let recursive_value = Self::recursive_bit_encode_leq(value, bit - 1, variables, base_true, value_encoder)?;
+        let recursive_value = Self::recursive_bit_encode_leq(value, bit - 1, variables, base_true)?;
         if bit_set {
             // We have to encode the following two cases:
             // 1. bit_var == 1 -> formula needs to be `AND`ed with self.recursive_bit_encode_lt(value, bit - 1)
@@ -344,6 +370,35 @@ impl<T, F> CachedInequalityEncoder<T, F>
             // 1. bit_var == 1 -> formula should return `false` as it's guaranteed to be bigger than `value`
             // 2. bit_var == 0 -> formula needs to be `AND`ed with self.recursive_bit_encode_lt(value, bit - 1)
             recursive_value.diff(bit_var)
+        }
+    }
+
+    #[inline]
+    fn recursive_bit_encode_geq(value: T, bit: usize, variables: &[F], base_true: &F) -> AllocResult<F> {
+        let bit_set = (value & (T::from(1) << T::from(bit as u8))) != T::from(0);
+        let bit_var = &variables[bit];
+        // End recursion
+        if bit == 0 {
+            // If the bit is set _then_ we need to exclude the bit.
+            // Otherwise, it doesn't matter.
+            return if bit_set {
+                Ok(bit_var.clone())
+            } else {
+                Ok(base_true.clone())
+            }
+        }
+
+        let recursive_value = Self::recursive_bit_encode_geq(value, bit - 1, variables, base_true)?;
+        if bit_set {
+            // We have to encode the following two cases:
+            // 1. bit_var == 1 -> formula needs to be `AND`ed with self.recursive_bit_encode_lt(value, bit - 1)
+            // 2. bit_var == 0 -> formula should return `false` as it's guaranteed to be smaller than `value`
+            bit_var.and(&recursive_value)
+        } else {
+            // We have to encode the following two cases:
+            // 1. bit_var == 1 -> formula should return `true` as it's guaranteed to be bigger than `value`
+            // 2. bit_var == 0 -> formula needs to be `AND`ed with self.recursive_bit_encode_lt(value, bit - 1)
+            bit_var.or(&recursive_value)
         }
     }
 }
@@ -396,3 +451,57 @@ macro_rules! impl_bithelpers {
 }
 
 impl_bithelpers!(u8, u16, u32, u64, usize);
+
+#[cfg(test)]
+mod tests {
+    use crate::explicit::register_game::Rank;
+    use crate::explicit::{ParityGame, ParityGraph};
+    use crate::symbolic::helpers::{CachedBinaryEncoder, CachedInequalityEncoder, Inequality, SymbolicEncoder};
+    use crate::symbolic::oxidd_extensions::FunctionManagerExtension;
+    use crate::symbolic::register_game::SymbolicRegisterGame;
+    use crate::symbolic::BDD;
+    use crate::{load_example, Owner};
+    use ecow::EcoVec;
+    use oxidd_core::function::BooleanFunction;
+
+    struct SymbolicTest {
+        pg: SymbolicRegisterGame<BDD>,
+        original: ParityGame,
+    }
+
+    fn symbolic_rg(pg: ParityGame, k: Rank) -> eyre::Result<SymbolicTest> {
+        let s_pg = SymbolicRegisterGame::from_symbolic(&pg, k, Owner::Even)?;
+
+
+        Ok(SymbolicTest {
+            pg: s_pg,
+            original: pg,
+        })
+    }
+
+    #[test]
+    pub fn test_inequality() {
+        let spg = symbolic_rg(load_example("two_counters_14.pg"), 2).unwrap();
+        let parity_domain = spg.original.priorities_unique().collect::<EcoVec<_>>();
+        println!("Parity Domain: {parity_domain:?}");
+        let manager = BDD::new_manager(
+            100,
+            100,
+            12,
+        );
+
+        let mut cached = CachedInequalityEncoder::new(&spg.pg.manager, spg.pg.variables.all_variables.clone(), parity_domain);
+        let mut bin = CachedBinaryEncoder::new(&spg.pg.manager, spg.pg.variables.all_variables.clone());
+        let value = bin.encode(4u32).unwrap();
+        let ineq = cached.encode(Inequality::Geq, 5).unwrap();
+
+        assert!(!value.and(ineq).unwrap().satisfiable());
+
+        for i in 6..59 {
+            let value2 = bin.encode(i).unwrap();
+            assert!(value2.and(ineq).unwrap().satisfiable(), "Value: {i} not satisfiable");
+        }
+        let value3 = bin.encode(5u32).unwrap();
+        assert!(value3.and(ineq).unwrap().satisfiable());
+    }
+}
