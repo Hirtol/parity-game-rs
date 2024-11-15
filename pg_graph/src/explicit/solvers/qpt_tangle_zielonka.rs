@@ -308,7 +308,7 @@ impl<'a> ZielonkaSolver<'a> {
 
 #[cfg(test)]
 pub mod test {
-    use crate::explicit::solvers::qpt_zielonka::ZielonkaSolver;
+    use crate::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver;
     use crate::{tests, tests::load_example, Owner};
     use std::time::Instant;
 
