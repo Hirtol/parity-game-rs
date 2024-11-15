@@ -207,58 +207,68 @@ where
                     0 => {
                         vec![(prio_bdd.clone(), next_reg_encoder.encode_single(i, priority)?.clone())]
                     }
-                    _ => itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
-                        .multi_cartesian_product()
-                        .flat_map(|inequality_states| {
-                            logger.tick();
-                            let source_register_states = ineq_encoders[i + 1..=k]
-                                .iter_mut()
-                                .zip(&inequality_states)
-                                .flat_map(|(encoder, ineq)| encoder.encode(*ineq, priority))
-                                .try_fold(base_true.clone(), |acc, encoded_inequality| acc.and(encoded_inequality))?;
+                    _ => {
+                        // Polynomial time construction, but substantially slower solving
+                        let itr = (0..n_remaining_registers + 1).map(|i| {
+                            itertools::repeat_n([Inequality::Leq], i).chain(itertools::repeat_n([Inequality::Geq], n_remaining_registers - i)).flatten().collect_vec()
+                        });
+                        
+                        // Quasi-polynomial construction, but good solving times.
+                        // let itr = itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
+                        //                             .multi_cartesian_product();
 
-                            let base_starting_set = prio_bdd.and(&source_register_states)?;
+                        itr
+                            .flat_map(|inequality_states| {
+                                logger.tick();
+                                let source_register_states = ineq_encoders[i + 1..=k]
+                                    .iter_mut()
+                                    .zip(&inequality_states)
+                                    .flat_map(|(encoder, ineq)| encoder.encode(*ineq, priority))
+                                    .try_fold(base_true.clone(), |acc, encoded_inequality| acc.and(encoded_inequality))?;
 
-                            // All cases where a register is <= priority needs to be set to priority
-                            // All cases where a register is > priority needs an equivalence relation between it and the next state.
-                            // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside.
-                            let target_register_states = {
-                                let mut base = base_true.clone();
+                                let base_starting_set = prio_bdd.and(&source_register_states)?;
 
-                                // First ensure the registers which come _before_ the reset are set to 0
-                                let zero_registers = edge_variables.register_vars()[0..i * register_bits_needed]
-                                    .iter()
-                                    .try_fold(base_true.clone(), |acc, next| acc.diff(next))?;
-                                base = base.and(&zero_registers)?;
-                                // Then ensure the register that is reset gets set to `priority`
-                                base = base.and(next_reg_encoder.encode_single(i, priority)?)?;
+                                // All cases where a register is <= priority needs to be set to priority
+                                // All cases where a register is > priority needs an equivalence relation between it and the next state.
+                                // TODO: This can be pulled out to the top layer so we only have to construct this iteratively, if we put the for i in 0..=k inside.
+                                let target_register_states = {
+                                    let mut base = base_true.clone();
 
-                                // Then encode the registers which come _after_ the reset.
-                                for (j, ineq) in (i + 1..=k).zip(inequality_states) {
-                                    base = match ineq {
-                                        // Any register which is smaller than priority will get overwritten;
-                                        Inequality::Leq => base.and(next_reg_encoder.encode_single(j, priority)?)?,
-                                        Inequality::Gt | Inequality::Geq => {
-                                            // Ensure all registers remain the same past the transition
-                                            let iff_register_condition = variables
-                                                .register_vars_i(j, register_bits_needed)
-                                                .iter()
-                                                .zip(edge_variables.register_vars_i(j, register_bits_needed))
-                                                .try_fold(base_true.clone(), |acc, (r, r_next)| {
-                                                    acc.and(&r.equiv(r_next)?)
-                                                })?;
+                                    // First ensure the registers which come _before_ the reset are set to 0
+                                    let zero_registers = edge_variables.register_vars()[0..i * register_bits_needed]
+                                        .iter()
+                                        .try_fold(base_true.clone(), |acc, next| acc.diff(next))?;
+                                    base = base.and(&zero_registers)?;
+                                    // Then ensure the register that is reset gets set to `priority`
+                                    base = base.and(next_reg_encoder.encode_single(i, priority)?)?;
 
-                                            base.and(&iff_register_condition)?
-                                        }
-                                    };
-                                }
+                                    // Then encode the registers which come _after_ the reset.
+                                    for (j, ineq) in (i + 1..=k).zip(inequality_states) {
+                                        base = match ineq {
+                                            // Any register which is smaller than priority will get overwritten;
+                                            Inequality::Leq => base.and(next_reg_encoder.encode_single(j, priority)?)?,
+                                            Inequality::Gt | Inequality::Geq => {
+                                                // Ensure all registers remain the same past the transition
+                                                let iff_register_condition = variables
+                                                    .register_vars_i(j, register_bits_needed)
+                                                    .iter()
+                                                    .zip(edge_variables.register_vars_i(j, register_bits_needed))
+                                                    .try_fold(base_true.clone(), |acc, (r, r_next)| {
+                                                        acc.and(&r.equiv(r_next)?)
+                                                    })?;
 
-                                base
-                            };
+                                                base.and(&iff_register_condition)?
+                                            }
+                                        };
+                                    }
 
-                            Ok::<_, BddError>((base_starting_set, target_register_states))
-                        })
-                        .collect(),
+                                    base
+                                };
+
+                                Ok::<_, BddError>((base_starting_set, target_register_states))
+                            })
+                            .collect()
+                    },
                 };
 
                 // We need to handle three cases to efficiently encode the whole permutation set:

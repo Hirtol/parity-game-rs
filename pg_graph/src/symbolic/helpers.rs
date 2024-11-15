@@ -317,30 +317,43 @@ impl<T, F> CachedInequalityEncoder<T, F>
                     self.cache.get(&(ineq,value)).ok_or(BddError::NoMatchingInput)
                 }
             }
-            Inequality::Geq => Ok(
-                match self.cache.entry((ineq, value)) {
-                    Entry::Occupied(val) => val.into_mut(),
-                    Entry::Vacant(val) => {
-                        // First calculate how many bits are significant
-                        let significant_bits = (value.num_bits() - value.leading_zeros_help()) as usize;
-                        // We must include all states which are binary wise higher than our current `value`
-                        // We just `or` all higher bits together
-                        let include_bits = self.variables[significant_bits..]
-                            .iter()
-                            .try_fold(self.base_true.not()?, |acc, var| acc.or(var))?;
-            
-                        // We'll need to exclude values lower than priority
-                        let geq_inequality = if significant_bits > 0 {
-                            Self::recursive_bit_encode_geq(value, significant_bits - 1, &self.variables, &self.base_true)?.or(&include_bits)?
-                        } else {
-                            include_bits.clone()
-                        };
-            
-            
-                        val.insert(geq_inequality)
-                    }
+            Inequality::Geq => {
+                // Have to avoid multiple mutable borrows....
+                if !self.cache.contains_key(&(ineq, value)) {
+                    let gt_value = self.encode(Inequality::Gt, value)?.clone();
+                    let geq = gt_value.or(self.value_encoder.encode(value)?)?;
+                    let out = self.cache.entry((ineq, value)).or_insert(geq);
+                    Ok(out)
+                } else {
+                    self.cache.get(&(ineq,value)).ok_or(BddError::NoMatchingInput)
                 }
-            ),
+            }
+            // Currently the BDDs we get here are quite large, so just defer to the above for now.
+            // We'd have to mirror the explicit exclusion case of LEQ... or just piggyback of it by inverting
+            // Inequality::Geq => Ok(
+            //     match self.cache.entry((ineq, value)) {
+            //         Entry::Occupied(val) => val.into_mut(),
+            //         Entry::Vacant(val) => {
+            //             // First calculate how many bits are significant
+            //             let significant_bits = (value.num_bits() - value.leading_zeros_help()) as usize;
+            //             // We must include all states which are binary wise higher than our current `value`
+            //             // We just `or` all higher bits together
+            //             let include_bits = self.variables[significant_bits..]
+            //                 .iter()
+            //                 .try_fold(self.base_true.not()?, |acc, var| acc.or(var))?;
+            // 
+            //             // We'll need to exclude values lower than priority
+            //             let geq_inequality = if significant_bits > 0 {
+            //                 Self::recursive_bit_encode_geq(value, significant_bits - 1, &self.variables, &self.base_true)?.or(&include_bits)?
+            //             } else {
+            //                 include_bits.clone()
+            //             };
+            // 
+            // 
+            //             val.insert(geq_inequality)
+            //         }
+            //     }
+            // ),
         }
     }
 
