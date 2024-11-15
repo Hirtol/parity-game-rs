@@ -125,7 +125,7 @@ impl<'a> ZielonkaSolver<'a> {
 
         let attraction_owner = Owner::from_priority(d);
         let starting_set = game.vertices_index_by_priority(d);
-
+        
         let attraction_set = self.attract.attractor_set(game, attraction_owner, starting_set);
         let mut sub_game = game.create_subgame_bit(&attraction_set);
 

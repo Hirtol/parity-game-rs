@@ -136,9 +136,12 @@ impl<'a> ZielonkaSolver<'a> {
 
         let attraction_owner = Owner::from_priority(d);
         let starting_set = AttractionComputer::make_starting_set(game, game.vertices_index_by_priority(d));
-        strategy.fill(VertexId::new(NO_STRATEGY as usize));
+        // Reset strategy of top vertices.
+        for v in starting_set.ones() {
+            strategy[v] = VertexId::new(NO_STRATEGY as usize);
+        }
+
         let tangle_attractor = self.attract.attractor_set_tangle(game, attraction_owner, Cow::Owned(starting_set), &self.tangles, strategy);
-        // let tangle_attractor = self.attract.attractor_set_bit(game, attraction_owner, Cow::Owned(starting_set));
         // Check if there are any escapes from this region, or if it's locally closed.
         // We only care about the vertices with the region priority.
         let leaks = tangle_attractor
@@ -199,11 +202,6 @@ impl<'a> ZielonkaSolver<'a> {
                 &self.tangles,
                 strategy
             );
-            // let b_attr = self.attract.attractor_set_bit(
-            //     game,
-            //     attraction_owner.other(),
-            //     Cow::Borrowed(not_attraction_owner_set),
-            // );
             crate::debug!("BATTR {d}\n{:?}", b_attr.printable_vertices());
 
             let not_attraction_owner_set = if attraction_owner.is_even() {
