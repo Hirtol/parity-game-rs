@@ -115,7 +115,11 @@ pub enum ExplicitSolvers {
     /// Use the recursive Zielonka algorithm
     Zielonka,
     /// Use the quasi-polynomial Zielonka algorithm
-    QZielonka,
+    QZielonka {
+        /// Enable experimental tangle support.
+        #[clap(long)]
+        tangles: bool,
+    },
     /// Use the Priority Promotion algorithm
     PP,
     /// Use Tangle Learning
@@ -168,12 +172,20 @@ impl SolveCommand {
                             tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                             out.winners
                         }
-                        ExplicitSolvers::QZielonka => {
-                            let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&parity_game);
+                        ExplicitSolvers::QZielonka {tangles} => {
+                            if tangles {
+                                let mut solver = pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&parity_game);
 
-                            let out = timed_solve!(solver.run());
-                            tracing::info!(n = solver.iterations, "Solved with iterations");
-                            out.winners
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(n = solver.iterations, "Solved with iterations");
+                                out.winners
+                            } else {
+                                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&parity_game);
+
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(n = solver.iterations, "Solved with iterations");
+                                out.winners
+                            }
                         }
                         ExplicitSolvers::PP => {
                             let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&parity_game);
@@ -268,13 +280,12 @@ impl SolveCommand {
 
                                 rg.project_winners_original(&out.winners)
                             },
-                            ExplicitSolvers::QZielonka => {
+                            ExplicitSolvers::QZielonka {tangles} => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                                     "Constructed Register Game"
                                 );
                                 let rg_pg = rg.to_normal_game()?;
-
                                 tracing::debug!(
                                     from_vertex = rg.original_game.vertex_count(),
                                     to_vertex = rg_pg.vertex_count(),
@@ -284,11 +295,20 @@ impl SolveCommand {
                                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                                     "Converted from parity game to register game"
                                 );
-                                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+                                
+                                if tangles {
+                                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&rg_pg);
 
-                                let out = timed_solve!(solver.run());
-                                tracing::info!(n = solver.iterations, "Solved with iterations");
-                                rg.project_winners_original(&out.winners)
+                                    let out = timed_solve!(solver.run());
+                                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                                    rg.project_winners_original(&out.winners)
+                                } else {
+                                    let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+
+                                    let out = timed_solve!(solver.run());
+                                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                                    rg.project_winners_original(&out.winners)
+                                }
                             }
                             ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
                                 let rg = timed_solve!(

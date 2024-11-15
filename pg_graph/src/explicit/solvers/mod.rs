@@ -17,6 +17,7 @@ pub mod tangle_learning;
 pub mod zielonka;
 pub mod priority_promotion;
 pub mod qpt_zielonka;
+pub mod qpt_tangle_zielonka;
 
 #[derive(Debug, Clone, Default)]
 pub struct SolverOutput {

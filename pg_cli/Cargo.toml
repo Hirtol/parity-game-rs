@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 default = []
 profiling-tracy = ["profiling/profile-with-tracy", "tracy-client"]
 dhat-heap = []
+verbose = ["pg_graph/verbose"]
 
 [dependencies]
 eyre.workspace = true
