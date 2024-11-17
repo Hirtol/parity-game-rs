@@ -208,14 +208,10 @@ where
                         vec![(prio_bdd.clone(), next_reg_encoder.encode_single(i, priority)?.clone())]
                     }
                     _ => {
-                        // Polynomial time construction, but substantially slower solving
+                        // Polynomial time construction. Geq/Gt are both fine, the former gives smaller games initially but larger memory usage during solving.
                         let itr = (0..n_remaining_registers + 1).map(|i| {
                             itertools::repeat_n([Inequality::Leq], i).chain(itertools::repeat_n([Inequality::Geq], n_remaining_registers - i)).flatten().collect_vec()
                         });
-                        
-                        // Quasi-polynomial construction, but good solving times.
-                        // let itr = itertools::repeat_n([Inequality::Leq, Inequality::Gt], n_remaining_registers)
-                        //                             .multi_cartesian_product();
 
                         itr
                             .flat_map(|inequality_states| {
