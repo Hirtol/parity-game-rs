@@ -112,7 +112,7 @@ impl<'a> TangleSolver<'a, Vertex> {
         loop {
             let mut partial_subgame = current_game.create_subgame([]);
             let mut temp_tangles = TangleCollection::default();
-            // strategy.fill(VertexId::new(NO_STRATEGY as usize));
+            strategy.fill(VertexId::new(NO_STRATEGY as usize));
 
             while partial_subgame.vertex_count() != 0 {
                 let d = partial_subgame.priority_max();
@@ -122,10 +122,12 @@ impl<'a> TangleSolver<'a, Vertex> {
                     &partial_subgame,
                     partial_subgame.vertices_index_by_priority(d),
                 );
-
-                for v in starting_set.ones() {
-                    strategy[v] = VertexId::new(NO_STRATEGY as usize);
-                }
+                
+                // This is how Oink does things, but our strategy tracking is clearly lacking due to no Tangle strategy tracking.
+                // So the below (with the elision of the strategy reset above) will cause an infinite loop for register games in two_counters
+                // for v in starting_set.ones() {
+                //     strategy[v] = VertexId::new(NO_STRATEGY as usize);
+                // }
 
                 let tangle_attractor = self.attract.attractor_set_tangle(
                     &partial_subgame,
@@ -288,7 +290,7 @@ impl TangleManager {
     ) -> bool {
         // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
         // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
-        self.all_escapes_to(tangle, game, in_set) && tangle.vertices.is_subset(&game.game_vertices)
+        tangle.vertices.is_subset(&game.game_vertices) && self.all_escapes_to(tangle, game, in_set)
     }
 
     /// Return `true` if the given tangle has all escapes valid within `game` pointing to the `in_set`.
