@@ -44,11 +44,13 @@ impl<'a> LiverpoolSolver<'a> {
         self.iterations += 1;
         let (mut result_even, mut result_odd) = (VertexSet::empty_game(game), VertexSet::empty_game(game));
         if precision_odd == 0 {
-            result_odd.union_with(&game.game_vertices);
+            result_even.union_with(&game.game_vertices);
+            crate::debug!("End of precision; presumed won by player 0: {:?}", result_even.printable_vertices());
             return (result_even, result_odd)
         }
         if precision_even == 0 {
             result_odd.union_with(&game.game_vertices);
+            crate::debug!("End of precision; presumed won by player 1: {:?}", result_odd.printable_vertices());
             return (result_even, result_odd)
         }
         // If all the vertices are ignored
@@ -69,6 +71,7 @@ impl<'a> LiverpoolSolver<'a> {
         };
         // Half-precision call
         let (region_even, region_odd) = self.zielonka(game, new_p_even, new_p_odd);
+        crate::info!(d, ?region_owner, precision_even, precision_odd, "In");
 
         // If the amount of vertices that remain are less than half our original precision then we know that no
         // winning region of size > half the vertices can exist, and we can safely stop here.
@@ -92,14 +95,15 @@ impl<'a> LiverpoolSolver<'a> {
         let mut our_winning_region = SubGame::from_vertex_set(game.parent, region);
         let starting_set = our_winning_region.vertices_index_by_priority(d);
         let our_attractor = self.attract.attractor_set(&our_winning_region, region_owner, starting_set);
-        
+        crate::debug!("H region: {} - {:?} - {:?}", d, our_attractor.printable_vertices(), our_winning_region.game_vertices.printable_vertices());
         // We ignore the half-precision regions after this, but we keep our larger attractor set as our winning region
         our_result.union_with(&our_attractor);
         
         let mut h = our_winning_region.create_subgame_bit(&our_attractor);
         
         // Full precision call
-        crate::debug!("Full Precision: {d}");
+        crate::debug!("Full Precision: {d} - {:?}", h.game_vertices.printable_vertices());
+        
         let (region_even, region_odd) = self.zielonka(&mut h, precision_even, precision_odd);
         let opponent = region_owner.other();
         let opponent_region = match opponent {
@@ -107,6 +111,7 @@ impl<'a> LiverpoolSolver<'a> {
             Owner::Odd => region_odd,
         };
         let opponent_attract = self.attract.attractor_set_bit(&h, opponent, Cow::Owned(opponent_region));
+        
         opponent_result.union_with(&opponent_attract);
         
         // Check if the opponent attracted from our winning region, in which case we need to recalculate
@@ -131,6 +136,7 @@ pub mod test {
     use crate::explicit::solvers::qpt_liverpool::LiverpoolSolver;
     use crate::{tests, tests::load_example, Owner};
     use std::time::Instant;
+    use tracing_test::traced_test;
 
     #[test]
     // #[tracing_test::traced_test]
@@ -149,6 +155,7 @@ pub mod test {
     }
 
     #[test]
+    #[traced_test]
     pub fn test_solve_basic_paper_example() {
         let (game, compare) = tests::load_and_compare_example("basic_paper_example.pg");
         let mut solver = LiverpoolSolver::new(&game);
