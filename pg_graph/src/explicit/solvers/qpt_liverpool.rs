@@ -66,10 +66,6 @@ impl<'a> LiverpoolSolver<'a> {
 
         let d = game.priority_max();
         let region_owner = Owner::from_priority(d);
-        let (our_result, opponent_result) = match region_owner {
-            Owner::Even => (&mut result_even, &mut result_odd),
-            Owner::Odd => (&mut result_odd, &mut result_even)
-        };
 
         let (new_p_even, new_p_odd) = match region_owner {
             Owner::Even => (precision_even, precision_odd / 2),
@@ -85,22 +81,15 @@ impl<'a> LiverpoolSolver<'a> {
             Owner::Even => game.vertex_count() <= new_p_odd,
             Owner::Odd => game.vertex_count() <= new_p_even
         };
-        // if can_skip
-        if false {
+        if can_skip {
+        // if false {
             crate::debug!(d, n = game.vertex_count(), new_p_odd, new_p_even, "Returning early, less than half remain");
-            return (result_even, result_odd)
+            return (region_even, region_odd)
         }
 
-        let region = match region_owner {
-            Owner::Even => {
-                region_even
-            }
-            Owner::Odd => {
-                region_odd
-            }
-        };
-        let mut g_1 = SubGame::from_vertex_set(game.parent, region);
-        let starting_set = g_1.vertices_index_by_priority(d);
+        let (g_1, _) = us_and_them(region_owner, region_even, region_odd);
+        let g_1 = SubGame::from_vertex_set(game.parent, g_1);
+        let starting_set = g_1.vertices_by_compressed_priority(d);
         let g_1_attr = self.attract.attractor_set(&g_1, region_owner, starting_set);
         crate::debug!("H region: {} - {:?} - {:?}", d, g_1_attr.printable_vertices(), g_1.game_vertices.printable_vertices());
 
@@ -109,34 +98,29 @@ impl<'a> LiverpoolSolver<'a> {
         // Full precision call
         crate::debug!("Full Precision: {d} - {:?}", h_game.game_vertices.printable_vertices());
 
+        // PROBLEM: The below assumes this is won by opponent, but what if we have two consecutive priorities aligned with us!
+        // solution: Use compressed priority attractors
         let (region_even, region_odd) = self.zielonka(&mut h_game, precision_even, precision_odd);
         let opponent = region_owner.other();
-        let opponent_dominion = match opponent {
-            Owner::Even => region_even,
-            Owner::Odd => region_odd,
-        };
+        let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
         let opponent_attract = self.attract.attractor_set_bit(&g_1, opponent, Cow::Borrowed(&opponent_dominion));
-        // let g_2 = g_1.create_subgame_bit(&opponent_attract);
+
+        let mut g_2 = g_1.create_subgame_bit(&opponent_attract);
         // opponent_result.union_with(&opponent_attract);
 
         // Check if the opponent attracted from our winning region, in which case we need to recalculate
         // Otherwise we can skip the last half-precision call.
-        // if !opponent_attract.is_disjoint(&g_1.game_vertices) {
         if opponent_attract != opponent_dominion {
             // Remove the vertices which were attracted from our winning region, and expand the right side of our tree
-            // make g_2
-            g_1.shrink_subgame(&opponent_attract);
-            // our_result.difference_with(&opponent_attract);
-
-            let (even_out, odd_out) = self.zielonka(&mut g_1, new_p_even, new_p_odd);
+            let (opponent_result, _) = even_and_odd(opponent, &mut result_even, &mut result_odd);
+            opponent_result.union_with(&opponent_attract);
+            let (even_out, odd_out) = self.zielonka(&mut g_2, new_p_even, new_p_odd);
             result_even.union_with(&even_out);
             result_odd.union_with(&odd_out);
 
             (result_even, result_odd)
         } else {
-            g_1.shrink_subgame(&opponent_attract);
-            even_and_odd(region_owner, g_1.game_vertices, opponent_attract)
-            // (result_even, result_odd)
+            even_and_odd(region_owner, g_2.game_vertices, opponent_attract)
         }
     }
 }
@@ -174,7 +158,7 @@ pub mod test {
     // #[tracing_test::traced_test]
     pub fn verify_correctness() {
         for name in tests::examples_iter() {
-            if name.contains("two_counters_14p") || name.contains("_10.tlsf") || name.contains("_8.tlsf")|| name.contains("_9.tlsf") {
+            if name.contains("two_counters_14p") {
                 continue;
             }
             println!("Running test for: {name}...");
@@ -190,6 +174,19 @@ pub mod test {
     #[traced_test]
     pub fn test_solve_basic_paper_example() {
         let (game, compare) = tests::load_and_compare_example("basic_paper_example.pg");
+        let mut solver = LiverpoolSolver::new(&game);
+
+        let solution = solver.run();
+
+        println!("Solution: {:#?}", solution);
+
+        compare(solution);
+    }
+
+    #[test]
+    // #[traced_test]
+    pub fn test_solve_two_counters() {
+        let (game, compare) = tests::load_and_compare_example("two_counters_2.pg");
         let mut solver = LiverpoolSolver::new(&game);
 
         let solution = solver.run();

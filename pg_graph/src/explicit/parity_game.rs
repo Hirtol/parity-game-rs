@@ -46,6 +46,41 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
         self.vertices_index().filter(move |&v| self.priority(v) == priority)
     }
 
+    /// List all vertices with the given priority, and any vertices with a lower priority with the same parity, so long as
+    /// no other priorities of the opposing parity are in between these values.
+    #[inline(always)]
+    fn vertices_by_compressed_priority(&self, priority: Priority) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
+        let mut current_priority = priority;
+        let mut next_highest_priority = None;
+        let mut current_itr = self.vertices_index();
+        std::iter::from_fn(move || {
+            loop {
+                for v_idx in current_itr.by_ref() {
+                    let p = self.priority(v_idx);
+
+                    if p == current_priority {
+                        return Some(v_idx)
+                    } else if next_highest_priority.map(|next| p > next).unwrap_or(true) && p < current_priority {
+                        next_highest_priority = Some(p);
+                    }
+                }
+
+                if let Some(next) = next_highest_priority {
+                    if Owner::from_priority(next) == Owner::from_priority(current_priority) {
+                        current_itr = self.vertices_index();
+                        current_priority = next;
+                        next_highest_priority = None;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            None
+        })
+    }
+
     /// Get the full vertex
     #[inline(always)]
     fn get_vertex(&self, id: NodeIndex<Ix>) -> Option<Vertex> {
