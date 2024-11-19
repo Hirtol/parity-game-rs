@@ -5,6 +5,7 @@ use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
 }, Owner, Priority};
+use itertools::Itertools;
 use std::borrow::Cow;
 
 pub struct ZielonkaSolver<'a> {
@@ -160,7 +161,7 @@ impl<'a> ZielonkaSolver<'a> {
         
         // If there are any leaks from our region then it's not worth finding tangles.
         let mut temp_tangles = TangleCollection::default();
-        if !leaks {
+        if !leaks && !tangle_attractor.is_clear() {
             let tangle_subgame = SubGame::from_vertex_set(game.parent, tangle_attractor.clone());
             let dominion = self.extract_tangles(game.parent, &tangle_subgame, d, strategy, &mut temp_tangles);
         }
@@ -229,6 +230,7 @@ impl<'a> ZielonkaSolver<'a> {
         let top_vertices = tangle_sub_game.vertices_index_by_priority(region_priority);
         let mut dominion: Option<Dominion> = None;
         let region_owner = Owner::from_priority(region_priority);
+        tracing::warn!(?region_owner, "Possible: {}", tangle_sub_game.len);
 
         self.pearce.run(
             tangle_sub_game,
@@ -321,6 +323,9 @@ pub mod test {
             let (game, compare) = tests::load_and_compare_example(&name);
             let mut qpt_zielonka = ZielonkaSolver::new(&game);
             let solution = qpt_zielonka.run();
+            if qpt_zielonka.tangles_found != 0 {
+                println!("**** FOUND TANGLES: {} ****", qpt_zielonka.tangles_found);
+            }
             compare(solution);
             println!("{name} correct!")
         }
