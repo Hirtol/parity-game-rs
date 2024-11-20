@@ -30,8 +30,8 @@ impl<'a> LiverpoolSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
         let (even, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
-        println!("Even Winning: {:?}", even.printable_vertices());
-        println!("Odd Winning: {:?}", odd.printable_vertices());
+        // println!("Even Winning: {:?}", even.printable_vertices());
+        // println!("Odd Winning: {:?}", odd.printable_vertices());
         // if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
         //     panic!("Fewer vertices than expected were in the winning regions");
         // }
@@ -82,7 +82,6 @@ impl<'a> LiverpoolSolver<'a> {
             Owner::Odd => game.vertex_count() <= new_p_even
         };
         if can_skip {
-        // if false {
             crate::debug!(d, n = game.vertex_count(), new_p_odd, new_p_even, "Returning early, less than half remain");
             return (region_even, region_odd)
         }
@@ -103,28 +102,28 @@ impl<'a> LiverpoolSolver<'a> {
         let (region_even, region_odd) = self.zielonka(&mut h_game, precision_even, precision_odd);
         let opponent = region_owner.other();
         let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
-        let opponent_attract = self.attract.attractor_set_bit(&g_1, opponent, Cow::Borrowed(&opponent_dominion));
+        let o_extended_dominion = self.attract.attractor_set_bit(&g_1, opponent, Cow::Borrowed(&opponent_dominion));
 
-        let mut g_2 = g_1.create_subgame_bit(&opponent_attract);
-        // opponent_result.union_with(&opponent_attract);
+        let mut g_2 = g_1.create_subgame_bit(&o_extended_dominion);
 
         // Check if the opponent attracted from our winning region, in which case we need to recalculate
         // Otherwise we can skip the last half-precision call.
-        if opponent_attract != opponent_dominion {
+        if o_extended_dominion != opponent_dominion {
             // Remove the vertices which were attracted from our winning region, and expand the right side of our tree
             let (opponent_result, _) = even_and_odd(opponent, &mut result_even, &mut result_odd);
-            opponent_result.union_with(&opponent_attract);
+            opponent_result.union_with(&o_extended_dominion);
             let (even_out, odd_out) = self.zielonka(&mut g_2, new_p_even, new_p_odd);
             result_even.union_with(&even_out);
             result_odd.union_with(&odd_out);
 
             (result_even, result_odd)
         } else {
-            even_and_odd(region_owner, g_2.game_vertices, opponent_attract)
+            even_and_odd(region_owner, g_2.game_vertices, o_extended_dominion)
         }
     }
 }
 
+/// Return (Ours, Theirs) parts, depending on the argument `us`.
 fn us_and_them<T>(us: Owner, even: T, odd: T) -> (T, T) {
     match us {
         Owner::Even => {
@@ -136,6 +135,7 @@ fn us_and_them<T>(us: Owner, even: T, odd: T) -> (T, T) {
     }
 }
 
+/// Return (Even, Odd) parts, depending on the argument `us`.
 fn even_and_odd<T>(us: Owner, ours: T, them: T) -> (T, T) {
     match us {
         Owner::Even => {
@@ -158,9 +158,9 @@ pub mod test {
     // #[tracing_test::traced_test]
     pub fn verify_correctness() {
         for name in tests::examples_iter() {
-            if name.contains("two_counters_14p") {
-                continue;
-            }
+            // if name.contains("two_counters_14p") {
+            //     continue;
+            // }
             println!("Running test for: {name}...");
             let (game, compare) = tests::load_and_compare_example(&name);
             let mut qpt_zielonka = LiverpoolSolver::new(&game);
