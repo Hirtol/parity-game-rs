@@ -16,10 +16,8 @@ pub struct ZielonkaSolver<'a> {
     /// 
     /// If the game has no self-loops this can be `1`, otherwise it needs to be `0`.
     min_precision: usize,
-    pearce: PearceTangleScc,
     tangles: TangleManager,
     strategy: Vec<VertexId>,
-    pub tangles_found: u32,
 }
 
 impl<'a> ZielonkaSolver<'a> {
@@ -29,10 +27,8 @@ impl<'a> ZielonkaSolver<'a> {
             iterations: 0,
             attract: AttractionComputer::new(game.vertex_count()),
             min_precision: if game.graph_edges().any(|(source, target)| source == target) { 0 } else { 1 },
-            pearce: PearceTangleScc::new(game.vertex_count()),
-            tangles: TangleManager::default(),
+            tangles: TangleManager::new(game.vertex_count()),
             strategy: vec![VertexId::new(NO_STRATEGY as usize); game.vertex_count()],
-            tangles_found: 0,
         }
     }
 
@@ -42,7 +38,7 @@ impl<'a> ZielonkaSolver<'a> {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
         let mut strategy = vec![VertexId::new(NO_STRATEGY as usize); self.game.vertex_count()];
         let ((even, odd), _) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count(), strategy.as_mut_slice());
-        tracing::debug!("Discovered: {} tangles", self.tangles_found);
+        tracing::debug!("Discovered: {} tangles", self.tangles.tangles_found);
         // tracing::debug!("Even Winning: {:?}", even.printable_vertices());
         // tracing::debug!("Odd Winning: {:?}", odd.printable_vertices());
         if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
@@ -145,32 +141,20 @@ impl<'a> ZielonkaSolver<'a> {
         let tangle_attractor = self.attract.attractor_set_tangle(game, attraction_owner, Cow::Owned(starting_set), &self.tangles, strategy);
         // Check if there are any escapes from this region, or if it's locally closed.
         // We only care about the vertices with the region priority.
-        let leaks = tangle_attractor
-            .ones_vertices()
-            .filter(|v| game.priority(*v) == d)
-            .any(|v| {
-                if game.owner(v) == attraction_owner {
-                    self.strategy[v.index()].index() == NO_STRATEGY as usize
-                } else {
-                    game
-                        .edges(v)
-                        .any(|succ| !tangle_attractor.contains(succ.index()))
-                }
-            });
+        let leaks = self.tangles.any_leaks_in_region(game, d, &tangle_attractor, &self.strategy);
         crate::debug!(?leaks, "Leaks");
         
         // If there are any leaks from our region then it's not worth finding tangles.
-        let mut temp_tangles = TangleCollection::default();
         if !leaks && !tangle_attractor.is_clear() {
             let tangle_subgame = SubGame::from_vertex_set(game.parent, tangle_attractor.clone());
-            let dominion = self.extract_tangles(game.parent, &tangle_subgame, d, strategy, &mut temp_tangles);
+            let dominion = self.tangles.extract_tangles(game.parent, &tangle_subgame, d, strategy);
         }
 
         let mut sub_game = game.create_subgame_bit(&tangle_attractor);
 
         let ((mut even, mut odd), recursive_authentic) = self.zielonka(&mut sub_game, new_p_even, new_p_odd, strategy);
         *authentic &= recursive_authentic;
-        self.tangles.collection.merge(temp_tangles);
+        self.tangles.merge_tangles();
 
         let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
             (&mut even, &mut odd)
@@ -218,92 +202,6 @@ impl<'a> ZielonkaSolver<'a> {
         }
 
     }
-
-    fn extract_tangles<T: ParityGraph<u32>>(
-        &mut self,
-        current_game: &T,
-        tangle_sub_game: &SubGame<u32, T>,
-        region_priority: Priority,
-        strategy: &mut [VertexId<u32>],
-        tangles: &mut TangleCollection,
-    ) -> Option<Dominion> {
-        let top_vertices = tangle_sub_game.vertices_index_by_priority(region_priority);
-        let mut dominion: Option<Dominion> = None;
-        let region_owner = Owner::from_priority(region_priority);
-        tracing::warn!(?region_owner, "Possible: {}", tangle_sub_game.len);
-
-        self.pearce.run(
-            tangle_sub_game,
-            region_owner,
-            top_vertices,
-            strategy,
-            |tangle, top_vertex| {
-                // Ensure non-trivial SCC (more than one vertex OR self-loop)
-                let tangle_size = tangle.len();
-                let is_tangle = tangle_size != 1
-                    || strategy[top_vertex.index()] == top_vertex
-                    || current_game.has_edge(top_vertex, top_vertex);
-                if !is_tangle {
-                    crate::trace!("Skipping trivial tangle");
-                    return;
-                }
-
-                let id = self.tangles_found;
-                // Count all escapes that remain in the GREATER unsolved game
-                let final_tangle = AttractionComputer::make_starting_set(current_game, tangle.copied());
-                let mut target_escapes = Vec::new();
-
-                for v in final_tangle.ones_vertices() {
-                    // Don't care about alpha-vertices, as they are guaranteed not to be leaks due to our earlier checks,
-                    // and can simply choose to remain in the tangle (else it wouldn't be an SCC)
-                    if current_game.owner(v) != region_owner {
-                        for target in current_game.edges(v) {
-                            // Only mark as escapes those vertices which actually _are_ escapes.
-                            if !final_tangle.contains(target.index()) && !target_escapes.contains(&target) {
-                                target_escapes.push(target);
-                            }
-                        }
-                    }
-                }
-
-                // Check if there are any escapes in our greater game, if not we already know it's a dominion.
-                // We can then just merge it with other found dominating tangles this cycle
-                if target_escapes.is_empty() {
-                    tracing::info!(?tangle_size, "Found a tangle which was a dominion");
-
-                    if let Some(existing) = &mut dominion {
-                        existing.vertices.union_with(&final_tangle);
-                    } else {
-                        dominion = Some(Dominion {
-                            dominating_p: region_priority,
-                            vertices: final_tangle,
-                        })
-                    }
-                } else {
-                    target_escapes.sort_unstable();
-                    let targets = self
-                        .tangles
-                        .escape_list
-                        .push_collection_itr(target_escapes.iter().map(|v| v.index()));
-
-                    let new_tangle = Tangle {
-                        id,
-                        owner: region_owner,
-                        priority: region_priority,
-                        vertices: final_tangle,
-                        escape_set: targets,
-                    };
-
-                    crate::info!(tangle_size, ?new_tangle, "Found new tangle");
-
-                    self.tangles_found += 1;
-                    tangles.insert_tangle(new_tangle);
-                }
-            },
-        );
-
-        dominion
-    }
 }
 
 #[cfg(test)]
@@ -323,8 +221,8 @@ pub mod test {
             let (game, compare) = tests::load_and_compare_example(&name);
             let mut qpt_zielonka = ZielonkaSolver::new(&game);
             let solution = qpt_zielonka.run();
-            if qpt_zielonka.tangles_found != 0 {
-                println!("**** FOUND TANGLES: {} ****", qpt_zielonka.tangles_found);
+            if qpt_zielonka.tangles.tangles_found != 0 {
+                println!("**** FOUND TANGLES: {} ****", qpt_zielonka.tangles.tangles_found);
             }
             compare(solution);
             println!("{name} correct!")

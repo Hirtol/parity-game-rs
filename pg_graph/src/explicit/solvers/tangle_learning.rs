@@ -24,23 +24,17 @@ pub const NO_STRATEGY: u32 = u32::MAX;
 pub struct TangleSolver<'a, Vertex: Soars> {
     game: &'a ParityGame<u32, Vertex>,
     attract: AttractionComputer<u32>,
-    pearce: PearceTangleScc,
-    tangles: TangleManager,
-    pub tangles_found: u32,
-    pub dominions_found: u32,
+    pub tangles: TangleManager,
     pub iterations: u32,
 }
 
 impl<'a, Vertex: Soars> TangleSolver<'a, Vertex> {
     pub fn new(game: &'a ParityGame<u32, Vertex>) -> Self {
         TangleSolver {
-            pearce: PearceTangleScc::new(game.vertices.len()),
             game,
             attract: AttractionComputer::new(game.vertices.len()),
-            tangles_found: 0,
-            dominions_found: 0,
+            tangles: TangleManager::new(game.vertices.len()),
             iterations: 0,
-            tangles: Default::default(),
         }
     }
 }
@@ -100,10 +94,10 @@ impl<'a> TangleSolver<'a, Vertex> {
             }
 
             current_game.shrink_subgame(&full_dominion);
-            self.tangles.collection.intersect_tangles(&current_game);
+            self.tangles.intersect_tangles(&current_game);
         }
 
-        tracing::info!(dominions=?self.dominions_found, tangles_found=?self.tangles_found, "Finished Tangle Learning");
+        tracing::info!(dominions=?self.tangles.dominions_found, tangles_found=?self.tangles.tangles_found, "Finished Tangle Learning");
 
         (winning_even, winning_odd)
     }
@@ -140,18 +134,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                 
                 // Check if there are any escapes from this region, or if it's locally closed.
                 // We only care about the vertices with the region priority.
-                let leaks = tangle_attractor
-                    .ones_vertices()
-                    .filter(|v| current_game.priority(*v) == d)
-                    .any(|v| {
-                        if current_game.owner(v) == owner {
-                            strategy[v.index()].index() == NO_STRATEGY as usize
-                        } else {
-                            partial_subgame
-                                .edges(v)
-                                .any(|succ| !tangle_attractor.contains(succ.index()))
-                        }
-                    });
+                let leaks = self.tangles.any_leaks_in_region(&partial_subgame, d, &tangle_attractor, strategy);
                 crate::debug!(?leaks, "Leaks");
 
                 // If there are any leaks from our region then it's not worth finding tangles.
@@ -161,11 +144,10 @@ impl<'a> TangleSolver<'a, Vertex> {
                 }
 
                 let tangle_subgame = SubGame::from_vertex_set(partial_subgame.parent, tangle_attractor);
-                let possible_dominion =
-                    self.extract_tangles(current_game, &tangle_subgame, d, strategy, &mut temp_tangles);
+                let possible_dominion = self.tangles.extract_tangles(current_game, &tangle_subgame, d, strategy);
 
                 if let Some(dominion) = possible_dominion {
-                    self.tangles.collection.merge(temp_tangles);
+                    self.tangles.merge_tangles();
                     return dominion;
                 } else {
                     partial_subgame.shrink_subgame(&tangle_subgame.game_vertices);
@@ -173,18 +155,75 @@ impl<'a> TangleSolver<'a, Vertex> {
             }
 
             crate::info!(?self.iterations, "Finished iteration, next");
-            self.tangles.collection.merge(temp_tangles);
+            self.tangles.merge_tangles();
             self.iterations += 1;
         }
     }
+}
 
-    fn extract_tangles<T: ParityGraph<u32>>(
+pub struct TangleManager {
+    /// Collection of tangles which are kept separate from the current iteration.
+    /// 
+    /// Should be merged by calling `merge_tangles`
+    pub temp_tangles: TangleCollection,
+    /// Contains all escape sets for each tangle
+    pub escape_list: SparseBitSetCollection,
+    /// All current tangles
+    pub tangles: TangleCollection,
+    pub pearce: PearceTangleScc,
+    
+    pub tangles_found: u32,
+    pub dominions_found: u32,
+}
+
+impl TangleManager {
+    pub fn new(game_size: usize) -> Self {
+        Self {
+            temp_tangles: Default::default(),
+            escape_list: Default::default(),
+            tangles: Default::default(),
+            pearce: PearceTangleScc::new(game_size),
+            tangles_found: 0,
+            dominions_found: 0,
+        }
+    }
+    
+    /// Merge the temporary tangle set with the main set.
+    pub fn merge_tangles(&mut self) {
+        self.tangles.merge(std::mem::take(&mut self.temp_tangles));
+    }
+
+    /// Shrink the current set of tangles to only retain those which are a subset of the given `subgame`.
+    pub fn intersect_tangles<Ix: IndexType, Parent: ParityGraph<Ix>>(&mut self, subgame: &SubGame<Ix, Parent>) {
+        self.tangles.intersect_tangles(subgame);
+    }
+    
+    /// Check if there are any leaks from the given `tangle_region` to vertices remaining in `game`.
+    /// If this is `false` then this region is locally closed.
+    /// 
+    /// This means that the opponent can escape, and `extract_tangles` is pointless to execute on this region.
+    pub fn any_leaks_in_region(&self, game: &impl ParityGraph<u32>, top_p: Priority, tangle_region: &VertexSet, strategy: &[VertexId]) -> bool {
+        let owner = Owner::from_priority(top_p);
+        tangle_region
+            .ones_vertices()
+            .filter(|v| game.priority(*v) == top_p)
+            .any(|v| {
+                if game.owner(v) == owner {
+                    strategy[v.index()].index() == NO_STRATEGY as usize
+                } else {
+                    game
+                        .edges(v)
+                        .any(|succ| !tangle_region.contains(succ.index()))
+                }
+            })
+    }
+
+    pub fn extract_tangles<T: ParityGraph<u32>, P: ParityGraph<u32>>(
         &mut self,
         current_game: &T,
-        tangle_sub_game: &SubGame<u32, T::Parent>,
+        tangle_sub_game: &SubGame<u32, P>,
         region_priority: Priority,
         strategy: &mut [VertexId<u32>],
-        tangles: &mut TangleCollection,
     ) -> Option<Dominion> {
         let top_vertices = tangle_sub_game.vertices_index_by_priority(region_priority);
         let mut dominion: Option<Dominion> = None;
@@ -241,7 +280,6 @@ impl<'a> TangleSolver<'a, Vertex> {
                 } else {
                     target_escapes.sort_unstable();
                     let targets = self
-                        .tangles
                         .escape_list
                         .push_collection_itr(target_escapes.iter().map(|v| v.index()));
 
@@ -256,25 +294,17 @@ impl<'a> TangleSolver<'a, Vertex> {
                     crate::info!(tangle_size, ?new_tangle, "Found new tangle");
 
                     self.tangles_found += 1;
-                    tangles.insert_tangle(new_tangle);
+                    self.temp_tangles.insert_tangle(new_tangle);
                 }
             },
         );
 
         dominion
     }
-}
 
-#[derive(Default)]
-pub struct TangleManager {
-    pub escape_list: SparseBitSetCollection,
-    pub collection: TangleCollection,
-}
-
-impl TangleManager {
     #[inline]
     pub fn tangles_with_escapes(&self, owner: Owner) -> impl Iterator<Item = (&Tangle, SparseBitSetRef<'_>)> {
-        self.collection
+        self.tangles
             .get_matching_set(owner)
             .iter()
             .map(|tangle| (tangle, self.escape_list.get_set_ref(tangle.escape_set)))

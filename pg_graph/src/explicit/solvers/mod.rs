@@ -166,7 +166,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         self.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
-        let player_tangles = tangles.collection.get_matching_set(player);
+        let player_tangles = tangles.tangles.get_matching_set(player);
 
         loop {
             while let Some(next_item) = self.queue.pop_back() {
@@ -399,6 +399,7 @@ mod tests {
     }
 }
 
+#[derive(Debug)]
 pub struct Dominion {
     pub dominating_p: Priority,
     pub vertices: VertexSet,
