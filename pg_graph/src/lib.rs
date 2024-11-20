@@ -31,9 +31,9 @@ pub fn example_dir() -> PathBuf {
 
 #[cfg(test)]
 pub mod tests {
-    use std::path::{Path, PathBuf};
-
     pub use super::{load_example, parse_pg_from_str};
+    use crate::example_dir;
+    use std::path::Path;
 
     use crate::explicit::{solvers::SolverOutput, ParityGame};
 
@@ -72,13 +72,6 @@ pub mod tests {
         if let (Some(strat_l), Some(strat_r)) = (authoritative_solution.strategy, right.strategy) {
             assert_eq!(strat_l, strat_r, "Strategies of left and right solver don't match");
         }
-    }
-
-    pub fn example_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("game_examples")
     }
 
     pub fn trivial_pg() -> ParityGame {

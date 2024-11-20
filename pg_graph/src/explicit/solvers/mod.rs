@@ -17,6 +17,7 @@ pub mod tangle_learning;
 pub mod zielonka;
 pub mod priority_promotion;
 pub mod qpt_liverpool;
+pub mod qpt_tangle_liverpool;
 pub mod qpt_zielonka;
 pub mod qpt_tangle_zielonka;
 
@@ -213,15 +214,17 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                 // }
 
                 if tangles.tangle_attracted_to(tangle, game, &attract_set) {
-                    for v in tangle.vertices.difference(&attract_set) {
-                        crate::debug!(?v, ?tangle.id, "Attracting tangle");
-                        self.queue.push_back(VertexId::new(v));
-                        had_change = true;
+                    for (v, strat) in &tangle.vertex_strategy {
+                        if !attract_set.contains(v.index()) {
+                            crate::debug!(?v, ?tangle.id, "Attracting tangle");
+
+                            strategy[v.index()] = VertexId::new(strat.index());
+                            attract_set.insert(v.index());
+                            
+                            self.queue.push_back(VertexId::new(v.index()));
+                            had_change = true;
+                        }
                     }
-
-                    attract_set.union_with(&tangle.vertices);
-
-                    // TODO: Strategy
                 }
             }
             

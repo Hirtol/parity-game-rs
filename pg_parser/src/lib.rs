@@ -119,7 +119,7 @@ mod tests {
         parse_pg(&mut input.as_str(), &mut builder).unwrap();
 
         assert_eq!(builder.0.len(), 9);
-        assert_eq!(builder.0[8].label, Some("178"));
+        assert_eq!(builder.0[8].label, Some("8"));
 
         println!("Parity Game: {:#?}", builder);
     }

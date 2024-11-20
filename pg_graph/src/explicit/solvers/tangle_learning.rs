@@ -45,6 +45,8 @@ pub struct Tangle {
     pub owner: Owner,
     pub priority: Priority,
     pub vertices: VertexSet,
+    /// Vertex strategy pair for recovering strategy when attracting tangles.
+    pub vertex_strategy: Vec<(VertexId, VertexId)>,
     /// All vertices _to which_ this tangle can escape.
     ///
     /// They will therefore not be in `vertices`.
@@ -105,8 +107,6 @@ impl<'a> TangleSolver<'a, Vertex> {
     fn search_dominion(&mut self, current_game: &impl ParityGraph<u32>, strategy: &mut [VertexId<u32>]) -> Dominion {
         loop {
             let mut partial_subgame = current_game.create_subgame([]);
-            let mut temp_tangles = TangleCollection::default();
-            strategy.fill(VertexId::new(NO_STRATEGY as usize));
 
             while partial_subgame.vertex_count() != 0 {
                 let d = partial_subgame.priority_max();
@@ -117,16 +117,15 @@ impl<'a> TangleSolver<'a, Vertex> {
                     partial_subgame.vertices_index_by_priority(d),
                 );
                 
-                // This is how Oink does things, but our strategy tracking is clearly lacking due to no Tangle strategy tracking.
-                // So the below (with the elision of the strategy reset above) will cause an infinite loop for register games in two_counters
-                // for v in starting_set.ones() {
-                //     strategy[v] = VertexId::new(NO_STRATEGY as usize);
-                // }
+                // Reset the strategy for top vertices for better leak detection
+                for v in starting_set.ones() {
+                    strategy[v] = VertexId::new(NO_STRATEGY as usize);
+                }
 
                 let tangle_attractor = self.attract.attractor_set_tangle(
                     &partial_subgame,
                     owner,
-                    Cow::Owned(starting_set),
+                    Cow::Borrowed(&starting_set),
                     &self.tangles,
                     strategy,
                 );
@@ -134,7 +133,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                 
                 // Check if there are any escapes from this region, or if it's locally closed.
                 // We only care about the vertices with the region priority.
-                let leaks = self.tangles.any_leaks_in_region(&partial_subgame, d, &tangle_attractor, strategy);
+                let leaks = self.tangles.any_leaks_in_region(&partial_subgame, d, &tangle_attractor, &starting_set, strategy);
                 crate::debug!(?leaks, "Leaks");
 
                 // If there are any leaks from our region then it's not worth finding tangles.
@@ -202,11 +201,10 @@ impl TangleManager {
     /// If this is `false` then this region is locally closed.
     /// 
     /// This means that the opponent can escape, and `extract_tangles` is pointless to execute on this region.
-    pub fn any_leaks_in_region(&self, game: &impl ParityGraph<u32>, top_p: Priority, tangle_region: &VertexSet, strategy: &[VertexId]) -> bool {
+    pub fn any_leaks_in_region(&self, game: &impl ParityGraph<u32>, top_p: Priority, tangle_region: &VertexSet, top_vertices: &VertexSet, strategy: &[VertexId]) -> bool {
         let owner = Owner::from_priority(top_p);
-        tangle_region
+        top_vertices
             .ones_vertices()
-            .filter(|v| game.priority(*v) == top_p)
             .any(|v| {
                 if game.owner(v) == owner {
                     strategy[v.index()].index() == NO_STRATEGY as usize
@@ -225,7 +223,9 @@ impl TangleManager {
         region_priority: Priority,
         strategy: &mut [VertexId<u32>],
     ) -> Option<Dominion> {
-        let top_vertices = tangle_sub_game.vertices_index_by_priority(region_priority);
+        // As the passed sub_game might have top vertices besides `region_priority` we need to conservatively also call compressed parts
+        // TODO: Maybe just accept a `top_vertices` set.
+        let top_vertices = tangle_sub_game.vertices_by_compressed_priority(region_priority);
         let mut dominion: Option<Dominion> = None;
         let region_owner = Owner::from_priority(region_priority);
 
@@ -282,12 +282,15 @@ impl TangleManager {
                     let targets = self
                         .escape_list
                         .push_collection_itr(target_escapes.iter().map(|v| v.index()));
-
+                    
+                    let vs = final_tangle.ones_vertices().map(|v| (v, strategy[v.index()])).collect();
+                    
                     let new_tangle = Tangle {
                         id,
                         owner: region_owner,
                         priority: region_priority,
                         vertices: final_tangle,
+                        vertex_strategy: vs,
                         escape_set: targets,
                     };
 

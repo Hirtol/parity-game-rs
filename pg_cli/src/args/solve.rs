@@ -121,7 +121,11 @@ pub enum ExplicitSolvers {
         tangles: bool,
     },
     /// Liverpool quasi-polynomial Zielonka
-    Qlz,
+    Qlz {
+        /// Enable experimental tangle support.
+        #[clap(long)]
+        tangles: bool,
+    },
     /// Use the Priority Promotion algorithm
     PP,
     /// Use Tangle Learning
@@ -189,12 +193,20 @@ impl SolveCommand {
                                 out.winners
                             }
                         }
-                        ExplicitSolvers::Qlz => {
-                            let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&parity_game);
+                        ExplicitSolvers::Qlz {tangles} => {
+                            if tangles {
+                                let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver::new(&parity_game);
 
-                            let out = timed_solve!(solver.run());
-                            tracing::info!(n = solver.iterations, "Solved with iterations");
-                            out.winners
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(n = solver.iterations, "Solved with iterations");
+                                out.winners
+                            } else {
+                                let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&parity_game);
+    
+                                let out = timed_solve!(solver.run());
+                                tracing::info!(n = solver.iterations, "Solved with iterations");
+                                out.winners
+                            }
                         }
                         ExplicitSolvers::PP => {
                             let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&parity_game);
@@ -319,7 +331,7 @@ impl SolveCommand {
                                     rg.project_winners_original(&out.winners)
                                 }
                             }
-                            ExplicitSolvers::Qlz => {
+                            ExplicitSolvers::Qlz {tangles} => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                                     "Constructed Register Game"
@@ -334,11 +346,20 @@ impl SolveCommand {
                                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                                     "Converted from parity game to register game"
                                 );
-                                let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&rg_pg);
 
-                                let out = timed_solve!(solver.run());
-                                tracing::info!(n = solver.iterations, "Solved with iterations");
-                                rg.project_winners_original(&out.winners)
+                                if tangles {
+                                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver::new(&rg_pg);
+
+                                    let out = timed_solve!(solver.run());
+                                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                                    rg.project_winners_original(&out.winners)
+                                } else {
+                                    let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&rg_pg);
+
+                                    let out = timed_solve!(solver.run());
+                                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                                    rg.project_winners_original(&out.winners)
+                                }
                             }
                             ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
                                 let rg = timed_solve!(
