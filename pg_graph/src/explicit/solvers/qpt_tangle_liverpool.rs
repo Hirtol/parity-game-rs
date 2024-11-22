@@ -53,21 +53,20 @@ impl<'a> LiverpoolSolver<'a> {
     /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
     fn zielonka<T: ParityGraph<u32>>(&mut self, game: &mut SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet) {
         self.iterations += 1;
-        let (mut result_even, mut result_odd) = (VertexSet::empty_game(game), VertexSet::empty_game(game));
         if precision_odd == 0 {
-            result_even.union_with(&game.game_vertices);
-            crate::debug!("End of precision; presumed won by player Even: {:?}", result_even.printable_vertices());
-            return (result_even, result_odd)
+            crate::debug!("End of precision; presumed won by player Even: {:?}", game.game_vertices.printable_vertices());
+            return (game.game_vertices.clone(), game.empty_vertex_set())
         }
         if precision_even == 0 {
-            result_odd.union_with(&game.game_vertices);
-            crate::debug!("End of precision; presumed won by player Odd: {:?}", result_odd.printable_vertices());
-            return (result_even, result_odd)
+            crate::debug!("End of precision; presumed won by player Odd: {:?}", game.game_vertices.printable_vertices());
+            return (game.empty_vertex_set(), game.game_vertices.clone())
         }
         // If all the vertices are ignored
         if game.vertex_count() == 0 {
-            return (result_even, result_odd)
+            return (game.empty_vertex_set(), game.empty_vertex_set())
         }
+
+        // let (mut result_even, mut result_odd) = (VertexSet::empty_game(game), VertexSet::empty_game(game));
 
         let d = game.priority_max();
         let region_owner = Owner::from_priority(d);
@@ -98,7 +97,6 @@ impl<'a> LiverpoolSolver<'a> {
         
         crate::debug!("Starting vertices attractor: {:?}", starting_set.printable_vertices());
         // Reset the strategy for top vertices for better leak detection
-        // let mut strat = vec![VertexId::new(NO_STRATEGY as usize); game.original_vertex_count()];
         for v in starting_set.ones() {
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
@@ -123,20 +121,18 @@ impl<'a> LiverpoolSolver<'a> {
         let opponent = region_owner.other();
         let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
         let o_extended_dominion = self.attract.attractor_set_tangle(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &self.tangles, &mut self.strategy);
-
+        
         let mut g_2 = g_1.create_subgame_bit(&o_extended_dominion);
 
         // Check if the opponent attracted from our winning region, in which case we need to recalculate
         // Otherwise we can skip the last half-precision call.
         if o_extended_dominion != opponent_dominion {
             // Remove the vertices which were attracted from our winning region, and expand the right side of our tree
-            let (opponent_result, _) = even_and_odd(opponent, &mut result_even, &mut result_odd);
+            let (mut even_out, mut odd_out) = self.zielonka(&mut g_2, new_p_even, new_p_odd);
+            let (opponent_result, _) = even_and_odd(opponent, &mut even_out, &mut odd_out);
             opponent_result.union_with(&o_extended_dominion);
-            let (even_out, odd_out) = self.zielonka(&mut g_2, new_p_even, new_p_odd);
-            result_even.union_with(&even_out);
-            result_odd.union_with(&odd_out);
             self.tangles.merge_tangles();
-            (result_even, result_odd)
+            (even_out, odd_out)
         } else {
             self.tangles.merge_tangles();
             even_and_odd(region_owner, g_2.game_vertices, o_extended_dominion)
