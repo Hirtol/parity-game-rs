@@ -40,7 +40,9 @@ impl<'a> LiverpoolSolver<'a> {
 
         while current_game.vertex_count() != 0 {
             let n_vertices = current_game.vertex_count();
-            let (mut even, odd, dominion) = self.zielonka(&current_game, &current_game, n_vertices, n_vertices);
+            // We can ignore the original regions returned here by QLZ, as we will only ever receive dominions from
+            // our top level call.
+            let (_, _, dominion) = self.zielonka(&current_game, &current_game, n_vertices, n_vertices);
             // If we encounter a dominion deep in the search tree we destroy said tree and restart after removing it from the game.
             // The algorithm will still be quasi-polynomial, as it is at worst a linear multiplier to the complexity
             if let Some(dominion) = dominion {
@@ -59,44 +61,10 @@ impl<'a> LiverpoolSolver<'a> {
                 self.tangles.intersect_tangles(&current_game);
                 let (our_win, _) = us_and_them(owner, &mut w_even, &mut w_odd);
                 our_win.union_with(&full_dominion);
-            } else {
-                // Due to the fact that we only return the winning region of the highest priority we need to do the below dance.
-                // tracing::error!("Even Winning: {:?}", even.printable_vertices());
-                // tracing::error!("Odd Winning: {:?}", odd.printable_vertices());
-                match Owner::from_priority(current_game.priority_max()) {
-                    Owner::Even => {
-                        even.union_with(&w_even);
-                        w_odd.extend(even.zeroes());
-                    },
-                    Owner::Odd => {
-                        w_odd.union_with(&odd);
-                    }
-                };
-                // This pretty much never gets reached.
-                break;
             }
         }
 
         tracing::debug!("Discovered: {} tangles and {} dominions", self.tangles.tangles_found, self.tangles.dominions_found);
-
-        // let (mut even, mut odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
-        // println!("Even Winning: {:?}", even.printable_vertices());
-        // println!("Odd Winning: {:?}", odd.printable_vertices());
-        // // if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
-        // //     panic!("Fewer vertices than expected were in the winning regions");
-        // // }
-        // tracing::debug!("Discovered: {} tangles", self.tangles.tangles_found);
-        // let odd = match Owner::from_priority(self.game.priority_max()) {
-        //     Owner::Even => {
-        //         // even.union_with(&self.w_even);
-        //         AttractionComputer::make_starting_set(self.game, even.zeroes().map(VertexId::new))
-        //     },
-        //     Owner::Odd => {
-        //         // odd.union_with(&self.w_odd);
-        //         odd
-        //     }
-        // };
-        //
         SolverOutput::from_winning(self.game.vertex_count(), &w_odd)
     }
 
@@ -161,8 +129,10 @@ impl<'a> LiverpoolSolver<'a> {
         if !self.tangles.any_leaks_in_region(&g_1, d, &g_1_attr, &starting_set, &self.strategy) {
             let dom = self.tangles.extract_tangles(root_game, &g_1, d, &self.strategy);
 
-            if let Some(dominion) = dom {
-                return (VertexSet::new(), VertexSet::new(), Some(dominion));
+            // If we find a dominion immediately destroy the call tree and return.
+            // This essentially mimics regular tangle learning's behaviour.
+            if dom.is_some() {
+                return (VertexSet::new(), VertexSet::new(), dom);
             }
         }
 

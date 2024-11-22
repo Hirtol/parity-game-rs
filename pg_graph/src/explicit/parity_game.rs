@@ -312,7 +312,6 @@ pub struct ParityGame<Ix: IndexType = u32, V: Soars = Vertex> {
     pub edges: Vec<VertexId<Ix>>,
     pub inverted_indexes: Vec<usize>,
     pub inverted_edges: Vec<VertexId<Ix>>,
-    // pub(crate) inverted_vertices: Vec<Vec<VertexId<Ix>>>,
     pub(crate) labels: Vec<Option<String>>,
 }
 
