@@ -220,7 +220,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
 
                             strategy[v.index()] = VertexId::new(strat.index());
                             attract_set.insert(v.index());
-                            
+
                             self.queue.push_back(VertexId::new(v.index()));
                             had_change = true;
                         }

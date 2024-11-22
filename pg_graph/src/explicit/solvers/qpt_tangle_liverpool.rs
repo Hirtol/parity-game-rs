@@ -61,6 +61,8 @@ impl<'a> LiverpoolSolver<'a> {
                 our_win.union_with(&full_dominion);
             } else {
                 // Due to the fact that we only return the winning region of the highest priority we need to do the below dance.
+                // tracing::error!("Even Winning: {:?}", even.printable_vertices());
+                // tracing::error!("Odd Winning: {:?}", odd.printable_vertices());
                 match Owner::from_priority(current_game.priority_max()) {
                     Owner::Even => {
                         even.union_with(&w_even);
@@ -70,7 +72,7 @@ impl<'a> LiverpoolSolver<'a> {
                         w_odd.union_with(&odd);
                     }
                 };
-
+                // This pretty much never gets reached.
                 break;
             }
         }
@@ -110,12 +112,9 @@ impl<'a> LiverpoolSolver<'a> {
             crate::debug!("End of precision; presumed won by player Odd: {:?}", game.game_vertices.printable_vertices());
             return (game.empty_vertex_set(), game.game_vertices.clone(), None)
         }
-        // If all the vertices are ignored
         if game.vertex_count() == 0 {
             return (game.empty_vertex_set(), game.empty_vertex_set(), None)
         }
-
-        // let (mut result_even, mut result_odd) = (VertexSet::empty_game(game), VertexSet::empty_game(game));
 
         let d = game.priority_max();
         let region_owner = Owner::from_priority(d);
