@@ -108,7 +108,7 @@ impl From<ClapOwner> for Owner {
     }
 }
 
-#[derive(clap::Subcommand, Debug)]
+#[derive(clap::Subcommand, Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum ExplicitSolvers {
     /// Use the traditional small progress measure algorithm
     Spm,
@@ -425,9 +425,6 @@ impl SolveCommand {
                                 let solution = timed_solve!(solver.run());
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                                 rg.project_winners_original(&solution.winners)
-                            }
-                            ExplicitSolvers::TL => {
-                                unimplemented!();
                             }
                         }
                     }

@@ -7,6 +7,7 @@ use eyre::eyre;
 use itertools::Itertools;
 use serde_with::{serde_as, DurationSecondsWithFrac};
 
+use pg_graph::explicit::solvers::SolverOutput;
 use pg_graph::symbolic::register_game::SymbolicRegisterGame;
 use pg_graph::symbolic::solvers::symbolic_register_zielonka::SymbolicRegisterZielonkaSolver;
 use pg_graph::symbolic::BDD;
@@ -25,11 +26,24 @@ pub struct BenchCommand {
     out_path: PathBuf,
     /// The path to the directory with games to benchmark.
     benchmark_games: PathBuf,
+    /// The objective of the benchmark
+    #[clap(subcommand)]
+    objective: BenchmarkObjective,
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum BenchmarkObjective {
+    /// Register game benchmark
+    Rg,
+    /// Symbolic register game benchmark
+    Srg,
+    /// Normal algorithm benchmarks
+    Algo,
 }
 
 #[serde_as]
 #[derive(serde::Serialize, Debug)]
-struct CsvOutput {
+struct RgCsvOutput {
     name: String,
     reg_index: Rank,
     /// Total time to construct all register games (including all `k` up to reg_index)
@@ -49,6 +63,23 @@ struct CsvOutput {
     rg_pg_ratio: f64,
 }
 
+#[serde_as]
+#[derive(serde::Serialize, Debug)]
+struct AlgoCsvOutput {
+    name: String,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    zlk_solve: Duration,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    pp_solve: Duration,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    tl_solve: Duration,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    qlz_solve: Duration,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    qlz_tangle_solve: Duration,
+    parity_game_states: usize,
+}
+
 macro_rules! timed_solve {
     ($to_run:expr) => {
         timed_solve!($to_run, "Solving done")
@@ -57,8 +88,9 @@ macro_rules! timed_solve {
         {
             let now = std::time::Instant::now();
             let out = $to_run;
-            tracing::info!(elapsed=?now.elapsed(), $text);
-            (out, now.elapsed())
+            let elapsed = now.elapsed();
+            tracing::info!(elapsed=?elapsed, $text);
+            (out, elapsed)
         }
     };
 }
@@ -69,104 +101,44 @@ impl BenchCommand {
         let games = std::fs::read_dir(&self.benchmark_games)?
             .flatten()
             .filter(|f| {
-                f.file_name().to_string_lossy().ends_with("pg") || f.file_name().to_string_lossy().ends_with("gm")
+                f.file_name().to_string_lossy().ends_with("pg")
+                    || f.file_name().to_string_lossy().ends_with("gm")
+                    || f.file_name().to_string_lossy().ends_with("bz2")
             })
             .collect_vec();
-
-        let mut output = Vec::with_capacity(games.len());
-
-        #[tracing::instrument(name = "Run benchmark")]
-        fn run_game(game: &Path) -> eyre::Result<CsvOutput> {
-            let parity_game = pg_graph::load_parity_game(game)?;
-
-            let start_time = Instant::now();
-
-            let mut final_k = 0;
-            let parity_game_states = parity_game.vertex_count();
-            let mut even_register_game_states = 0;
-            let mut final_solve_output = Vec::new();
-
-            let mut final_even_construct_duration = None;
-            let mut final_rg_solve_event_duration = None;
-
-            for k in 0..3 {
-                let (odd_game, time_odd) = timed_solve!(
-                    RegisterGame::construct_2021(&parity_game, k, Owner::Odd),
-                    "Constructed Odd register game"
-                );
-
-                let rg_pg = odd_game.to_normal_game()?;
-                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
-                let (output_odd, time_solve_odd) = timed_solve!(solver.run(), "Solved Zielonka on Odd register game");
-                let solution_rg_odd = odd_game.project_winners_original(&output_odd.winners);
-                let (even_wins, odd_wins) = solution_rg_odd.iter().fold((0, 0), |acc, win| match win {
-                    Owner::Even => (acc.0 + 1, acc.1),
-                    Owner::Odd => (acc.0, acc.1 + 1),
-                });
-                tracing::info!(even_wins, odd_wins, "Results Odd");
-
-                let (even_game, time_even) = timed_solve!(
-                    RegisterGame::construct_2021(&parity_game, k, Owner::Even),
-                    "Constructed Even register game"
-                );
-                let rg_pg = even_game.to_normal_game()?;
-                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
-                let (output_even, time_solve_even) =
-                    timed_solve!(solver.run(), "Solved Zielonka on Even register game");
-                let solution_rg_even = even_game.project_winners_original(&output_even.winners);
-                let (even_wins, odd_wins) = solution_rg_even.iter().fold((0, 0), |acc, win| match win {
-                    Owner::Even => (acc.0 + 1, acc.1),
-                    Owner::Odd => (acc.0, acc.1 + 1),
-                });
-                tracing::info!(even_wins, odd_wins, "Results Even");
-
-                if solution_rg_even == solution_rg_odd {
-                    tracing::debug!(k, "Found register-index for game");
-                    final_k = k;
-                    even_register_game_states = rg_pg.vertex_count();
-                    final_even_construct_duration = Some(time_even);
-                    final_rg_solve_event_duration = Some(time_solve_even);
-                    final_solve_output = solution_rg_even;
-                    break;
-                } else {
-                    tracing::debug!(k, "Mismatched solutions, skipping to next k")
-                }
-            }
-
-            let construct_time = start_time.elapsed();
-
-            let mut solver = ZielonkaSolver::new(&parity_game);
-            let (raw_solution, raw_solve_time) = timed_solve!(solver.run());
-
-            if raw_solution.winners != final_solve_output {
-                tracing::error!(final_k, raw_winners=?raw_solution, ?final_solve_output, "Mismatch between Zielonka and Register Game solution!");
-                return Err(eyre!("Mismatched solutions"));
-            }
-
-            Ok(CsvOutput {
-                name: game.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
-                reg_index: final_k,
-                time_to_construct: construct_time,
-                final_construct_time: final_even_construct_duration.unwrap(),
-                solve_time_zielonka: raw_solve_time,
-                solve_time_rg_zielonka: final_rg_solve_event_duration.unwrap(),
-                register_game_states: even_register_game_states,
-                parity_game_states,
-                rg_pg_ratio: even_register_game_states as f64 / parity_game_states as f64,
-            })
-        }
 
         let mut writer = csv::WriterBuilder::default()
             .has_headers(true)
             .from_path(&self.out_path)?;
 
         for (i, game) in games.into_iter().enumerate() {
-            let (output_run, _) = timed_solve!(run_game(&game.path()));
+            let output_run = match self.objective {
+                    BenchmarkObjective::Rg => {
+                        let out = Self::run_rg_bench(&game.path());
+                        if let Ok(out) = &out {
+                            writer.serialize(out)?;
+                        }
+                        out.map(|v| ())
+                    },
+                    BenchmarkObjective::Srg => {
+                        let out = Self::run_game_symbolic(&game.path());
+                        if let Ok(out) = &out {
+                            writer.serialize(out)?;
+                        }
+                        out.map(|v| ())
+                    },
+                    BenchmarkObjective::Algo => {
+                        let out = Self::run_algo_bench(&game.path());
+                        if let Ok(out) = &out {
+                            tracing::info!("Completed game, results: {out:#?}");
+                            writer.serialize(out)?;
+                        }
+                        out.map(|v| ())
+                    }
+                };
 
             match output_run {
-                Ok(out) => {
-                    writer.serialize(&out)?;
-                    output.push(out);
+                Ok(_) => {
                     writer.flush()?;
                 }
                 Err(e) => {
@@ -181,7 +153,170 @@ impl BenchCommand {
     }
 
     #[tracing::instrument(name = "Run benchmark")]
-    fn run_game_symbolic(game: &Path) -> eyre::Result<CsvOutput> {
+    fn run_algo_bench(game: &Path) -> eyre::Result<AlgoCsvOutput> {
+        use crate::args::solve::ExplicitSolvers::*;
+        let algos = [Zielonka, PP, TL, Qlz { tangles: true }, Qlz { tangles: false }];
+        let mut timeouts = ahash::HashMap::default();
+        
+        timeouts.entry(TL).or_insert_with(Vec::new).push("two_counters_14");
+        timeouts.entry(TL).or_insert_with(Vec::new).push("two_counters_14p");
+        
+        let parity_game = pg_graph::load_parity_game(game)?;
+
+        let parity_game_states = parity_game.vertex_count();
+        
+        let mut results = ahash::HashMap::default();
+
+        // 3 runs for each for consistency
+        const RUNS: u32 = 3;
+        for i in 0..RUNS {
+            // For verification whilst running the benchmarks, just in case.
+            let mut previous_solution: Option<SolverOutput> = None;
+            
+            for algo in &algos {
+                if timeouts.entry(*algo).or_default().iter().any(|excl| game.to_string_lossy().contains(excl)) {
+                    tracing::info!("Skipping {algo:?} due to know timeout");
+                    continue;
+                }
+                
+                let (output, took) = match algo {
+                    Zielonka => {
+                        let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(&parity_game);
+                        timed_solve!(solver.run(), "Solved Zielonka")
+                    }
+                    Qlz { tangles } => {
+                        if *tangles {
+                            let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver::new(&parity_game);
+                            timed_solve!(solver.run(), "Solved QLZ-tangle")
+                        } else {
+                            let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&parity_game);
+                            timed_solve!(solver.run(), "Solved QLZ")
+                        }
+                    }
+                    PP => {
+                        let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&parity_game);
+                        timed_solve!(solver.run(), "Solved Priority Promotion")
+                    }
+                    TL => {
+                        let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&parity_game);
+                        timed_solve!(solver.run(), "Solved Tangle Learning")
+                    },
+                    _ => unreachable!()
+                };
+
+                // Verify solution
+                if let Some(previous) = &previous_solution {
+                    assert_eq!(
+                        previous.winners, output.winners,
+                        "Two solver solutions don't match"
+                    );
+                } else {
+                    previous_solution = Some(output);
+                }
+                
+                let to_mut = results.entry(*algo)
+                    .or_insert_with(Vec::new);
+                
+                to_mut.push(took)
+            }
+            
+            tracing::debug!("Completed run: {i}")
+        }
+
+        Ok(AlgoCsvOutput {
+            name: game.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
+            zlk_solve: results.entry(Zielonka).or_default().iter().sum::<Duration>() / RUNS,
+            pp_solve: results.entry(PP).or_default().iter().sum::<Duration>() / RUNS,
+            tl_solve: results.entry(TL).or_default().iter().sum::<Duration>() / RUNS,
+            qlz_solve: results.entry(Qlz {tangles: false}).or_default().iter().sum::<Duration>() / RUNS,
+            qlz_tangle_solve: results.entry(Qlz {tangles: true}).or_default().iter().sum::<Duration>() / RUNS,
+            parity_game_states,
+        })
+    }
+
+    #[tracing::instrument(name = "Run benchmark")]
+    fn run_rg_bench(game: &Path) -> eyre::Result<RgCsvOutput> {
+        let parity_game = pg_graph::load_parity_game(game)?;
+
+        let start_time = Instant::now();
+
+        let mut final_k = 0;
+        let parity_game_states = parity_game.vertex_count();
+        let mut even_register_game_states = 0;
+        let mut final_solve_output = Vec::new();
+
+        let mut final_even_construct_duration = None;
+        let mut final_rg_solve_event_duration = None;
+
+        for k in 0..3 {
+            let (odd_game, time_odd) = timed_solve!(
+                    RegisterGame::construct_2021(&parity_game, k, Owner::Odd),
+                    "Constructed Odd register game"
+                );
+
+            let rg_pg = odd_game.to_normal_game()?;
+            let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+            let (output_odd, time_solve_odd) = timed_solve!(solver.run(), "Solved Zielonka on Odd register game");
+            let solution_rg_odd = odd_game.project_winners_original(&output_odd.winners);
+            let (even_wins, odd_wins) = solution_rg_odd.iter().fold((0, 0), |acc, win| match win {
+                Owner::Even => (acc.0 + 1, acc.1),
+                Owner::Odd => (acc.0, acc.1 + 1),
+            });
+            tracing::info!(even_wins, odd_wins, "Results Odd");
+
+            let (even_game, time_even) = timed_solve!(
+                    RegisterGame::construct_2021(&parity_game, k, Owner::Even),
+                    "Constructed Even register game"
+                );
+            let rg_pg = even_game.to_normal_game()?;
+            let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+            let (output_even, time_solve_even) =
+                timed_solve!(solver.run(), "Solved Zielonka on Even register game");
+            let solution_rg_even = even_game.project_winners_original(&output_even.winners);
+            let (even_wins, odd_wins) = solution_rg_even.iter().fold((0, 0), |acc, win| match win {
+                Owner::Even => (acc.0 + 1, acc.1),
+                Owner::Odd => (acc.0, acc.1 + 1),
+            });
+            tracing::info!(even_wins, odd_wins, "Results Even");
+
+            if solution_rg_even == solution_rg_odd {
+                tracing::debug!(k, "Found register-index for game");
+                final_k = k;
+                even_register_game_states = rg_pg.vertex_count();
+                final_even_construct_duration = Some(time_even);
+                final_rg_solve_event_duration = Some(time_solve_even);
+                final_solve_output = solution_rg_even;
+                break;
+            } else {
+                tracing::debug!(k, "Mismatched solutions, skipping to next k")
+            }
+        }
+
+        let construct_time = start_time.elapsed();
+
+        let mut solver = ZielonkaSolver::new(&parity_game);
+        let (raw_solution, raw_solve_time) = timed_solve!(solver.run());
+
+        if raw_solution.winners != final_solve_output {
+            tracing::error!(final_k, raw_winners=?raw_solution, ?final_solve_output, "Mismatch between Zielonka and Register Game solution!");
+            return Err(eyre!("Mismatched solutions"));
+        }
+
+        Ok(RgCsvOutput {
+            name: game.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
+            reg_index: final_k,
+            time_to_construct: construct_time,
+            final_construct_time: final_even_construct_duration.unwrap(),
+            solve_time_zielonka: raw_solve_time,
+            solve_time_rg_zielonka: final_rg_solve_event_duration.unwrap(),
+            register_game_states: even_register_game_states,
+            parity_game_states,
+            rg_pg_ratio: even_register_game_states as f64 / parity_game_states as f64,
+        })
+    }
+
+    #[tracing::instrument(name = "Run benchmark")]
+    fn run_game_symbolic(game: &Path) -> eyre::Result<RgCsvOutput> {
         let parity_game = pg_graph::load_parity_game(game)?;
 
         let start_time = Instant::now();
@@ -257,7 +392,7 @@ impl BenchCommand {
             return Err(eyre!("Mismatched solutions"));
         }
 
-        Ok(CsvOutput {
+        Ok(RgCsvOutput {
             name: game.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
             reg_index: final_k,
             time_to_construct: construct_time,

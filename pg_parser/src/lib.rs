@@ -8,7 +8,6 @@ use winnow::{
 pub fn parse_pg<'a: 'b, 'b>(input: &mut &'a str, builder: &mut impl PgBuilder<'b>) -> winnow::PResult<()> {
     let header_cnt = opt(parse_header).parse_next(input)?;
     if let Some(header) = header_cnt {
-        let _ = winnow::ascii::line_ending.parse_next(input)?;
         builder.set_header(header).expect("Builder failure");
     }
 
@@ -20,7 +19,17 @@ pub fn parse_pg<'a: 'b, 'b>(input: &mut &'a str, builder: &mut impl PgBuilder<'b
 }
 
 fn parse_header(input: &mut &str) -> winnow::PResult<usize> {
-    terminated(preceded(ws("parity"), dec_uint), eol).parse_next(input)
+    let result = terminated(preceded(ws("parity"), dec_uint), eol).parse_next(input);
+    
+    if let Ok(header) = &result {
+        let _ = winnow::ascii::line_ending.parse_next(input)?;
+    }
+    // For MLSolver games
+    if let Ok(start) = opt(terminated(preceded(ws("start"), dec_uint::<_, usize, _>), eol)).parse_next(input) {
+        let _ = winnow::ascii::line_ending.parse_next(input)?;
+    };
+    
+    result
 }
 
 fn parse_node<'a>(input: &mut &'a str) -> winnow::PResult<Vertex<'a>> {
