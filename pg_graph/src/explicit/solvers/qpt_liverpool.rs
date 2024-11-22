@@ -30,8 +30,8 @@ impl<'a> LiverpoolSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
         let (even, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
-        // println!("Even Winning: {:?}", even.printable_vertices());
-        // println!("Odd Winning: {:?}", odd.printable_vertices());
+        // tracing::info!("Even Winning: {:?}", even.printable_vertices());
+        // tracing::info!("Odd Winning: {:?}", odd.printable_vertices());
         // if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
         //     panic!("Fewer vertices than expected were in the winning regions");
         // }

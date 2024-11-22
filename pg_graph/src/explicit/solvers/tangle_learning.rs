@@ -221,7 +221,7 @@ impl TangleManager {
         current_game: &T,
         tangle_sub_game: &SubGame<u32, P>,
         region_priority: Priority,
-        strategy: &mut [VertexId<u32>],
+        strategy: &[VertexId<u32>],
     ) -> Option<Dominion> {
         // As the passed sub_game might have top vertices besides `region_priority` we need to conservatively also call compressed parts
         // TODO: Maybe just accept a `top_vertices` set.
