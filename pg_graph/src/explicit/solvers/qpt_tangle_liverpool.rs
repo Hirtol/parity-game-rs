@@ -191,10 +191,8 @@ impl<'a> LiverpoolSolver<'a> {
             }
             let (opponent_result, _) = even_and_odd(opponent, &mut even_out, &mut odd_out);
             opponent_result.union_with(&o_extended_dominion);
-            self.tangles.merge_tangles();
             (even_out, odd_out, None)
         } else {
-            self.tangles.merge_tangles();
             let (e, o) = even_and_odd(region_owner, g_2.game_vertices, o_extended_dominion);
             (e, o, None)
         }

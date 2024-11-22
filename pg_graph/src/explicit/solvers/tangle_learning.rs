@@ -52,6 +52,7 @@ pub struct Tangle {
     /// They will therefore not be in `vertices`.
     /// This is an index into the [TangleManager] escape set.
     pub escape_set: usize,
+    pub enabled: bool,
 }
 
 impl<'a> TangleSolver<'a, Vertex> {
@@ -146,7 +147,6 @@ impl<'a> TangleSolver<'a, Vertex> {
                 let possible_dominion = self.tangles.extract_tangles(current_game, &tangle_subgame, d, strategy);
 
                 if let Some(dominion) = possible_dominion {
-                    self.tangles.merge_tangles();
                     return dominion;
                 } else {
                     partial_subgame.shrink_subgame(&tangle_subgame.game_vertices);
@@ -154,23 +154,19 @@ impl<'a> TangleSolver<'a, Vertex> {
             }
 
             crate::info!(?self.iterations, "Finished iteration, next");
-            self.tangles.merge_tangles();
             self.iterations += 1;
         }
     }
 }
 
 pub struct TangleManager {
-    /// Collection of tangles which are kept separate from the current iteration.
-    /// 
-    /// Should be merged by calling `merge_tangles`
-    pub temp_tangles: TangleCollection,
     /// Contains all escape sets for each tangle
     pub escape_list: SparseBitSetCollection,
     /// All current tangles
     pub tangles: TangleCollection,
     pub pearce: PearceTangleScc,
-    
+    /// `Vertex` -> set of tangles which have an escape to `vertex`.
+    pub tangle_in: Vec<Vec<u32>>,
     pub tangles_found: u32,
     pub dominions_found: u32,
 }
@@ -178,18 +174,13 @@ pub struct TangleManager {
 impl TangleManager {
     pub fn new(game_size: usize) -> Self {
         Self {
-            temp_tangles: Default::default(),
             escape_list: Default::default(),
             tangles: Default::default(),
             pearce: PearceTangleScc::new(game_size),
+            tangle_in: vec![Vec::new(); game_size],
             tangles_found: 0,
             dominions_found: 0,
         }
-    }
-    
-    /// Merge the temporary tangle set with the main set.
-    pub fn merge_tangles(&mut self) {
-        self.tangles.merge(std::mem::take(&mut self.temp_tangles));
     }
 
     /// Shrink the current set of tangles to only retain those which are a subset of the given `subgame`.
@@ -282,7 +273,11 @@ impl TangleManager {
                     let targets = self
                         .escape_list
                         .push_collection_itr(target_escapes.iter().map(|v| v.index()));
-                    
+
+                    for target in target_escapes {
+                        self.tangle_in[target.index()].push(id);
+                    }
+
                     let vs = final_tangle.ones_vertices().map(|v| (v, strategy[v.index()])).collect();
                     
                     let new_tangle = Tangle {
@@ -292,12 +287,13 @@ impl TangleManager {
                         vertices: final_tangle,
                         vertex_strategy: vs,
                         escape_set: targets,
+                        enabled: true,
                     };
 
                     crate::info!(tangle_size, ?new_tangle, "Found new tangle");
 
                     self.tangles_found += 1;
-                    self.temp_tangles.insert_tangle(new_tangle);
+                    self.tangles.insert_tangle(new_tangle);
                 }
             },
         );
@@ -307,10 +303,19 @@ impl TangleManager {
 
     #[inline]
     pub fn tangles_with_escapes(&self, owner: Owner) -> impl Iterator<Item = (&Tangle, SparseBitSetRef<'_>)> {
-        self.tangles
-            .get_matching_set(owner)
+        self.tangles.tangles
             .iter()
+            .filter(move |t| t.owner == owner)
             .map(|tangle| (tangle, self.escape_list.get_set_ref(tangle.escape_set)))
+    }
+
+    /// Return all tangles which have escapes to this vertex, and are owned by `owner`.
+    pub fn tangles_to_v_owner(&self, v: VertexId<u32>, owner: Owner) -> impl Iterator<Item = &Tangle> {
+        self.tangle_in[v.index()].iter()
+            .map(|t_id| {
+                &self.tangles.tangles[*t_id as usize]
+            })
+            .filter(move |t| t.owner == owner && t.enabled)
     }
 
     /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
@@ -342,45 +347,21 @@ impl TangleManager {
 
 #[derive(Default)]
 pub struct TangleCollection {
-    even_tangles: Vec<Tangle>,
-    odd_tangles: Vec<Tangle>,
+    tangles: Vec<Tangle>,
 }
 
 impl TangleCollection {
     #[inline]
     pub fn insert_tangle(&mut self, tangle: Tangle) {
-        self.get_matching_set_mut(tangle.owner).push(tangle);
-    }
-
-    /// Merge with a different set
-    pub fn merge(&mut self, other: TangleCollection) {
-        self.even_tangles.extend(other.even_tangles);
-        self.odd_tangles.extend(other.odd_tangles);
+        self.tangles.push(tangle.clone());
     }
 
     /// Shrink the current set of tangles to only retain those which are a subset of the given `subgame`.
     pub fn intersect_tangles<Ix: IndexType, Parent: ParityGraph<Ix>>(&mut self, subgame: &SubGame<Ix, Parent>) {
-        self.even_tangles
-            .retain(|tangle| tangle.vertices.is_subset(&subgame.game_vertices));
-        self.odd_tangles
-            .retain(|tangle| tangle.vertices.is_subset(&subgame.game_vertices));
-    }
-
-    /// Return all tangles where the dominating priority's parity is aligned with `owner`.
-    #[inline]
-    pub fn get_matching_set(&self, owner: Owner) -> &[Tangle] {
-        match owner {
-            Owner::Even => &self.even_tangles,
-            Owner::Odd => &self.odd_tangles,
-        }
-    }
-
-    /// Return all tangles where the dominating priority's parity is aligned with `owner`.
-    #[inline]
-    pub fn get_matching_set_mut(&mut self, owner: Owner) -> &mut Vec<Tangle> {
-        match owner {
-            Owner::Even => &mut self.even_tangles,
-            Owner::Odd => &mut self.odd_tangles,
+        for tangle in &mut self.tangles {
+            if tangle.enabled && !tangle.vertices.is_subset(&subgame.game_vertices) {
+                tangle.enabled = false;
+            }
         }
     }
 }

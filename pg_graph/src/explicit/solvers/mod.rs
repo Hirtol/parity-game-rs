@@ -167,52 +167,33 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         self.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
-        let player_tangles = tangles.tangles.get_matching_set(player);
-
-        loop {
-            while let Some(next_item) = self.queue.pop_back() {
-                for predecessor in game.predecessors(next_item) {
-                    if attract_set.contains(predecessor.index()) {
-                        // Update strategy if `predecessor` was part of the original starting_set
-                        if game.owner(predecessor) == player && strategy[predecessor.index()].index() == tangle_learning::NO_STRATEGY as usize {
-                            strategy[predecessor.index()] = next_item;
-                        }
-                        continue;
-                    }
-
-                    let should_add = if game.owner(predecessor) == player {
-                        // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+        
+        while let Some(next_item) = self.queue.pop_back() {
+            for predecessor in game.predecessors(next_item) {
+                if attract_set.contains(predecessor.index()) {
+                    // Update strategy if `predecessor` was part of the original starting_set
+                    if game.owner(predecessor) == player && strategy[predecessor.index()].index() == tangle_learning::NO_STRATEGY as usize {
                         strategy[predecessor.index()] = next_item;
-                        true
-                    } else {
-                        !self.has_escapes(game, predecessor)
-                    };
-
-                    // Only add to the attraction set if we should
-                    if should_add {
-                        attract_set.insert(predecessor.index());
-                        self.queue.push_back(predecessor);
                     }
+                    continue;
+                }
+
+                let should_add = if game.owner(predecessor) == player {
+                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                    strategy[predecessor.index()] = next_item;
+                    true
+                } else {
+                    !self.has_escapes(game, predecessor)
+                };
+
+                // Only add to the attraction set if we should
+                if should_add {
+                    attract_set.insert(predecessor.index());
+                    self.queue.push_back(predecessor);
                 }
             }
-            
-            let mut had_change = false;
-            for tangle in player_tangles {
-                // if tangles.all_escapes_to(tangle, game, &attract_set) {
-                //     // So this shouldn't work, but it does for our entire game benchmark set, it makes two counters non-exponential.
-                //     // No clue why. TODO: Ask Tom
-                //     // Note that it requires `strategy.fill(VertexId::new(NO_STRATEGY as usize));` at the beginning of every iteration.
-                //     let remaining_vertices = tangle.vertices.intersection(&game.game_vertices);
-                //     for v in remaining_vertices {
-                //         if !attract_set.contains(v) {
-                //             attract_set.insert(v);
-                //             crate::debug!(?v, ?tangle.id, "Attracting tangle");
-                //             self.queue.push_back(VertexId::new(v));
-                //             had_change = true;
-                //         }
-                //     }
-                // }
 
+            for tangle in tangles.tangles_to_v_owner(VertexId::new(next_item.index()), player) {
                 if tangles.tangle_attracted_to(tangle, game, &attract_set) {
                     for (v, strat) in &tangle.vertex_strategy {
                         if !attract_set.contains(v.index()) {
@@ -222,17 +203,12 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                             attract_set.insert(v.index());
 
                             self.queue.push_back(VertexId::new(v.index()));
-                            had_change = true;
                         }
                     }
                 }
             }
-            
-            if !had_change {
-                break;
-            }
         }
-        
+
         attract_set
     }
 

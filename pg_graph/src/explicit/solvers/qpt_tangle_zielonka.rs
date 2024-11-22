@@ -154,7 +154,6 @@ impl<'a> ZielonkaSolver<'a> {
 
         let ((mut even, mut odd), recursive_authentic) = self.zielonka(&mut sub_game, new_p_even, new_p_odd, strategy);
         *authentic &= recursive_authentic;
-        self.tangles.merge_tangles();
 
         let (attraction_owner_set, not_attraction_owner_set) = if attraction_owner.is_even() {
             (&mut even, &mut odd)
