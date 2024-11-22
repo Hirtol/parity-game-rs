@@ -156,7 +156,7 @@ macro_rules! timed_solve {
 impl SolveCommand {
     #[tracing::instrument(name="Solve Parity Game",skip(self), fields(path=?self.game_path))]
     pub fn run(self) -> eyre::Result<()> {
-        let parity_game = crate::utils::load_parity_game(&self.game_path)?;
+        let parity_game = pg_graph::load_parity_game(&self.game_path)?;
 
         let solution = match self.solve_type {
             SolveType::Explicit(explicit) => {

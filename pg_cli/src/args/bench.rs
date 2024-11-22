@@ -77,7 +77,7 @@ impl BenchCommand {
 
         #[tracing::instrument(name = "Run benchmark")]
         fn run_game(game: &Path) -> eyre::Result<CsvOutput> {
-            let parity_game = crate::utils::load_parity_game(game)?;
+            let parity_game = pg_graph::load_parity_game(game)?;
 
             let start_time = Instant::now();
 
@@ -182,7 +182,7 @@ impl BenchCommand {
 
     #[tracing::instrument(name = "Run benchmark")]
     fn run_game_symbolic(game: &Path) -> eyre::Result<CsvOutput> {
-        let parity_game = crate::utils::load_parity_game(game)?;
+        let parity_game = pg_graph::load_parity_game(game)?;
 
         let start_time = Instant::now();
 

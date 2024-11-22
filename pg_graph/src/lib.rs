@@ -1,8 +1,12 @@
 #![feature(is_sorted)]
 
-use crate::explicit::{ParityGame, ParityGameBuilder};
+use crate::explicit::{ParityGame, ParityGameBuilder, ParityGraph};
 pub use datatypes::*;
+use eyre::ContextCompat;
 pub use petgraph;
+use std::fmt::Debug;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 mod datatypes;
@@ -10,9 +14,27 @@ pub mod explicit;
 pub mod symbolic;
 pub mod visualize;
 
+
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn load_parity_game(pg_path: impl AsRef<Path> + Debug) -> eyre::Result<crate::explicit::ParityGame> {
+    let txt = if pg_path.as_ref().extension().context("No extension")?.to_string_lossy() == "bz2" {
+        let mut data = bzip2::read::BzDecoder::new(BufReader::new(File::open(pg_path)?));
+        let mut output = String::new();
+        data.read_to_string(&mut output)?;
+        output
+    } else {
+        std::fs::read_to_string(pg_path)?
+    };
+    let mut builder = ParityGameBuilder::new();
+    pg_parser::parse_pg(&mut txt.as_str(), &mut builder).map_err(|e| eyre::eyre!(e))?;
+    let parity_game = builder.build();
+    tracing::info!(size = parity_game.vertex_count(), edges = parity_game.edge_count(), "Loaded parity game");
+
+    Ok(parity_game)
+}
+
 pub fn load_example(example: impl AsRef<Path>) -> ParityGame {
-    let input = std::fs::read_to_string(example_dir().join(example.as_ref())).unwrap();
-    parse_pg_from_str(input)
+    load_parity_game(example_dir().join(example.as_ref())).unwrap()
 }
 
 pub fn parse_pg_from_str(game: impl AsRef<str>) -> ParityGame {

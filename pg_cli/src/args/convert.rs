@@ -67,7 +67,7 @@ pub enum RgVersion {
 impl ConvertCommand {
     #[tracing::instrument(name="Convert Parity Game", skip(self), fields(path=?self.game_path, goal=?self.goal))]
     pub fn run(self) -> eyre::Result<()> {
-        let parity_game = crate::utils::load_parity_game(&self.game_path)?;
+        let parity_game = pg_graph::load_parity_game(&self.game_path)?;
 
         match self.goal {
             ConversionGoal::ParityGame => {

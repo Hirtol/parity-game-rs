@@ -32,7 +32,7 @@ macro_rules! timed_solve {
 impl TestingCommand {
     #[tracing::instrument(name="Test Buckets", skip(self))]
     pub fn run(self) -> eyre::Result<()> {
-        let parity_game = crate::utils::load_parity_game(&self.game_path)?;
+        let parity_game = pg_graph::load_parity_game(&self.game_path)?;
         // let mut buckets = HashMap::new();
         // let mut subset_buckets = HashMap::new();
         // let mut similarity_matrix = vec![vec![0u8; parity_game.vertex_count()]; parity_game.vertex_count()];

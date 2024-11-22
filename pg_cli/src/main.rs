@@ -13,7 +13,6 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 mod args;
 mod trace;
-mod utils;
 
 #[profiling::function]
 fn main() -> eyre::Result<()> {
