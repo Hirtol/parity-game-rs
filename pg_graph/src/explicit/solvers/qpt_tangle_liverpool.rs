@@ -51,7 +51,7 @@ impl<'a> LiverpoolSolver<'a> {
                     &current_game,
                     owner,
                     Cow::Owned(dominion.vertices),
-                    &self.tangles,
+                    &mut self.tangles,
                     &mut self.strategy,
                 );
 
@@ -122,7 +122,7 @@ impl<'a> LiverpoolSolver<'a> {
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
         
-        let g_1_attr = self.attract.attractor_set_tangle(&g_1, region_owner, Cow::Borrowed(&starting_set), &self.tangles, &mut self.strategy);
+        let g_1_attr = self.attract.attractor_set_tangle(&g_1, region_owner, Cow::Borrowed(&starting_set), &mut self.tangles, &mut self.strategy);
         crate::debug!("H region: {} - {:?} - {:?}", d, g_1_attr.printable_vertices(), g_1.game_vertices.printable_vertices());
 
         // ** Try extract tangles **
@@ -147,7 +147,7 @@ impl<'a> LiverpoolSolver<'a> {
         
         let opponent = region_owner.other();
         let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
-        let o_extended_dominion = self.attract.attractor_set_tangle(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &self.tangles, &mut self.strategy);
+        let o_extended_dominion = self.attract.attractor_set_tangle(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &mut self.tangles, &mut self.strategy);
 
         let g_2 = g_1.create_subgame_bit(&o_extended_dominion);
 

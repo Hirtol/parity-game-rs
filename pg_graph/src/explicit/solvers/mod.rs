@@ -161,7 +161,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         game: &SubGame<Ix, T>,
         player: Owner,
         starting_set: Cow<'_, VertexSet>,
-        tangles: &TangleManager,
+        tangles: &mut TangleManager,
         strategy: &mut [VertexId<Ix>]
     ) -> VertexSet {
         self.reset_escapes();
@@ -197,6 +197,67 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                 if tangles.tangle_attracted_to(tangle, game, &attract_set) {
                     for (v, strat) in &tangle.vertex_strategy {
                         if !attract_set.contains(v.index()) {
+                            crate::debug!(?v, ?tangle.id, "Attracting tangle");
+
+                            strategy[v.index()] = VertexId::new(strat.index());
+                            attract_set.insert(v.index());
+
+                            self.queue.push_back(VertexId::new(v.index()));
+                        }
+                    }
+                }
+            }
+        }
+
+        attract_set
+    }
+
+    #[inline]
+    pub fn attractor_set_tangle_2<'a, T: ParityGraph<Ix>>(
+        &mut self,
+        game: &SubGame<Ix, T>,
+        total_game: &SubGame<Ix, T>,
+        player: Owner,
+        starting_set: Cow<'_, VertexSet>,
+        tangles: &mut TangleManager,
+        strategy: &mut [VertexId<Ix>]
+    ) -> VertexSet {
+        self.reset_escapes();
+        // tangles.reset_escapes();
+        self.queue.extend(starting_set.ones_vertices());
+        let mut attract_set = starting_set.into_owned();
+
+        while let Some(next_item) = self.queue.pop_back() {
+            for predecessor in game.predecessors(next_item) {
+                if attract_set.contains(predecessor.index()) {
+                    // Update strategy if `predecessor` was part of the original starting_set
+                    if game.owner(predecessor) == player && strategy[predecessor.index()].index() == tangle_learning::NO_STRATEGY as usize {
+                        strategy[predecessor.index()] = next_item;
+                    }
+                    continue;
+                }
+
+                let should_add = if game.owner(predecessor) == player {
+                    // *any* edge needs to lead to the attraction set, since this is a predecessor of an item already in the attraction set we know that already!
+                    strategy[predecessor.index()] = next_item;
+                    true
+                } else {
+                    !self.has_escapes(game, predecessor)
+                };
+                
+
+                // Only add to the attraction set if we should
+                if should_add {
+                    crate::debug!("Attracting: {:?} (from {:?}): {}", predecessor, next_item, should_add);
+                    attract_set.insert(predecessor.index());
+                    self.queue.push_back(predecessor);
+                }
+            }
+            
+            for tangle in tangles.tangles_to_v_owner(VertexId::new(next_item.index()), player) {
+                if tangles.tangle_attracted_to_efficient(tangle, total_game) {
+                    for (v, strat) in &tangle.vertex_strategy {
+                        if !attract_set.contains(v.index()) && game.vertex_in_subgame(VertexId::new(v.index())) {
                             crate::debug!(?v, ?tangle.id, "Attracting tangle");
 
                             strategy[v.index()] = VertexId::new(strat.index());

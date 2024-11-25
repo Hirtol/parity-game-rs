@@ -82,12 +82,14 @@ impl<'a> TangleSolver<'a, Vertex> {
             let new_dominion = self.search_dominion(&current_game, strategy.as_mut_slice());
             self.iterations += 1;
             let owner = Owner::from_priority(new_dominion.dominating_p);
-
-            let full_dominion = self.attract.attractor_set_tangle(
+            // Reset escapes
+            self.tangles.reset_escapes();
+            let full_dominion = self.attract.attractor_set_tangle_2(
+                &current_game,
                 &current_game,
                 owner,
                 Cow::Owned(new_dominion.vertices),
-                &self.tangles,
+                &mut self.tangles,
                 strategy.as_mut_slice(),
             );
 
@@ -114,6 +116,7 @@ impl<'a> TangleSolver<'a, Vertex> {
     #[profiling::function]
     fn search_dominion<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, current_game: &SubGame<u32, T>, strategy: &mut [VertexId<u32>]) -> Dominion {
         loop {
+            self.tangles.reset_escapes();
             let mut partial_subgame = current_game.clone();
 
             while partial_subgame.vertex_count() != 0 {
@@ -122,7 +125,7 @@ impl<'a> TangleSolver<'a, Vertex> {
 
                 let starting_set = AttractionComputer::make_starting_set(
                     &partial_subgame,
-                    partial_subgame.vertices_index_by_priority(d),
+                    partial_subgame.vertices_by_compressed_priority(d),
                 );
 
                 // Reset the strategy for top vertices for better leak detection
@@ -130,11 +133,12 @@ impl<'a> TangleSolver<'a, Vertex> {
                     strategy[v] = VertexId::new(NO_STRATEGY as usize);
                 }
 
-                let tangle_attractor = self.attract.attractor_set_tangle(
+                let tangle_attractor = self.attract.attractor_set_tangle_2(
                     &partial_subgame,
+                    current_game,
                     owner,
                     Cow::Borrowed(&starting_set),
-                    &self.tangles,
+                    &mut self.tangles,
                     strategy,
                 );
                 crate::info!(?d, attr=?tangle_attractor.ones().collect_vec(), "Tangle Attractor");
@@ -174,8 +178,11 @@ pub struct TangleManager {
     pub pearce: PearceTangleScc,
     /// `Vertex` -> set of tangles which have an escape to `vertex`.
     pub tangle_in: Vec<Vec<u32>>,
+    // Cba to re-architect this out of here
+    pub tangle_escapes: std::cell::UnsafeCell<Vec<Option<NonZeroU32>>>,
     pub tangles_found: u32,
     pub dominions_found: u32,
+    pub tangles_taken: Duration,
 }
 
 impl TangleManager {
@@ -185,8 +192,10 @@ impl TangleManager {
             tangles: Default::default(),
             pearce: PearceTangleScc::new(game_size),
             tangle_in: vec![Vec::new(); game_size],
+            tangle_escapes: std::cell::UnsafeCell::new(Vec::new()),
             tangles_found: 0,
             dominions_found: 0,
+            tangles_taken: Default::default(),
         }
     }
 
@@ -237,7 +246,7 @@ impl TangleManager {
         let top_vertices = tangle_sub_game.vertices_by_compressed_priority(region_priority);
         let mut dominion: Option<Dominion> = None;
         let region_owner = Owner::from_priority(region_priority);
-        
+
         self.pearce.run(
             tangle_sub_game,
             region_owner,
@@ -277,7 +286,7 @@ impl TangleManager {
                                 && !target_escapes.contains(target)
                                 && !dominion
                                     .as_ref()
-                                    .map(|d| d.vertices.contains(target.index()))
+                                    .map(|d| d.vertices.contains(target))
                                     .unwrap_or_default()
                             {
                                 target_escapes.insert(target);
@@ -325,8 +334,11 @@ impl TangleManager {
                         escape_set: targets,
                         enabled: true,
                     };
-
+                    
+                    crate::info!(tangle_size, ?new_tangle, "Found new tangle");
+                    
                     self.tangles_found += 1;
+                    self.tangle_escapes.get_mut().push(None);
                     self.tangles.push(new_tangle);
                 }
                 self.tangles_taken += now.elapsed();
@@ -348,6 +360,8 @@ impl TangleManager {
     }
 
     /// Return all tangles which have escapes to this vertex, and are owned by `owner`.
+    ///
+    /// Any disabled tangles will not be returned.
     pub fn tangles_to_v_owner(&self, v: VertexId<u32>, owner: Owner) -> impl Iterator<Item = &Tangle> {
         self.tangle_in[v.index()]
             .iter()
@@ -369,7 +383,24 @@ impl TangleManager {
         self.escape_list
             .get_set_ref(tangle.vertices)
             .is_subset(&game.game_vertices)
-            && self.all_escapes_to(tangle, game, in_set)
+             && self.all_escapes_to(tangle, game, in_set)
+    }
+
+    /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
+    #[inline]
+    #[profiling::function]
+    pub fn tangle_attracted_to_efficient<Ix: IndexType, Parent: ParityGraph<Ix>>(
+        &self,
+        tangle: &Tangle,
+        total_game: &SubGame<Ix, Parent>,
+    ) -> bool {
+        // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
+        // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
+        // self.escape_list
+        //     .get_set_ref(tangle.vertices)
+        //     .is_subset(&game.game_vertices)
+        !self.has_escapes(total_game, tangle)
+        // && self.all_escapes_to(tangle, game, in_set)
     }
 
     /// Return `true` if the given tangle has all escapes valid within `game` pointing to the `in_set`.
@@ -384,6 +415,37 @@ impl TangleManager {
         let escapes = self.escape_list.get_set_ref(tangle.escape_set);
         let restricted_set = fixedbitset::specific::LazyAnd::new(escapes, &game.game_vertices);
         restricted_set.is_subset(in_set)
+    }
+
+    #[inline]
+    pub fn reset_escapes(&mut self) {
+        self.tangle_escapes.get_mut().fill(None);
+    }
+
+    #[inline]
+    fn has_escapes<Ix: IndexType, T: ParityGraph<Ix>>(&self, total_game: &SubGame<Ix, T>, tangle: &Tangle) -> bool {
+        let escapes = &mut (unsafe {&mut *self.tangle_escapes.get() })[tangle.id as usize];
+        if escapes.is_none() {
+            let tangle_escapes = self.escape_list.get_set_ref(tangle.escape_set);
+            crate::info!("Setting {} to escapes: {:?}", tangle.id, tangle_escapes.ones().collect_vec());
+            let restricted_set = fixedbitset::specific::LazyAnd::new(tangle_escapes, &total_game.game_vertices);
+            *escapes = NonZeroU32::new(restricted_set.count_ones() as u32);
+        }
+
+        if let Some(existing_value) = escapes {
+            if let Some(new_value) = NonZeroU32::new(existing_value.get().saturating_sub(1)) {
+                crate::info!("New value: {:?} - {}", new_value, tangle.id);
+                *existing_value = new_value;
+                true
+            } else {
+                crate::info!("New value: None - {}", tangle.id);
+                
+                *escapes = None;
+                false
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -471,6 +533,7 @@ impl PearceTangleScc {
         self.index += 1;
     }
 
+    #[profiling::function]
     #[inline]
     fn visit_loop(
         &mut self,
