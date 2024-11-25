@@ -258,7 +258,13 @@ impl TangleManager {
                     if current_game.owner(v) != region_owner {
                         for target in current_game.edges(v) {
                             // Only mark as escapes those vertices which actually _are_ escapes.
-                            if !final_tangle_ref.contains(target.index()) && !target_escapes.contains(&target) {
+                            if !final_tangle_ref.contains(target.index())
+                                && !target_escapes.contains(&target)
+                                && !dominion
+                                    .as_ref()
+                                    .map(|d| d.vertices.contains(target.index()))
+                                    .unwrap_or_default()
+                            {
                                 target_escapes.push(target);
                             }
                         }
