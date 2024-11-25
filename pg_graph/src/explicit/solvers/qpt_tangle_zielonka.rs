@@ -1,6 +1,6 @@
 use crate::explicit::solvers::tangle_learning::{PearceTangleScc, Tangle, TangleCollection, TangleManager, NO_STRATEGY};
 use crate::explicit::solvers::Dominion;
-use crate::explicit::{BitsetExtensions, SubGame, VertexId, VertexSet};
+use crate::explicit::{BitsetExtensions, OptimisedGraph, SubGame, VertexId, VertexSet};
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
@@ -49,7 +49,7 @@ impl<'a> ZielonkaSolver<'a> {
 
     /// Returns the winning regions `(W_even, W_odd)` as well as a flag indicating whether the results that were obtained
     /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
-    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &mut SubGame<u32, T>, precision_even: usize, precision_odd: usize, strategy: &mut [VertexId]) -> ((VertexSet, VertexSet), bool) {
+    fn zielonka<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, game: &mut SubGame<u32, T>, precision_even: usize, precision_odd: usize, strategy: &mut [VertexId]) -> ((VertexSet, VertexSet), bool) {
         // If all the vertices are ignored
         if game.vertex_count() == 0 {
             ((VertexSet::default(), VertexSet::default()), true)
@@ -120,7 +120,7 @@ impl<'a> ZielonkaSolver<'a> {
     ///
     /// Will return `true` if another step with the same parameters needs to be performed, or `false` otherwise.
     #[inline]
-    fn zielonka_step<T: ParityGraph<u32>>(&mut self, game: &mut SubGame<u32, T>,
+    fn zielonka_step<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, game: &mut SubGame<u32, T>,
                                           d: Priority,
                                           result_even: &mut VertexSet,
                                           result_odd: &mut VertexSet,

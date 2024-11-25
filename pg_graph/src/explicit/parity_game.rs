@@ -648,3 +648,38 @@ pub fn create_subgame_bit<'a, Ix: IndexType, PG: ParityGraph<Ix>>(
         _phant: Default::default(),
     }
 }
+
+pub trait OptimisedGraph<Ix: IndexType> {
+    /// Return all edges starting in this vertex in the root game.
+    /// 
+    /// One still has to check that this edge target is valid in the current game.
+    fn root_edges(&self, v_id: VertexId<Ix>) -> &[VertexId<Ix>];
+    
+    /// Check whether the given `v_id` is part of our graph
+    fn part_of_graph(&self, v_id: VertexId<Ix>) -> bool;
+}
+
+impl<Ix: IndexType> OptimisedGraph<Ix> for ParityGame<Ix> {
+    #[inline(always)]
+    fn root_edges(&self, v_id: VertexId<Ix>) -> &[VertexId<Ix>] {
+        let (edges_start, edges_end) = (self.edge_indexes[v_id.index()], self.edge_indexes[v_id.index() + 1]);
+        &self.edges[edges_start..edges_end]
+    }
+
+    #[inline(always)]
+    fn part_of_graph(&self, _v_id: VertexId<Ix>) -> bool {
+        true
+    }
+}
+
+impl<'a, Ix: IndexType, Parent: OptimisedGraph<Ix>> OptimisedGraph<Ix> for SubGame<'a, Ix, Parent> {
+    #[inline(always)]
+    fn root_edges(&self, v_id: VertexId<Ix>) -> &[VertexId<Ix>] {
+        self.parent.root_edges(v_id)
+    }
+
+    #[inline(always)]
+    fn part_of_graph(&self, v_id: VertexId<Ix>) -> bool {
+        self.game_vertices.contains(v_id.index())
+    }
+}

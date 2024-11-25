@@ -1,3 +1,4 @@
+use crate::explicit::OptimisedGraph;
 use crate::{
     datatypes::Priority,
     explicit::{
@@ -13,6 +14,7 @@ use fixedbitset::{
 use itertools::Itertools;
 use petgraph::graph::IndexType;
 use soa_rs::Soars;
+use std::time::{Duration, Instant};
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -46,7 +48,7 @@ pub struct Tangle {
     pub owner: Owner,
     pub priority: Priority,
     /// All vertices which make up this tangle.
-    /// 
+    ///
     /// This is an index into the [TangleManager] escape set.
     pub vertices: usize,
     /// All vertices _to which_ this tangle can escape.
@@ -61,19 +63,20 @@ pub struct Tangle {
 impl<'a> TangleSolver<'a, Vertex> {
     #[tracing::instrument(name = "Run Tangle Learning", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
-        let (even, odd) = self.tangle_solver(self.game);
+        let (even, odd) = self.tangle_solver(self.game.create_subgame([]));
+        tracing::info!("Total Tangle Time: {:?}", self.tangles.tangles_taken);
         SolverOutput::from_winning(self.game.original_vertex_count(), &odd)
     }
 
     /// Return (W_even, W_odd)
-    fn tangle_solver<T: ParityGraph<u32>>(&mut self, game: &T) -> (VertexSet, VertexSet) {
+    fn tangle_solver<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, game: SubGame<u32, T>) -> (VertexSet, VertexSet) {
         let (mut winning_even, mut winning_odd) = (
             VertexSet::with_capacity(game.vertex_count()),
             VertexSet::with_capacity(game.vertex_count()),
         );
 
-        let mut current_game = game.create_subgame([]);
-        let mut strategy = vec![VertexId::new(NO_STRATEGY as usize); game.original_vertex_count()];
+        let mut current_game = game;
+        let mut strategy = vec![VertexId::new(NO_STRATEGY as usize); current_game.original_vertex_count()];
 
         while current_game.vertex_count() > 0 {
             let new_dominion = self.search_dominion(&current_game, strategy.as_mut_slice());
@@ -108,9 +111,10 @@ impl<'a> TangleSolver<'a, Vertex> {
         (winning_even, winning_odd)
     }
 
-    fn search_dominion(&mut self, current_game: &impl ParityGraph<u32>, strategy: &mut [VertexId<u32>]) -> Dominion {
+    #[profiling::function]
+    fn search_dominion<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, current_game: &SubGame<u32, T>, strategy: &mut [VertexId<u32>]) -> Dominion {
         loop {
-            let mut partial_subgame = current_game.create_subgame([]);
+            let mut partial_subgame = current_game.clone();
 
             while partial_subgame.vertex_count() != 0 {
                 let d = partial_subgame.priority_max();
@@ -120,7 +124,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                     &partial_subgame,
                     partial_subgame.vertices_index_by_priority(d),
                 );
-                
+
                 // Reset the strategy for top vertices for better leak detection
                 for v in starting_set.ones() {
                     strategy[v] = VertexId::new(NO_STRATEGY as usize);
@@ -134,7 +138,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                     strategy,
                 );
                 crate::info!(?d, attr=?tangle_attractor.ones().collect_vec(), "Tangle Attractor");
-                
+
                 // Check if there are any escapes from this region, or if it's locally closed.
                 // We only care about the vertices with the region priority.
                 let leaks = self.tangles.any_leaks_in_region(&partial_subgame, d, &tangle_attractor, &starting_set, strategy);
@@ -187,6 +191,7 @@ impl TangleManager {
     }
 
     /// Shrink the current set of tangles to only retain those which are a subset of the given `subgame`.
+    #[profiling::function]
     pub fn intersect_tangles<Ix: IndexType, Parent: ParityGraph<Ix>>(&mut self, subgame: &SubGame<Ix, Parent>) {
         for tangle in &mut self.tangles {
             let vertices = self.escape_list.get_set_ref(tangle.vertices);
@@ -195,27 +200,32 @@ impl TangleManager {
             }
         }
     }
-    
+
     /// Check if there are any leaks from the given `tangle_region` to vertices remaining in `game`.
     /// If this is `false` then this region is locally closed.
-    /// 
+    ///
     /// This means that the opponent can escape, and `extract_tangles` is pointless to execute on this region.
-    pub fn any_leaks_in_region(&self, game: &impl ParityGraph<u32>, top_p: Priority, tangle_region: &VertexSet, top_vertices: &VertexSet, strategy: &[VertexId]) -> bool {
+    #[profiling::function]
+    pub fn any_leaks_in_region(
+        &self,
+        game: &impl ParityGraph<u32>,
+        top_p: Priority,
+        tangle_region: &VertexSet,
+        top_vertices: &VertexSet,
+        strategy: &[VertexId],
+    ) -> bool {
         let owner = Owner::from_priority(top_p);
-        top_vertices
-            .ones_vertices()
-            .any(|v| {
-                if game.owner(v) == owner {
-                    strategy[v.index()].index() == NO_STRATEGY as usize
-                } else {
-                    game
-                        .edges(v)
-                        .any(|succ| !tangle_region.contains(succ.index()))
-                }
-            })
+        top_vertices.ones_vertices().any(|v| {
+            if game.owner(v) == owner {
+                strategy[v.index()].index() == NO_STRATEGY as usize
+            } else {
+                game.edges(v).any(|succ| !tangle_region.contains(succ.index()))
+            }
+        })
     }
 
-    pub fn extract_tangles<T: ParityGraph<u32>, P: ParityGraph<u32>>(
+    #[profiling::function]
+    pub fn extract_tangles<T: ParityGraph<u32>, P: ParityGraph<u32> + OptimisedGraph<u32>>(
         &mut self,
         current_game: &T,
         tangle_sub_game: &SubGame<u32, P>,
@@ -227,13 +237,15 @@ impl TangleManager {
         let top_vertices = tangle_sub_game.vertices_by_compressed_priority(region_priority);
         let mut dominion: Option<Dominion> = None;
         let region_owner = Owner::from_priority(region_priority);
-
+        
         self.pearce.run(
             tangle_sub_game,
             region_owner,
             top_vertices,
             strategy,
             |tangle, top_vertex| {
+                profiling::function_scope!("TangleDiscover");
+                let now = Instant::now();
                 // Ensure non-trivial SCC (more than one vertex OR self-loop)
                 let tangle_size = tangle.len();
                 let is_tangle = tangle_size != 1
@@ -246,26 +258,29 @@ impl TangleManager {
 
                 let id = self.tangles_found;
                 // Count all escapes that remain in the GREATER unsolved game
+                let tangle_v = tangle.copied().sorted().map(|v| v.index()).collect_vec();
                 let final_tangle = self
                     .escape_list
-                    .push_collection_itr(tangle.copied().sorted().map(|v| v.index()));
+                    .push_collection_itr(tangle_v.iter().copied());
                 let final_tangle_ref = self.escape_list.get_set_ref(final_tangle);
-                let mut target_escapes = Vec::new();
+                let mut target_escapes = current_game.empty_vertex_set();
 
-                for v in final_tangle_ref.ones_vertices() {
+                for &v in &tangle_v {
+                    let v_id = VertexId::new(v);
                     // Don't care about alpha-vertices, as they are guaranteed not to be leaks due to our earlier checks,
                     // and can simply choose to remain in the tangle (else it wouldn't be an SCC)
-                    if current_game.owner(v) != region_owner {
-                        for target in current_game.edges(v) {
+                    if current_game.owner(v_id) != region_owner {
+                        for target in current_game.edges(v_id) {
+                            let target = target.index();
                             // Only mark as escapes those vertices which actually _are_ escapes.
-                            if !final_tangle_ref.contains(target.index())
-                                && !target_escapes.contains(&target)
+                            if !final_tangle_ref.contains(target)
+                                && !target_escapes.contains(target)
                                 && !dominion
                                     .as_ref()
                                     .map(|d| d.vertices.contains(target.index()))
                                     .unwrap_or_default()
                             {
-                                target_escapes.push(target);
+                                target_escapes.insert(target);
                             }
                         }
                     }
@@ -273,32 +288,34 @@ impl TangleManager {
 
                 // Check if there are any escapes in our greater game, if not we already know it's a dominion.
                 // We can then just merge it with other found dominating tangles this cycle
-                if target_escapes.is_empty() {
+                if target_escapes.is_clear() {
                     crate::info!(?tangle_size, "Found a tangle which was a dominion");
                     self.dominions_found += 1;
 
                     if let Some(existing) = &mut dominion {
-                        existing.vertices.extend(final_tangle_ref.ones());
+                        existing.vertices.extend(tangle_v);
                     } else {
                         let mut result = tangle_sub_game.empty_vertex_set();
-                        result.extend(final_tangle_ref.ones());
+                        result.extend(tangle_v);
                         dominion = Some(Dominion {
                             dominating_p: region_priority,
                             vertices: result,
                         })
                     }
                 } else {
-                    let vs = final_tangle_ref.ones_vertices().map(|v| (v, strategy[v.index()])).collect();
-                    
-                    target_escapes.sort_unstable();
+                    let vs = tangle_v
+                        .into_iter()
+                        .map(|v| (VertexId::new(v), strategy[v.index()]))
+                        .collect();
+
                     let targets = self
                         .escape_list
-                        .push_collection_itr(target_escapes.iter().map(|v| v.index()));
+                        .push_collection_itr(target_escapes.ones());
 
-                    for target in target_escapes {
-                        self.tangle_in[target.index()].push(id);
+                    for target in target_escapes.ones() {
+                        self.tangle_in[target].push(id);
                     }
-                    
+
                     let new_tangle = Tangle {
                         id,
                         owner: region_owner,
@@ -309,10 +326,12 @@ impl TangleManager {
                         enabled: true,
                     };
 
-                    crate::info!(tangle_size, ?new_tangle, "Found new tangle");
-
                     self.tangles_found += 1;
                     self.tangles.push(new_tangle);
+                }
+                self.tangles_taken += now.elapsed();
+                if now.elapsed() > Duration::from_millis(20) {
+                    tracing::info!("Tangle analysis took: {:?} - {}", now.elapsed(), self.tangles.len());
                 }
             },
         );
@@ -322,22 +341,23 @@ impl TangleManager {
 
     #[inline]
     pub fn tangles_with_escapes(&self, owner: Owner) -> impl Iterator<Item = (&Tangle, SparseBitSetRef<'_>)> {
-        self.tangles.iter()
+        self.tangles
+            .iter()
             .filter(move |t| t.owner == owner)
             .map(|tangle| (tangle, self.escape_list.get_set_ref(tangle.escape_set)))
     }
 
     /// Return all tangles which have escapes to this vertex, and are owned by `owner`.
     pub fn tangles_to_v_owner(&self, v: VertexId<u32>, owner: Owner) -> impl Iterator<Item = &Tangle> {
-        self.tangle_in[v.index()].iter()
-            .map(|t_id| {
-                &self.tangles[*t_id as usize]
-            })
+        self.tangle_in[v.index()]
+            .iter()
+            .map(|t_id| &self.tangles[*t_id as usize])
             .filter(move |t| t.owner == owner && t.enabled)
     }
 
     /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
     #[inline]
+    #[profiling::function]
     pub fn tangle_attracted_to<Ix: IndexType, Parent: ParityGraph<Ix>>(
         &self,
         tangle: &Tangle,
@@ -346,11 +366,15 @@ impl TangleManager {
     ) -> bool {
         // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
         // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
-        self.escape_list.get_set_ref(tangle.vertices).is_subset(&game.game_vertices) && self.all_escapes_to(tangle, game, in_set)
+        self.escape_list
+            .get_set_ref(tangle.vertices)
+            .is_subset(&game.game_vertices)
+            && self.all_escapes_to(tangle, game, in_set)
     }
 
     /// Return `true` if the given tangle has all escapes valid within `game` pointing to the `in_set`.
     #[inline]
+    #[profiling::function]
     pub fn all_escapes_to<Ix: IndexType, Parent: ParityGraph<Ix>>(
         &self,
         tangle: &Tangle,
@@ -402,7 +426,7 @@ impl PearceTangleScc {
     #[profiling::function]
     pub fn run(
         &mut self,
-        graph: &impl ParityGraph<u32>,
+        graph: &(impl ParityGraph<u32> + OptimisedGraph<u32>),
         region_owner: Owner,
         top_level_vs: impl Iterator<Item = VertexId<u32>>,
         strategy: &[VertexId<u32>],
@@ -426,7 +450,7 @@ impl PearceTangleScc {
         &mut self,
         v_id: VertexId<u32>,
         region_owner: Owner,
-        graph: &impl ParityGraph<u32>,
+        graph: &(impl ParityGraph<u32> + OptimisedGraph<u32>),
         strategy: &[VertexId<u32>],
         mut scc_found: impl FnMut(PearceSccIter<'_>, VertexId<u32>),
     ) {
@@ -452,7 +476,7 @@ impl PearceTangleScc {
         &mut self,
         v_id: VertexId<u32>,
         region_owner: Owner,
-        graph: &impl ParityGraph<u32>,
+        graph: &(impl ParityGraph<u32> + OptimisedGraph<u32>),
         strategy: &[VertexId<u32>],
         scc_found: impl FnMut(PearceSccIter<'_>, VertexId<u32>),
     ) {
@@ -475,24 +499,45 @@ impl PearceTangleScc {
                 self.root.remove(v_id.index());
             }
         } else {
-            let edge_i = *self.i_s.front().expect("Impossible Invariant Violation");
+            let mut edge_i = *self.i_s.front().expect("Impossible Invariant Violation");
+            let edges = graph.root_edges(v_id);
+            while edge_i < edges.len() as u32 {
+                let edge = edges[edge_i as usize];
+                if graph.part_of_graph(edge) {
+                    // First check if `i` was in range
+                    // New node to explore, restart visit loop, begin edge
+                    if self.root_index[edge.index()].is_none() {
+                        // Add the current index back in order to `finish_edge` after we finish exploring this new node.
+                        *self.i_s.front_mut().expect("impossible") = edge_i;
+                        self.begin_visit(edge);
+                        return;
+                    }
 
-            for (i, edge) in graph.edges(v_id).enumerate().skip(edge_i as usize) {
-                // First check if `i` was in range
-                // New node to explore, restart visit loop, begin edge
-                if self.root_index[edge.index()].is_none() {
-                    // Add the current index back in order to `finish_edge` after we finish exploring this new node.
-                    *self.i_s.front_mut().expect("impossible") = i as u32;
-                    self.begin_visit(edge);
-                    return;
+                    // Finish edge
+                    if self.root_index(edge) < self.root_index(v_id) {
+                        self.root_index[v_id.index()] = self.root_index[edge.index()];
+                        self.root.remove(v_id.index());
+                    }
                 }
-
-                // Finish edge
-                if self.root_index(edge) < self.root_index(v_id) {
-                    self.root_index[v_id.index()] = self.root_index[edge.index()];
-                    self.root.remove(v_id.index());
-                }
+                edge_i += 1;
             }
+            // for (i, edge) in graph.edges(v_id).enumerate().skip(edge_i as usize) {
+            //
+            //     // First check if `i` was in range
+            //     // New node to explore, restart visit loop, begin edge
+            //     if self.root_index[edge.index()].is_none() {
+            //         // Add the current index back in order to `finish_edge` after we finish exploring this new node.
+            //         *self.i_s.front_mut().expect("impossible") = i as u32;
+            //         self.begin_visit(edge);
+            //         return;
+            //     }
+            //
+            //     // Finish edge
+            //     if self.root_index(edge) < self.root_index(v_id) {
+            //         self.root_index[v_id.index()] = self.root_index[edge.index()];
+            //         self.root.remove(v_id.index());
+            //     }
+            // }
         }
 
         self.finish_visit(v_id, scc_found);

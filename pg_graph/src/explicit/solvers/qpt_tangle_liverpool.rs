@@ -1,6 +1,6 @@
 use crate::explicit::solvers::tangle_learning::{TangleManager, NO_STRATEGY};
 use crate::explicit::solvers::Dominion;
-use crate::explicit::{BitsetExtensions, SubGame, VertexId, VertexSet};
+use crate::explicit::{BitsetExtensions, OptimisedGraph, SubGame, VertexId, VertexSet};
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
@@ -70,7 +70,7 @@ impl<'a> LiverpoolSolver<'a> {
 
     /// Returns the winning regions `(W_even, W_odd)` as well as a flag indicating whether the results that were obtained
     /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
-    fn zielonka<T: ParityGraph<u32>>(&mut self, root_game: &SubGame<u32, T>, game: &SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet, Option<Dominion>) {
+    fn zielonka<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, root_game: &SubGame<u32, T>, game: &SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet, Option<Dominion>) {
         self.iterations += 1;
         if precision_odd == 0 {
             crate::debug!("End of precision; presumed won by player Even: {:?}", game.game_vertices.printable_vertices());
