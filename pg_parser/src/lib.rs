@@ -11,24 +11,30 @@ pub fn parse_pg<'a: 'b, 'b>(input: &mut &'a str, builder: &mut impl PgBuilder<'b
         builder.set_header(header).expect("Builder failure");
     }
 
-    separated(0.., |inp: &mut &'a str | {
-        let out = parse_node.parse_next(inp)?;
-        builder.add_vertex(out.id, out).expect("Builder failure");
-        Ok(())
-    }, winnow::ascii::line_ending).parse_next(input)
+    separated(
+        0..,
+        |inp: &mut &'a str| {
+            let out = parse_node.parse_next(inp)?;
+            builder.add_vertex(out.id, out).expect("Builder failure");
+            Ok(())
+        },
+        winnow::ascii::line_ending,
+    )
+    .parse_next(input)
 }
 
 fn parse_header(input: &mut &str) -> winnow::PResult<usize> {
     let result = terminated(preceded(ws("parity"), dec_uint), eol).parse_next(input);
-    
+
     if let Ok(header) = &result {
         let _ = winnow::ascii::line_ending.parse_next(input)?;
     }
+
     // For MLSolver games
-    if let Ok(start) = opt(terminated(preceded(ws("start"), dec_uint::<_, usize, _>), eol)).parse_next(input) {
+    if let Ok(Some(_)) = opt(terminated(preceded(ws("start"), dec_uint::<_, usize, _>), eol)).parse_next(input) {
         let _ = winnow::ascii::line_ending.parse_next(input)?;
     };
-    
+
     result
 }
 
@@ -73,7 +79,7 @@ where
 
 pub trait PgBuilder<'a> {
     fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()>;
-    
+
     fn add_vertex(&mut self, id: usize, vertex: Vertex<'a>) -> eyre::Result<()>;
 }
 
@@ -93,7 +99,7 @@ mod tests {
 
     #[derive(Debug)]
     struct FauxBuilder<'a>(Vec<Vertex<'a>>);
-    
+
     impl<'a> PgBuilder<'a> for FauxBuilder<'a> {
         fn set_header(&mut self, vertex_count: usize) -> eyre::Result<()> {
             Ok(())
@@ -104,7 +110,7 @@ mod tests {
             Ok(())
         }
     }
-    
+
     #[test]
     pub fn test_simple() {
         let mut input = "parity 4;
