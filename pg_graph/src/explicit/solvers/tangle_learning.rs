@@ -84,7 +84,7 @@ impl<'a> TangleSolver<'a, Vertex> {
             let owner = Owner::from_priority(new_dominion.dominating_p);
             // Reset escapes
             self.tangles.reset_escapes();
-            let full_dominion = self.attract.attractor_set_tangle_2(
+            let full_dominion = self.attract.attractor_tangle_itr(
                 &current_game,
                 &current_game,
                 owner,
@@ -133,7 +133,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                     strategy[v] = VertexId::new(NO_STRATEGY as usize);
                 }
 
-                let tangle_attractor = self.attract.attractor_set_tangle_2(
+                let tangle_attractor = self.attract.attractor_tangle_itr(
                     &partial_subgame,
                     current_game,
                     owner,
@@ -370,23 +370,28 @@ impl TangleManager {
     }
 
     /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
+    /// 
+    /// Works with recursive structures.
     #[inline]
     #[profiling::function]
     pub fn tangle_attracted_to<Ix: IndexType, Parent: ParityGraph<Ix>>(
         &self,
         tangle: &Tangle,
-        game: &SubGame<Ix, Parent>,
-        in_set: &VertexSet,
+        game: &SubGame<Ix, Parent>
     ) -> bool {
         // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
         // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
-        self.escape_list
-            .get_set_ref(tangle.vertices)
-            .is_subset(&game.game_vertices)
-             && self.all_escapes_to(tangle, game, in_set)
+        // By using the current sub-game, instead of the remaining game, we have an _under approximation_ of the size of the set of valid escapes,
+        // we must therefore verify whether all vertices in this tangle are actually valid to attract.
+        !self.has_escapes(game, tangle) &&
+            self.escape_list
+                .get_set_ref(tangle.vertices)
+                .is_subset(&game.game_vertices)
     }
 
-    /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
+    /// Return `true` if the given tangle fully intersects with the given `game`.
+    /// 
+    /// This is more efficient than [tangle_attractor_to], however, it will not work for recursive call structures.
     #[inline]
     #[profiling::function]
     pub fn tangle_attracted_to_efficient<Ix: IndexType, Parent: ParityGraph<Ix>>(
@@ -394,13 +399,7 @@ impl TangleManager {
         tangle: &Tangle,
         total_game: &SubGame<Ix, Parent>,
     ) -> bool {
-        // We might have (partially) attracted vertices in this tangle to a higher region in `game`, if so skip this tangle.
-        // This can happen due to the fact that invalid tangles are only filtered out whenever we find a dominion, not during iterations.
-        // self.escape_list
-        //     .get_set_ref(tangle.vertices)
-        //     .is_subset(&game.game_vertices)
         !self.has_escapes(total_game, tangle)
-        // && self.all_escapes_to(tangle, game, in_set)
     }
 
     /// Return `true` if the given tangle has all escapes valid within `game` pointing to the `in_set`.
@@ -422,6 +421,9 @@ impl TangleManager {
         self.tangle_escapes.get_mut().fill(None);
     }
 
+    /// Check whether the tangle has any escapes towards `total_game`.
+    /// 
+    /// Whenever the `total_game` grows the [reset_escapes] function has to be called beforehand.
     #[inline]
     fn has_escapes<Ix: IndexType, T: ParityGraph<Ix>>(&self, total_game: &SubGame<Ix, T>, tangle: &Tangle) -> bool {
         let escapes = &mut (unsafe {&mut *self.tangle_escapes.get() })[tangle.id as usize];

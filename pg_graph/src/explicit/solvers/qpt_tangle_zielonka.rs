@@ -138,7 +138,7 @@ impl<'a> ZielonkaSolver<'a> {
             strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
 
-        let tangle_attractor = self.attract.attractor_set_tangle(game, attraction_owner, Cow::Borrowed(&starting_set), &mut self.tangles, strategy);
+        let tangle_attractor = self.attract.attractor_tangle_rec(game, attraction_owner, Cow::Borrowed(&starting_set), &mut self.tangles, strategy);
         // Check if there are any escapes from this region, or if it's locally closed.
         // We only care about the vertices with the region priority.
         let leaks = self.tangles.any_leaks_in_region(game, d, &tangle_attractor, &starting_set, &self.strategy);
@@ -179,7 +179,7 @@ impl<'a> ZielonkaSolver<'a> {
 
             false
         } else {
-            let b_attr = self.attract.attractor_set_tangle(
+            let b_attr = self.attract.attractor_tangle_rec(
                 game,
                 attraction_owner.other(),
                 Cow::Borrowed(not_attraction_owner_set),

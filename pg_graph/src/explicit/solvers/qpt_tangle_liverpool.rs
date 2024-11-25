@@ -47,7 +47,7 @@ impl<'a> LiverpoolSolver<'a> {
             // The algorithm will still be quasi-polynomial, as it is at worst a linear multiplier to the complexity
             if let Some(dominion) = dominion {
                 let owner = Owner::from_priority(dominion.dominating_p);
-                let full_dominion = self.attract.attractor_set_tangle(
+                let full_dominion = self.attract.attractor_tangle_rec(
                     &current_game,
                     owner,
                     Cow::Owned(dominion.vertices),
@@ -122,7 +122,7 @@ impl<'a> LiverpoolSolver<'a> {
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
         
-        let g_1_attr = self.attract.attractor_set_tangle(&g_1, region_owner, Cow::Borrowed(&starting_set), &mut self.tangles, &mut self.strategy);
+        let g_1_attr = self.attract.attractor_tangle_rec(&g_1, region_owner, Cow::Borrowed(&starting_set), &mut self.tangles, &mut self.strategy);
         crate::debug!("H region: {} - {:?} - {:?}", d, g_1_attr.printable_vertices(), g_1.game_vertices.printable_vertices());
 
         // ** Try extract tangles **
@@ -147,7 +147,7 @@ impl<'a> LiverpoolSolver<'a> {
         
         let opponent = region_owner.other();
         let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
-        let o_extended_dominion = self.attract.attractor_set_tangle(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &mut self.tangles, &mut self.strategy);
+        let o_extended_dominion = self.attract.attractor_tangle_rec(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &mut self.tangles, &mut self.strategy);
 
         let g_2 = g_1.create_subgame_bit(&o_extended_dominion);
 

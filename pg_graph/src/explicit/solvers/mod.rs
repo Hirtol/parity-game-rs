@@ -155,8 +155,9 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         }
     }
 
+    /// Tangle attractor for recursive structures
     #[inline]
-    pub fn attractor_set_tangle<'a, T: ParityGraph<Ix>>(
+    pub fn attractor_tangle_rec<'a, T: ParityGraph<Ix>>(
         &mut self,
         game: &SubGame<Ix, T>,
         player: Owner,
@@ -165,6 +166,7 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         strategy: &mut [VertexId<Ix>]
     ) -> VertexSet {
         self.reset_escapes();
+        tangles.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
         
@@ -194,7 +196,10 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
             }
 
             for tangle in tangles.tangles_to_v_owner(VertexId::new(next_item.index()), player) {
-                if tangles.tangle_attracted_to(tangle, game, &attract_set) {
+                // By calling this function for every vertex in the attractor set we ensure that we'll call it `n` times
+                // (where `n` is the amount of escape vertices in `tangle`), leading to the eventual attraction of the tangle.
+                // Therefore, we don't need to pass the attractor set here, as it is done implicitly.
+                if tangles.tangle_attracted_to(tangle, game) {
                     for (v, strat) in &tangle.vertex_strategy {
                         if !attract_set.contains(v.index()) {
                             crate::debug!(?v, ?tangle.id, "Attracting tangle");
@@ -212,8 +217,9 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         attract_set
     }
 
+    /// Tangle attractor for iterative structures
     #[inline]
-    pub fn attractor_set_tangle_2<'a, T: ParityGraph<Ix>>(
+    pub fn attractor_tangle_itr<'a, T: ParityGraph<Ix>>(
         &mut self,
         game: &SubGame<Ix, T>,
         total_game: &SubGame<Ix, T>,
@@ -223,7 +229,6 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
         strategy: &mut [VertexId<Ix>]
     ) -> VertexSet {
         self.reset_escapes();
-        // tangles.reset_escapes();
         self.queue.extend(starting_set.ones_vertices());
         let mut attract_set = starting_set.into_owned();
 
