@@ -4,7 +4,7 @@ use crate::explicit::{BitsetExtensions, OptimisedGraph, SubGame, VertexId, Verte
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
-}, Owner};
+}, Owner, Priority};
 use std::borrow::Cow;
 
 pub struct LiverpoolSolver<'a> {
@@ -17,6 +17,8 @@ pub struct LiverpoolSolver<'a> {
     ///
     /// If the game has no self-loops this can be `1`, otherwise it needs to be `0`.
     min_precision: usize,
+    /// For quickly returning without doing tangle analysis in trivial cases.
+    max_priority: Priority,
 }
 
 impl<'a> LiverpoolSolver<'a> {
@@ -28,6 +30,7 @@ impl<'a> LiverpoolSolver<'a> {
             strategy: vec![VertexId::new(NO_STRATEGY as usize); game.vertex_count()],
             min_precision: if game.graph_edges().any(|(source, target)| source == target) { 0 } else { 1 },
             tangles: TangleManager::new(game.vertex_count()),
+            max_priority: 0,
         }
     }
 
@@ -61,6 +64,7 @@ impl<'a> LiverpoolSolver<'a> {
                 self.tangles.intersect_tangles(&current_game);
                 let (our_win, _) = us_and_them(owner, &mut w_even, &mut w_odd);
                 our_win.union_with(&full_dominion);
+                self.max_priority = 0;
             }
         }
 
@@ -85,6 +89,9 @@ impl<'a> LiverpoolSolver<'a> {
         }
 
         let d = game.priority_max();
+        if self.max_priority < d {
+            self.max_priority = d;
+        }
         let region_owner = Owner::from_priority(d);
 
         let (new_p_even, new_p_odd) = match region_owner {
@@ -122,18 +129,29 @@ impl<'a> LiverpoolSolver<'a> {
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
         
-        let g_1_attr = self.attract.attractor_tangle_rec(&g_1, region_owner, Cow::Borrowed(&starting_set), &mut self.tangles, &mut self.strategy);
+        let mut g_1_attr = self.attract.attractor_tangle_rec(&g_1, region_owner, Cow::Borrowed(&starting_set), &mut self.tangles, &mut self.strategy);
         crate::debug!("H region: {} - {:?} - {:?}", d, g_1_attr.printable_vertices(), g_1.game_vertices.printable_vertices());
 
         // ** Try extract tangles **
         if !self.tangles.any_leaks_in_region(&g_1, d, &g_1_attr, &starting_set, &self.strategy) {
-            let dom = self.tangles.extract_tangles(root_game, &g_1, d, &self.strategy);
+            // We know it's globally closed if this holds, no need to find tangles.
+            if d == self.max_priority {
+                let dom = Some(Dominion {
+                    dominating_p: d,
+                    vertices: g_1_attr,
+                });
+                return (VertexSet::new(), VertexSet::new(), dom);
+            }
 
+            let tangle_subgame = SubGame::from_vertex_set(game.parent, g_1_attr);
+            let dom = self.tangles.extract_tangles(root_game, &tangle_subgame, &starting_set, d, &self.strategy);
             // If we find a dominion immediately destroy the call tree and return.
             // This essentially mimics regular tangle learning's behaviour.
             if dom.is_some() {
                 return (VertexSet::new(), VertexSet::new(), dom);
             }
+            // Put this back in its place
+            g_1_attr = tangle_subgame.game_vertices;
         }
 
         let h_game = g_1.create_subgame_bit(&g_1_attr);

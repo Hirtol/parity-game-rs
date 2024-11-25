@@ -115,12 +115,17 @@ impl<'a> TangleSolver<'a, Vertex> {
 
     #[profiling::function]
     fn search_dominion<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, current_game: &SubGame<u32, T>, strategy: &mut [VertexId<u32>]) -> Dominion {
+        let mut max_priority = 0;
         loop {
             self.tangles.reset_escapes();
             let mut partial_subgame = current_game.clone();
 
             while partial_subgame.vertex_count() != 0 {
                 let d = partial_subgame.priority_max();
+                if max_priority < d {
+                    max_priority = d;
+                }
+                
                 let owner = Owner::from_priority(d);
 
                 let starting_set = AttractionComputer::make_starting_set(
@@ -153,9 +158,16 @@ impl<'a> TangleSolver<'a, Vertex> {
                     partial_subgame.shrink_subgame(&tangle_attractor);
                     continue;
                 }
+                // We've found a closed region, if it's the highest priority we already know that it is globally closed
+                if d == max_priority {
+                    return Dominion {
+                        dominating_p: d,
+                        vertices: tangle_attractor,
+                    }
+                }
 
                 let tangle_subgame = SubGame::from_vertex_set(partial_subgame.parent, tangle_attractor);
-                let possible_dominion = self.tangles.extract_tangles(current_game, &tangle_subgame, d, strategy);
+                let possible_dominion = self.tangles.extract_tangles(current_game, &tangle_subgame, &starting_set, d, strategy);
 
                 if let Some(dominion) = possible_dominion {
                     return dominion;
@@ -233,24 +245,26 @@ impl TangleManager {
         })
     }
 
+    /// Extract tangles from the given `tangle_sub_game`, where we only search from the vertices in `top_vertices` to prevent duplicate tangles.
+    /// The latter is expected to be a subset of the former.
+    /// 
+    /// The `current_game` should be the full game, save for any already solved dominions.
     #[profiling::function]
     pub fn extract_tangles<T: ParityGraph<u32>, P: ParityGraph<u32> + OptimisedGraph<u32>>(
         &mut self,
         current_game: &T,
         tangle_sub_game: &SubGame<u32, P>,
+        top_vertices: &VertexSet,
         region_priority: Priority,
         strategy: &[VertexId<u32>],
     ) -> Option<Dominion> {
-        // As the passed sub_game might have top vertices besides `region_priority` we need to conservatively also call compressed parts
-        // TODO: Maybe just accept a `top_vertices` set.
-        let top_vertices = tangle_sub_game.vertices_by_compressed_priority(region_priority);
         let mut dominion: Option<Dominion> = None;
         let region_owner = Owner::from_priority(region_priority);
 
         self.pearce.run(
             tangle_sub_game,
             region_owner,
-            top_vertices,
+            top_vertices.ones_vertices(),
             strategy,
             |tangle, top_vertex| {
                 profiling::function_scope!("TangleDiscover");
@@ -334,9 +348,9 @@ impl TangleManager {
                         escape_set: targets,
                         enabled: true,
                     };
-                    
+
                     crate::info!(tangle_size, ?new_tangle, "Found new tangle");
-                    
+
                     self.tangles_found += 1;
                     self.tangle_escapes.get_mut().push(None);
                     self.tangles.push(new_tangle);
@@ -370,7 +384,7 @@ impl TangleManager {
     }
 
     /// Return `true` if the given tangle fully intersects with the given `game`, and has all remaining escapes in the `in_set`.
-    /// 
+    ///
     /// Works with recursive structures.
     #[inline]
     #[profiling::function]
@@ -390,7 +404,7 @@ impl TangleManager {
     }
 
     /// Return `true` if the given tangle fully intersects with the given `game`.
-    /// 
+    ///
     /// This is more efficient than [tangle_attractor_to], however, it will not work for recursive call structures.
     #[inline]
     #[profiling::function]
@@ -422,7 +436,7 @@ impl TangleManager {
     }
 
     /// Check whether the tangle has any escapes towards `total_game`.
-    /// 
+    ///
     /// Whenever the `total_game` grows the [reset_escapes] function has to be called beforehand.
     #[inline]
     fn has_escapes<Ix: IndexType, T: ParityGraph<Ix>>(&self, total_game: &SubGame<Ix, T>, tangle: &Tangle) -> bool {
@@ -441,7 +455,7 @@ impl TangleManager {
                 true
             } else {
                 crate::info!("New value: None - {}", tangle.id);
-                
+
                 *escapes = None;
                 false
             }

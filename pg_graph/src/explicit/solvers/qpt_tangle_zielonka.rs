@@ -147,7 +147,7 @@ impl<'a> ZielonkaSolver<'a> {
         // If there are any leaks from our region then it's not worth finding tangles.
         if !leaks && !tangle_attractor.is_clear() {
             let tangle_subgame = SubGame::from_vertex_set(game.parent, tangle_attractor.clone());
-            let dominion = self.tangles.extract_tangles(game.parent, &tangle_subgame, d, strategy);
+            let dominion = self.tangles.extract_tangles(game.parent, &tangle_subgame, &starting_set, d, strategy);
         }
 
         let mut sub_game = game.create_subgame_bit(&tangle_attractor);
