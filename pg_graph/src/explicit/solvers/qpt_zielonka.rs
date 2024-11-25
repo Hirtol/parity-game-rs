@@ -27,7 +27,7 @@ impl<'a> ZielonkaSolver<'a> {
         }
     }
 
-    #[tracing::instrument(name = "Run Zielonka", skip(self))]
+    #[tracing::instrument(name = "Run Warsaw Zielonka", skip(self))]
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
