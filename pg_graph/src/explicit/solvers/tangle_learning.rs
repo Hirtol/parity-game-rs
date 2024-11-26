@@ -64,7 +64,7 @@ impl<'a> TangleSolver<'a, Vertex> {
     #[tracing::instrument(name = "Run Tangle Learning", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.tangle_solver(self.game.create_subgame([]));
-        tracing::info!("Total Tangle Time: {:?}", self.tangles.tangles_taken);
+        
         SolverOutput::from_winning(self.game.original_vertex_count(), &odd)
     }
 
@@ -160,6 +160,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                 }
                 // We've found a closed region, if it's the highest priority we already know that it is globally closed
                 if d == max_priority {
+                    self.tangles.dominions_found += 1;
                     return Dominion {
                         dominating_p: d,
                         vertices: tangle_attractor,
@@ -192,12 +193,11 @@ pub struct TangleManager {
     pub tangle_in: Vec<Vec<u32>>,
     // Cba to re-architect this out of here
     pub tangle_escapes: std::cell::UnsafeCell<Vec<Option<NonZeroU32>>>,
-
-    /// Used during tangle extraction to efficiently track escapes without having to re-allocate it every tangle.
-    escape_set: VertexSet,
     pub tangles_found: u32,
     pub dominions_found: u32,
-    pub tangles_taken: Duration,
+    
+    /// Used during tangle extraction to efficiently track escapes without having to re-allocate it every tangle.
+    escape_set: VertexSet,
 }
 
 impl TangleManager {
@@ -211,7 +211,6 @@ impl TangleManager {
             escape_set: VertexSet::with_capacity(game_size),
             tangles_found: 0,
             dominions_found: 0,
-            tangles_taken: Default::default(),
         }
     }
 
@@ -271,8 +270,7 @@ impl TangleManager {
             top_vertices.ones_vertices(),
             strategy,
             |tangle, top_vertex| {
-                profiling::function_scope!("TangleDiscover");
-                let now = Instant::now();
+                profiling::scope!("TangleDiscover");
                 // Ensure non-trivial SCC (more than one vertex OR self-loop)
                 let tangle_size = tangle.len();
                 let is_tangle = tangle_size != 1
@@ -368,10 +366,6 @@ impl TangleManager {
                     self.tangles_found += 1;
                     self.tangle_escapes.get_mut().push(None);
                     self.tangles.push(new_tangle);
-                }
-                self.tangles_taken += now.elapsed();
-                if now.elapsed() > Duration::from_millis(20) {
-                    tracing::info!("Tangle analysis took: {:?} - {}", now.elapsed(), self.tangles.len());
                 }
             },
         );

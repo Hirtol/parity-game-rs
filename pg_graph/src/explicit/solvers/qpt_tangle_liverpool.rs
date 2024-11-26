@@ -136,6 +136,7 @@ impl<'a> LiverpoolSolver<'a> {
         if !self.tangles.any_leaks_in_region(&g_1, d, &g_1_attr, &starting_set, &self.strategy) {
             // We know it's globally closed if this holds, no need to find tangles.
             if d == self.max_priority {
+                self.tangles.dominions_found += 1;
                 let dom = Some(Dominion {
                     dominating_p: d,
                     vertices: g_1_attr,
