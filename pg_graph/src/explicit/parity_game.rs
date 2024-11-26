@@ -60,11 +60,11 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
 
                     if p == current_priority {
                         return Some(v_idx)
-                    } else if next_highest_priority.map(|next| p > next).unwrap_or(true) && p < current_priority {
+                    } else if p < current_priority && next_highest_priority.map(|next| next < p).unwrap_or(true) {
                         next_highest_priority = Some(p);
                     }
                 }
-
+                
                 if let Some(next) = next_highest_priority {
                     if Owner::from_priority(next) == Owner::from_priority(current_priority) {
                         current_itr = self.vertices_index();

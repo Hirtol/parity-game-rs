@@ -166,7 +166,7 @@ impl BenchCommand {
         let parity_game_states = parity_game.vertex_count();
         
         let mut results = ahash::HashMap::default();
-
+        
         // 3 runs for each for consistency
         const RUNS: u32 = 3;
         for i in 0..RUNS {
