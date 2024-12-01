@@ -64,7 +64,7 @@ impl<'a> TangleSolver<'a, Vertex> {
     #[tracing::instrument(name = "Run Tangle Learning", skip(self))]
     pub fn run(&mut self) -> SolverOutput {
         let (even, odd) = self.tangle_solver(self.game.create_subgame([]));
-        
+
         SolverOutput::from_winning(self.game.original_vertex_count(), &odd)
     }
 
@@ -195,7 +195,7 @@ pub struct TangleManager {
     pub tangle_escapes: std::cell::UnsafeCell<Vec<Option<NonZeroU32>>>,
     pub tangles_found: u32,
     pub dominions_found: u32,
-    
+
     /// Used during tangle extraction to efficiently track escapes without having to re-allocate it every tangle.
     escape_set: VertexSet,
 }
@@ -247,7 +247,7 @@ impl TangleManager {
             }
         })
     }
-    
+
     /// Extract tangles from the given `tangle_sub_game`, where we only search from the vertices in `top_vertices` to prevent duplicate tangles.
     /// The latter is expected to be a subset of the former.
     ///
@@ -332,10 +332,10 @@ impl TangleManager {
                         })
                     }
                 } else {
-                    // We are going to make sparse sets out of both, so they need to be sorted. 
+                    // We are going to make sparse sets out of both, so they need to be sorted.
                     tangle_v.sort();
                     tangle_to.sort();
-                    
+
                     let final_tangle = self
                         .escape_list
                         .push_collection_itr(tangle_v.iter().copied());

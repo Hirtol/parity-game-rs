@@ -45,7 +45,7 @@ impl<'a> LiverpoolSolver<'a> {
             let n_vertices = current_game.vertex_count();
             // We can ignore the original regions returned here by QLZ, as we will only ever receive dominions from
             // our top level call.
-            let (_, _, dominion) = self.zielonka(&current_game, &current_game, n_vertices, n_vertices);
+            let (mut even, odd, dominion) = self.zielonka(&current_game, &current_game, n_vertices, n_vertices);
             // If we encounter a dominion deep in the search tree we destroy said tree and restart after removing it from the game.
             // The algorithm will still be quasi-polynomial, as it is at worst a linear multiplier to the complexity
             if let Some(dominion) = dominion {
@@ -65,6 +65,20 @@ impl<'a> LiverpoolSolver<'a> {
                 let (our_win, _) = us_and_them(owner, &mut w_even, &mut w_odd);
                 our_win.union_with(&full_dominion);
                 self.max_priority = 0;
+            } else {
+                // This pretty much never gets reached, usually you find a dominion through tangle learning.
+                // Due to the fact that we only return the winning region of the highest priority we need to do the dance below.
+                tracing::warn!("Fallback QLZ tangle complete call");
+                match Owner::from_priority(current_game.priority_max()) {
+                    Owner::Even => {
+                        even.union_with(&w_even);
+                        w_odd.extend(even.zeroes());
+                    },
+                    Owner::Odd => {
+                        w_odd.union_with(&odd);
+                    }
+                };
+                break;
             }
         }
 
