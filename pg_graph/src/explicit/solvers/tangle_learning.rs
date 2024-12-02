@@ -228,7 +228,7 @@ impl TangleManager {
     /// Check if there are any leaks from the given `tangle_region` to vertices remaining in `game`.
     /// If this is `false` then this region is locally closed.
     ///
-    /// This means that the opponent can escape, and `extract_tangles` is pointless to execute on this region.
+    /// If it is `true` then it means that the opponent can escape, and `extract_tangles` is pointless to execute on this region.
     #[profiling::function]
     pub fn any_leaks_in_region(
         &self,
