@@ -30,38 +30,25 @@ impl<'a> LiverpoolSolver<'a> {
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
         let (even, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
-        // tracing::info!("Even Winning: {:?}", even.printable_vertices());
-        // tracing::info!("Odd Winning: {:?}", odd.printable_vertices());
-        // if even.count_ones(..) + odd.count_ones(..) < self.game.vertex_count() {
-        //     panic!("Fewer vertices than expected were in the winning regions");
-        // }
-
-        let odd = match Owner::from_priority(self.game.priority_max()) {
-            Owner::Even => AttractionComputer::make_starting_set(self.game, even.zeroes().map(VertexId::new)),
-            Owner::Odd => odd
-        };
+        tracing::debug!(even=?even.count_ones(..), odd=?odd.count_ones(..), max=?Owner::from_priority(self.game.priority_max()), "Even counts");
 
         SolverOutput::from_winning(self.game.vertex_count(), &odd)
     }
 
     /// Returns the winning regions `(W_even, W_odd)` as well as a flag indicating whether the results that were obtained
     /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
-    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &mut SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet) {
+    fn zielonka<T: ParityGraph<u32>>(&mut self, game: &SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet) {
         self.iterations += 1;
-        let (mut result_even, mut result_odd) = (VertexSet::empty_game(game), VertexSet::empty_game(game));
         if precision_odd == 0 {
-            result_even.union_with(&game.game_vertices);
-            crate::debug!("End of precision; presumed won by player Even: {:?}", result_even.printable_vertices());
-            return (result_even, result_odd)
+            crate::debug!("End of precision; presumed won by player Even: {:?}", game.game_vertices.printable_vertices());
+            return (game.game_vertices.clone(), VertexSet::new())
         }
         if precision_even == 0 {
-            result_odd.union_with(&game.game_vertices);
-            crate::debug!("End of precision; presumed won by player Odd: {:?}", result_odd.printable_vertices());
-            return (result_even, result_odd)
+            crate::debug!("End of precision; presumed won by player Odd: {:?}", game.game_vertices.printable_vertices());
+            return (VertexSet::new(), game.game_vertices.clone())
         }
-        // If all the vertices are ignored
         if game.vertex_count() == 0 {
-            return (result_even, result_odd)
+            return (VertexSet::new(), VertexSet::new())
         }
 
         let d = game.priority_max();
@@ -86,38 +73,51 @@ impl<'a> LiverpoolSolver<'a> {
             return (region_even, region_odd)
         }
 
-        let (g_1, _) = us_and_them(region_owner, region_even, region_odd);
+        let (g_1, opp) = us_and_them(region_owner, region_even, region_odd);
         let g_1 = SubGame::from_vertex_set(game.parent, g_1);
+        // If 'our' region is empty, then we know there are no dominions up to precision_ours, and can presume it won by the opponent.
+        if g_1.vertex_count() == 0 {
+            return even_and_odd(region_owner, g_1.game_vertices, opp)
+        }
+        
+        // We need to use a compressed priority starting set, or else the assumption that even and odd alternate is violated
+        // This would cause problems in the full precision call below.
         let starting_set = g_1.vertices_by_compressed_priority(d);
-        let g_1_attr = self.attract.attractor_set(&g_1, region_owner, starting_set);
+        let starting_set = AttractionComputer::make_starting_set(game, starting_set);
+
+        crate::debug!("Starting vertices attractor: {:?}", starting_set.printable_vertices());
+
+        let g_1_attr = self.attract.attractor_set_bit(&g_1, region_owner, Cow::Borrowed(&starting_set));
         crate::debug!("H region: {} - {:?} - {:?}", d, g_1_attr.printable_vertices(), g_1.game_vertices.printable_vertices());
 
-        let mut h_game = g_1.create_subgame_bit(&g_1_attr);
+        let h_game = g_1.create_subgame_bit(&g_1_attr);
 
         // Full precision call
         crate::debug!("Full Precision: {d} - {:?}", h_game.game_vertices.printable_vertices());
+        let (region_even, region_odd) = self.zielonka(&h_game, precision_even, precision_odd);
+        crate::info!(d, ?region_owner, precision_even, precision_odd, "In 2");
 
-        // PROBLEM: The below assumes this is won by opponent, but what if we have two consecutive priorities aligned with us!
-        // solution: Use compressed priority attractors
-        let (region_even, region_odd) = self.zielonka(&mut h_game, precision_even, precision_odd);
         let opponent = region_owner.other();
-        let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
-        let o_extended_dominion = self.attract.attractor_set_bit(&g_1, opponent, Cow::Borrowed(&opponent_dominion));
+        let (opponent_dominion, _) = us_and_them(opponent, region_even, region_odd);
+        let mut o_extended_dominion = self.attract.attractor_set_bit(&g_1, opponent, Cow::Borrowed(&opponent_dominion));
 
-        let mut g_2 = g_1.create_subgame_bit(&o_extended_dominion);
+        let g_2 = g_1.create_subgame_bit(&o_extended_dominion);
 
         // Check if the opponent attracted from our winning region, in which case we need to recalculate
         // Otherwise we can skip the last half-precision call.
-        if o_extended_dominion != opponent_dominion {
+        // We can also skip if the remaining game to be explored is empty.
+        if o_extended_dominion != opponent_dominion && g_2.vertex_count() != 0 {
             // Remove the vertices which were attracted from our winning region, and expand the right side of our tree
-            let (opponent_result, _) = even_and_odd(opponent, &mut result_even, &mut result_odd);
+            let (mut even_out, mut odd_out) = self.zielonka(&g_2, new_p_even, new_p_odd);
+            // Combine with the opponent's dominions which we found in the first and second recursive calls
+            let (opponent_result, _) = us_and_them(opponent, &mut even_out, &mut odd_out);
             opponent_result.union_with(&o_extended_dominion);
-            let (even_out, odd_out) = self.zielonka(&mut g_2, new_p_even, new_p_odd);
-            result_even.union_with(&even_out);
-            result_odd.union_with(&odd_out);
-
-            (result_even, result_odd)
+            opponent_result.union_with(&opp);
+            
+            (even_out, odd_out)
         } else {
+            // Combine with the opponent's dominions which we found in the first and second recursive calls
+            o_extended_dominion.union_with(&opp);
             even_and_odd(region_owner, g_2.game_vertices, o_extended_dominion)
         }
     }
