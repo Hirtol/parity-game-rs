@@ -186,7 +186,7 @@ impl BenchCommand {
                     }
                     Qlz { tangles } => {
                         if *tangles {
-                            let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver::new(&parity_game);
+                            let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&parity_game);
                             timed_solve!(solver.run(), "Solved QLZ-tangle")
                         } else {
                             let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&parity_game);

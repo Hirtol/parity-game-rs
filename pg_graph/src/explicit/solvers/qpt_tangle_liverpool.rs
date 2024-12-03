@@ -7,7 +7,7 @@ use crate::{explicit::{
 }, Owner, Priority};
 use std::borrow::Cow;
 
-pub struct LiverpoolSolver<'a> {
+pub struct TLZSolver<'a> {
     pub iterations: usize,
     pub tangles: TangleManager,
     game: &'a ParityGame<u32>,
@@ -21,9 +21,9 @@ pub struct LiverpoolSolver<'a> {
     max_priority: Priority,
 }
 
-impl<'a> LiverpoolSolver<'a> {
+impl<'a> TLZSolver<'a> {
     pub fn new(game: &'a ParityGame<u32>) -> Self {
-        LiverpoolSolver {
+        TLZSolver {
             game,
             iterations: 0,
             attract: AttractionComputer::new(game.vertex_count()),
@@ -43,9 +43,7 @@ impl<'a> LiverpoolSolver<'a> {
 
         while current_game.vertex_count() != 0 {
             let n_vertices = current_game.vertex_count();
-            // We can ignore the original regions returned here by QLZ, as we will only ever receive dominions from
-            // our top level call.
-            let (mut even, odd, dominion) = self.zielonka(&current_game, &current_game, n_vertices, n_vertices);
+            let (even, odd, dominion) = self.zielonka(&current_game, &current_game, n_vertices, n_vertices);
             // If we encounter a dominion deep in the search tree we destroy said tree and restart after removing it from the game.
             // The algorithm will still be quasi-polynomial, as it is at worst a linear multiplier to the complexity
             if let Some(dominion) = dominion {
@@ -67,17 +65,10 @@ impl<'a> LiverpoolSolver<'a> {
                 self.max_priority = 0;
             } else {
                 // This pretty much never gets reached, usually you find a dominion through tangle learning.
-                // Due to the fact that we only return the winning region of the highest priority we need to do the dance below.
+                w_odd.union_with(&odd);
+                w_even.union_with(&even);
+                
                 tracing::warn!("Fallback QLZ tangle complete call");
-                match Owner::from_priority(current_game.priority_max()) {
-                    Owner::Even => {
-                        even.union_with(&w_even);
-                        w_odd.extend(even.zeroes());
-                    },
-                    Owner::Odd => {
-                        w_odd.union_with(&odd);
-                    }
-                };
                 break;
             }
         }
@@ -92,20 +83,17 @@ impl<'a> LiverpoolSolver<'a> {
         self.iterations += 1;
         if precision_odd == 0 {
             crate::debug!("End of precision; presumed won by player Even: {:?}", game.game_vertices.printable_vertices());
-            return (game.game_vertices.clone(), game.empty_vertex_set(), None)
+            return (game.game_vertices.clone(), VertexSet::new(), None)
         }
         if precision_even == 0 {
             crate::debug!("End of precision; presumed won by player Odd: {:?}", game.game_vertices.printable_vertices());
-            return (game.empty_vertex_set(), game.game_vertices.clone(), None)
+            return (VertexSet::new(), game.game_vertices.clone(), None)
         }
         if game.vertex_count() == 0 {
-            return (game.empty_vertex_set(), game.empty_vertex_set(), None)
+            return (VertexSet::new(), VertexSet::new(), None)
         }
 
         let d = game.priority_max();
-        if self.max_priority < d {
-            self.max_priority = d;
-        }
         let region_owner = Owner::from_priority(d);
 
         let (new_p_even, new_p_odd) = match region_owner {
@@ -130,19 +118,25 @@ impl<'a> LiverpoolSolver<'a> {
             return (region_even, region_odd, None)
         }
 
-        let (g_1, _) = us_and_them(region_owner, region_even, region_odd);
+        let (g_1, opp) = us_and_them(region_owner, region_even, region_odd);
         let g_1 = SubGame::from_vertex_set(game.parent, g_1);
+        // If 'our' region is empty, then we know there are no dominions up to precision_ours, and can presume it won by the opponent.
+        if g_1.vertex_count() == 0 {
+            let (e, o) = even_and_odd(region_owner, g_1.game_vertices, opp);
+            return (e, o, None)
+        }
+
         // We need to use a compressed priority starting set, or else the assumption that even and odd alternate is violated
         // This would cause problems in the full precision call below.
         let starting_set = g_1.vertices_by_compressed_priority(d);
         let starting_set = AttractionComputer::make_starting_set(game, starting_set);
-        
+
         crate::debug!("Starting vertices attractor: {:?}", starting_set.printable_vertices());
         // Reset the strategy for top vertices for better leak detection
         for v in starting_set.ones() {
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
-        
+
         let mut g_1_attr = self.attract.attractor_tangle_rec(&g_1, region_owner, Cow::Borrowed(&starting_set), &mut self.tangles, &mut self.strategy);
         crate::debug!("H region: {} - {:?} - {:?}", d, g_1_attr.printable_vertices(), g_1.game_vertices.printable_vertices());
 
@@ -177,25 +171,32 @@ impl<'a> LiverpoolSolver<'a> {
         if dom.is_some() {
             return (VertexSet::new(), VertexSet::new(), dom);
         }
-        
+        crate::info!(d, ?region_owner, precision_even, precision_odd, "In 2");
+
         let opponent = region_owner.other();
-        let (opponent_dominion, our_region) = us_and_them(opponent, region_even, region_odd);
-        let o_extended_dominion = self.attract.attractor_tangle_rec(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &mut self.tangles, &mut self.strategy);
+        let (opponent_dominion, _) = us_and_them(opponent, region_even, region_odd);
+        let mut o_extended_dominion = self.attract.attractor_tangle_rec(&g_1, opponent, Cow::Borrowed(&opponent_dominion), &mut self.tangles, &mut self.strategy);
 
         let g_2 = g_1.create_subgame_bit(&o_extended_dominion);
 
         // Check if the opponent attracted from our winning region, in which case we need to recalculate
         // Otherwise we can skip the last half-precision call.
-        if o_extended_dominion != opponent_dominion {
+        // We can also skip if the remaining game to be explored is empty.
+        if o_extended_dominion != opponent_dominion && g_2.vertex_count() != 0 {
             // Remove the vertices which were attracted from our winning region, and expand the right side of our tree
             let (mut even_out, mut odd_out, dom) = self.zielonka(root_game, &g_2, new_p_even, new_p_odd);
             if dom.is_some() {
                 return (VertexSet::new(), VertexSet::new(), dom);
             }
-            let (opponent_result, _) = even_and_odd(opponent, &mut even_out, &mut odd_out);
+            // Combine with the opponent's dominions which we found in the first and second recursive calls
+            let (opponent_result, _) = us_and_them(opponent, &mut even_out, &mut odd_out);
             opponent_result.union_with(&o_extended_dominion);
+            opponent_result.union_with(&opp);
+
             (even_out, odd_out, None)
         } else {
+            // Combine with the opponent's dominions which we found in the first and second recursive calls
+            o_extended_dominion.union_with(&opp);
             let (e, o) = even_and_odd(region_owner, g_2.game_vertices, o_extended_dominion);
             (e, o, None)
         }
@@ -228,7 +229,7 @@ fn even_and_odd<T>(us: Owner, ours: T, them: T) -> (T, T) {
 
 #[cfg(test)]
 pub mod test {
-    use crate::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver;
+    use crate::explicit::solvers::qpt_tangle_liverpool::TLZSolver;
     use crate::{tests, tests::load_example, Owner};
     use std::time::Instant;
     use tracing_test::traced_test;
@@ -239,7 +240,7 @@ pub mod test {
         for name in tests::examples_iter() {
             println!("Running test for: {name}...");
             let (game, compare) = tests::load_and_compare_example(&name);
-            let mut qpt_zielonka = LiverpoolSolver::new(&game);
+            let mut qpt_zielonka = TLZSolver::new(&game);
             let solution = qpt_zielonka.run();
             compare(solution);
             println!("{name} correct!")
@@ -250,7 +251,7 @@ pub mod test {
     #[traced_test]
     pub fn test_solve_basic_paper_example() {
         let (game, compare) = tests::load_and_compare_example("basic_paper_example.pg");
-        let mut solver = LiverpoolSolver::new(&game);
+        let mut solver = TLZSolver::new(&game);
 
         let solution = solver.run();
 
@@ -263,7 +264,7 @@ pub mod test {
     // #[traced_test]
     pub fn test_solve_two_counters() {
         let (game, compare) = tests::load_and_compare_example("two_counters_2.pg");
-        let mut solver = LiverpoolSolver::new(&game);
+        let mut solver = TLZSolver::new(&game);
 
         let solution = solver.run();
 
@@ -275,7 +276,7 @@ pub mod test {
     #[test]
     pub fn test_solve_tue_example() {
         let game = load_example("tue_example.pg");
-        let mut solver = LiverpoolSolver::new(&game);
+        let mut solver = TLZSolver::new(&game);
 
         let solution = solver.run().winners;
 
@@ -288,7 +289,7 @@ pub mod test {
     #[traced_test]
     pub fn test_solve_action_converter() {
         let game = load_example("ActionConverter.tlsf.ehoa.pg");
-        let mut solver = LiverpoolSolver::new(&game);
+        let mut solver = TLZSolver::new(&game);
 
         let now = Instant::now();
         let solution = solver.run().winners;

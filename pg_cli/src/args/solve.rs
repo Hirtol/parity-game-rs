@@ -195,7 +195,7 @@ impl SolveCommand {
                         }
                         ExplicitSolvers::Qlz {tangles} => {
                             if tangles {
-                                let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver::new(&parity_game);
+                                let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&parity_game);
 
                                 let out = timed_solve!(solver.run());
                                 tracing::info!(n = solver.iterations, "Solved with iterations");
@@ -348,7 +348,7 @@ impl SolveCommand {
                                 );
 
                                 if tangles {
-                                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::LiverpoolSolver::new(&rg_pg);
+                                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&rg_pg);
 
                                     let out = timed_solve!(solver.run());
                                     tracing::info!(n = solver.iterations, "Solved with iterations");
