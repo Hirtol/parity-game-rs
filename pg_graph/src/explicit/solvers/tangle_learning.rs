@@ -93,7 +93,7 @@ impl<'a> TangleSolver<'a, Vertex> {
                 strategy.as_mut_slice(),
             );
 
-            tracing::debug!(
+            crate::debug!(
                 priority = new_dominion.dominating_p,
                 size = full_dominion.count_ones(..),
                 "Found greater dominion"

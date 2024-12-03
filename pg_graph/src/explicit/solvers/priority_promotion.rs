@@ -49,7 +49,7 @@ impl<'a> PPSolver<'a, Vertex> {
 
             let dominion = self.search_dominion(&current_game, &mut region, d);
 
-            tracing::debug!(
+            crate::debug!(
                 priority = dominion.dominating_p,
                 size = dominion.vertices.count_ones(..),
                 "Found dominion"
