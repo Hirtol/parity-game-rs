@@ -29,8 +29,11 @@ impl<'a> LiverpoolSolver<'a> {
     // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
-        let (even, odd) = self.zielonka(&mut self.game.create_subgame([]), self.game.vertex_count(), self.game.vertex_count());
-        tracing::debug!(even=?even.count_ones(..), odd=?odd.count_ones(..), max=?Owner::from_priority(self.game.priority_max()), "Even counts");
+        let (_even, odd) = self.zielonka(
+            &self.game.create_subgame([]),
+            self.game.vertex_count(),
+            self.game.vertex_count()
+        );
 
         SolverOutput::from_winning(self.game.vertex_count(), &odd)
     }
