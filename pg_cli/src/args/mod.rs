@@ -13,6 +13,9 @@ pub mod testing;
 pub struct ClapArgs {
     #[clap(subcommand)]
     pub commands: SubCommands,
+    /// Use a simple trace format for piping the output to files.
+    #[clap(long, global = true)]
+    pub simple_trace: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]

@@ -20,7 +20,10 @@ fn main() -> eyre::Result<()> {
     let _profiler = dhat::Profiler::new_heap();
     let args = args::ClapArgs::parse();
 
-    trace::create_subscriber("DEBUG,pg_graph=DEBUG").init();
+    match args.simple_trace {
+        true => trace::create_simple_subscriber("DEBUG,pg_graph=DEBUG").init(),
+        false => trace::create_subscriber("DEBUG,pg_graph=DEBUG").init(),
+    }
 
     let now = std::time::Instant::now();
 
