@@ -1,3 +1,4 @@
+use crate::datatypes::IndexType;
 use crate::explicit::OptimisedGraph;
 use crate::{
     datatypes::Priority,
@@ -12,7 +13,6 @@ use fixedbitset::{
     specific::SubBitSet,
 };
 use itertools::Itertools;
-use petgraph::graph::IndexType;
 use soa_rs::Soars;
 use std::time::{Duration, Instant};
 use std::{

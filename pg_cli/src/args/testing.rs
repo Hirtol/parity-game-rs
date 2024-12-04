@@ -1,8 +1,8 @@
 use ahash::{HashMap, HashMapExt};
 use itertools::Itertools;
 use pg_graph::explicit::ParityGraph;
-use pg_graph::petgraph::prelude::NodeIndex;
 use pg_graph::symbolic::{SymbolicParityGame, BDD};
+use pg_graph::NodeIndex;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 

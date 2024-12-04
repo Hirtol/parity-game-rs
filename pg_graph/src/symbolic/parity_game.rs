@@ -4,7 +4,6 @@ use oxidd_core::{
     util::{OptBool, Subst},
     Manager, ManagerRef, WorkerManager,
 };
-use petgraph::prelude::EdgeRef;
 
 use crate::symbolic::helpers::SymbolicEncoder;
 use crate::{

@@ -7,7 +7,6 @@ use crate::{explicit::{
 }, Owner, Priority, Vertex};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
-use petgraph::graph::IndexType;
 use soa_rs::Soars;
 use std::borrow::Cow;
 

@@ -3,12 +3,7 @@ use oxidd_core::WorkerManager;
 
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;
 use crate::symbolic::sat::TruthAssignmentsIterator;
-use crate::{
-    explicit::solvers::SolverOutput,
-    symbolic,
-    symbolic::parity_game::SymbolicParityGame,
-    Owner,
-};
+use crate::{explicit::solvers::SolverOutput, symbolic, symbolic::parity_game::SymbolicParityGame, IndexType, Owner};
 
 pub struct SymbolicZielonkaSolver<'a, F: GeneralBooleanFunction> {
     pub recursive_calls: usize,

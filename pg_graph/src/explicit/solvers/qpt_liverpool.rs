@@ -82,7 +82,7 @@ impl<'a> LiverpoolSolver<'a> {
         if g_1.vertex_count() == 0 {
             return even_and_odd(region_owner, g_1.game_vertices, opp)
         }
-        
+
         // We need to use a compressed priority starting set, or else the assumption that even and odd alternate is violated
         // This would cause problems in the full precision call below.
         let starting_set = g_1.vertices_by_compressed_priority(d);
@@ -116,7 +116,7 @@ impl<'a> LiverpoolSolver<'a> {
             let (opponent_result, _) = us_and_them(opponent, &mut even_out, &mut odd_out);
             opponent_result.union_with(&o_extended_dominion);
             opponent_result.union_with(&opp);
-            
+
             (even_out, odd_out)
         } else {
             // Combine with the opponent's dominions which we found in the first and second recursive calls

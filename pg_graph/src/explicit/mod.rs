@@ -1,8 +1,8 @@
+use crate::datatypes::IndexType;
 use fixedbitset::sparse::SparseBitSetRef;
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
 pub use parity_game::*;
-use petgraph::graph::IndexType;
 
 pub mod parity_game;
 pub mod register_game;

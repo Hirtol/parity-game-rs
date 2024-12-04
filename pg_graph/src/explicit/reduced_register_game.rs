@@ -1,19 +1,14 @@
 //! See [ReducedRegisterGame]
 use crate::explicit::parity_game;
 use crate::explicit::register_game::GameRegisterVertex;
-use crate::{
-    datatypes::Priority,
-    explicit::{
-        register_tree::RegisterTree, ParityGame, ParityGraph, SubGame,
-        VertexId,
-    },
-    Owner,
-};
+use crate::{datatypes::Priority, explicit::{
+    register_tree::RegisterTree, ParityGame, ParityGraph, SubGame,
+    VertexId,
+}, IndexType, Owner};
 use ahash::HashSet;
 use ecow::{eco_vec, EcoVec};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
-use petgraph::graph::{IndexType, NodeIndex};
 pub use reg_v::RegisterVertex;
 use soa_rs::Soa;
 use std::{cmp::Ordering, collections::VecDeque};
@@ -227,23 +222,23 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         self.original_game.edge_count()
     }
 
-    fn vertices_index(&self) -> impl Iterator<Item = NodeIndex<u32>> + '_ {
-        (0..self.vertices.len()).map(NodeIndex::new)
+    fn vertices_index(&self) -> impl Iterator<Item = VertexId<u32>> + '_ {
+        (0..self.vertices.len()).map(VertexId::new)
     }
 
-    fn label(&self, vertex_id: NodeIndex<u32>) -> Option<&str> {
+    fn label(&self, vertex_id: VertexId<u32>) -> Option<&str> {
         None
     }
 
-    fn get_priority(&self, id: NodeIndex<u32>) -> Option<Priority> {
+    fn get_priority(&self, id: VertexId<u32>) -> Option<Priority> {
         self.vertices.priority().get(id.index()).copied()
     }
 
-    fn get_owner(&self, id: NodeIndex<u32>) -> Option<Owner> {
+    fn get_owner(&self, id: VertexId<u32>) -> Option<Owner> {
         self.vertices.owner().get(id.index()).copied()
     }
 
-    fn predecessors(&self, id: NodeIndex<u32>) -> impl Iterator<Item = NodeIndex<u32>> + '_ {
+    fn predecessors(&self, id: VertexId<u32>) -> impl Iterator<Item = VertexId<u32>> + '_ {
         let original_graph_id = self.vertices.original_graph_id()[id.index()];
         let original_v_priority = self.original_game.priority(original_graph_id);
         self.original_game.predecessors(original_graph_id).flat_map(move |v| {
@@ -264,7 +259,7 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         })
     }
 
-    fn create_subgame(&self, exclude: impl IntoIterator<Item = NodeIndex<u32>>) -> SubGame<u32, Self::Parent> {
+    fn create_subgame(&self, exclude: impl IntoIterator<Item = VertexId<u32>>) -> SubGame<u32, Self::Parent> {
         parity_game::create_subgame(self, exclude)
     }
 
@@ -280,16 +275,16 @@ impl<'a> ParityGraph<u32> for ReducedRegisterGame<'a> {
         self.vertices.priority().iter().unique().copied()
     }
 
-    fn has_edge(&self, from: NodeIndex<u32>, to: NodeIndex<u32>) -> bool {
+    fn has_edge(&self, from: VertexId<u32>, to: VertexId<u32>) -> bool {
         // This can be done more efficiently without constructing the edges every time... but not needed right now.
         self.edges(from).contains(&to)
     }
 
-    fn edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = NodeIndex<u32>> + '_ {
+    fn edges(&self, v: VertexId<u32>) -> impl Iterator<Item = VertexId<u32>> + '_ {
         self.grouped_edges(v).flatten()
     }
 
-    fn vertex_edge_count(&self, v: NodeIndex<u32>) -> usize {
+    fn vertex_edge_count(&self, v: VertexId<u32>) -> usize {
         self.original_game.vertex_edge_count(self.underlying_vertex_id(v)) * self.reg_quantity
     }
 
@@ -314,7 +309,7 @@ pub trait RegisterParityGraph<Ix: IndexType = u32>: ParityGraph<Ix> {
 
 impl<'a> RegisterParityGraph<u32> for ReducedRegisterGame<'a> {
     #[inline]
-    fn grouped_edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = impl Iterator<Item = NodeIndex<u32>> + '_> + '_ {
+    fn grouped_edges(&self, v: VertexId<u32>) -> impl Iterator<Item = impl Iterator<Item = VertexId<u32>> + '_> + '_ {
         self.original_game
             .edges(self.vertices.original_graph_id()[v.index()])
             .map(move |original| self.edges_for_root_vertex_rg(&self.vertices.register_state()[v.index()], original))
@@ -336,7 +331,7 @@ impl<'a> RegisterParityGraph<u32> for ReducedRegisterGame<'a> {
 
 impl<'a, Parent: RegisterParityGraph<u32>> RegisterParityGraph<u32> for SubGame<'a, u32, Parent> {
     #[inline]
-    fn grouped_edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = impl Iterator<Item = NodeIndex<u32>> + '_> + '_ {
+    fn grouped_edges(&self, v: VertexId<u32>) -> impl Iterator<Item = impl Iterator<Item = VertexId<u32>> + '_> + '_ {
         self.parent.grouped_edges(v).flat_map(|r_itr| {
             let mut itr = r_itr.filter(|rv| self.game_vertices.contains(rv.index())).peekable();
 
@@ -366,7 +361,7 @@ impl<'a, Parent: RegisterParityGraph<u32>> RegisterParityGraph<u32> for SubGame<
 
 impl RegisterParityGraph<u32> for ParityGame<u32, GameRegisterVertex> {
     #[inline]
-    fn grouped_edges(&self, v: NodeIndex<u32>) -> impl Iterator<Item = impl Iterator<Item = NodeIndex<u32>> + '_> + '_ {
+    fn grouped_edges(&self, v: VertexId<u32>) -> impl Iterator<Item = impl Iterator<Item = VertexId<u32>> + '_> + '_ {
         std::iter::once(self.edges(v))
     }
 
@@ -455,12 +450,8 @@ pub fn can_be_next_registers(
     true
 }
 pub mod reg_v {
-    use crate::{
-        explicit::{reduced_register_game::Rank, VertexId},
-        Owner, ParityVertexSoa, Priority,
-    };
+    use crate::{explicit::{reduced_register_game::Rank, VertexId}, IndexType, Owner, ParityVertexSoa, Priority};
     use ecow::EcoVec;
-    use petgraph::adj::IndexType;
     use soa_rs::{Soa, Soars};
 
     #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq, Soars)]

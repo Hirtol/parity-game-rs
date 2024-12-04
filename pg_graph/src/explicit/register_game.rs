@@ -1,7 +1,7 @@
 //! See [RegisterGame]
+use crate::datatypes::IndexType;
 use crate::{datatypes::Priority, explicit::{ParityGame, ParityGraph, VertexId}, visualize::VisualVertex, Owner, ParityVertexSoa};
 use ecow::{eco_vec, EcoVec};
-use petgraph::graph::IndexType;
 use pg_parser::PgBuilder;
 use soa_rs::{Soa, Soars};
 use std::{cmp::Ordering, collections::VecDeque, fmt::Write};
@@ -489,7 +489,7 @@ impl<'a> RegisterGame<'a> {
                 priority: v.priority as usize,
                 owner: v.owner as u8,
                 outgoing_edges: edges.iter().copied().map(VertexId::index).collect(),
-                label: self.original_game.label(VertexId::from(v.original_graph_id)),
+                label: self.original_game.label(v.original_graph_id),
             })?;
         }
 

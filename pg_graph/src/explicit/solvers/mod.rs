@@ -1,3 +1,4 @@
+use crate::datatypes::IndexType;
 use crate::explicit::solvers::tangle_learning::TangleManager;
 use crate::explicit::{BitsetExtensions, SubGame, VertexSet};
 use crate::{explicit::{
@@ -5,7 +6,6 @@ use crate::{explicit::{
     register_game::RegisterGame,
     ParityGraph, VertexId,
 }, Owner, Priority};
-use petgraph::graph::IndexType;
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::num::NonZeroU32;

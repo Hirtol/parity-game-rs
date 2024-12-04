@@ -4,7 +4,7 @@ use crate::explicit::{BitsetExtensions, OptimisedGraph, SubGame, VertexId, Verte
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
-}, Owner, Priority};
+}, IndexType, Owner, Priority};
 use itertools::Itertools;
 use std::borrow::Cow;
 

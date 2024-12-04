@@ -1,12 +1,33 @@
 use crate::explicit::VertexId;
-use petgraph::graph::IndexType;
 use soa_rs::{Soa, Soars};
+use std::hash::Hash;
 
 pub type Priority = u32;
 
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
+pub struct NodeIndex<Ix = u32>(Ix);
+
+impl<Ix: IndexType> NodeIndex<Ix> {
+    #[inline]
+    pub fn new(root: usize) -> Self {
+        Self(Ix::from_index(root))
+    }
+
+    #[inline]
+    pub fn index(self) -> usize {
+        self.0.index()
+    }
+}
+
+impl<Ix: IndexType> From<Ix> for NodeIndex<Ix> {
+    fn from(value: Ix) -> Self {
+        Self(value)
+    }
+}
+
 /// Represents a particular player in the parity game.
 #[repr(u8)]
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Owner {
     Even = 0x0,
     Odd = 0x1,
@@ -80,7 +101,8 @@ pub trait ParityVertexSoa<Ix> {
     fn get_owner(&self, idx: VertexId<Ix>) -> Option<Owner>;
 }
 
-#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, Soars)]
+#[derive(Debug, Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq, Soars, serde::Deserialize, serde::Serialize)]
+#[soa_derive(include(Ref), serde::Serialize)]
 pub struct Vertex {
     pub priority: Priority,
     pub owner: Owner,
@@ -111,3 +133,25 @@ impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<Vertex> {
         self.owner().get(idx.index()).copied()
     }
 }
+
+pub trait IndexType: Copy + PartialEq + PartialOrd + Hash + Default + 'static {
+    fn index(&self) -> usize;
+    fn from_index(index: usize) -> Self;
+}
+
+macro_rules! index {
+    ($($idx_type:ty),*) => {
+        $(
+        impl IndexType for $idx_type {
+            fn index(&self) -> usize {
+                *self as usize
+            }
+
+            fn from_index(index: usize) -> Self {
+                index as Self
+            }
+        })*
+    };
+}
+
+index!(u8, u16, u32, usize);

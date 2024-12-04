@@ -4,7 +4,7 @@ use crate::explicit::{BitsetExtensions, OptimisedGraph, SubGame, VertexId, Verte
 use crate::{explicit::{
     solvers::{AttractionComputer, SolverOutput},
     ParityGame, ParityGraph,
-}, Owner, Priority};
+}, IndexType, Owner, Priority};
 use std::borrow::Cow;
 
 pub struct TLZSolver<'a> {
@@ -67,7 +67,7 @@ impl<'a> TLZSolver<'a> {
                 // This pretty much never gets reached, usually you find a dominion through tangle learning.
                 w_odd.union_with(&odd);
                 w_even.union_with(&even);
-                
+
                 tracing::warn!("Fallback QLZ tangle complete call");
                 break;
             }

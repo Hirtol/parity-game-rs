@@ -1,9 +1,9 @@
 use std::fmt::{Debug, Display, Write};
 
+use crate::datatypes::IndexType;
 use oxidd_core::function::Function;
 use oxidd_core::{Edge, HasLevel, Manager};
 use oxidd_dump::dot::DotStyle;
-use petgraph::graph::IndexType;
 
 use crate::explicit::ParityGraph;
 use crate::symbolic::oxidd_extensions::GeneralBooleanFunction;

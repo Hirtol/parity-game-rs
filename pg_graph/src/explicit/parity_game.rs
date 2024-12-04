@@ -1,13 +1,8 @@
-use crate::{
-    datatypes::Priority,
-    explicit::{BitsetExtensions, VertexSet},
-    visualize::VisualVertex,
-    Owner, ParityVertexSoa, Vertex,
-};
+use crate::{datatypes::Priority, explicit::{BitsetExtensions, VertexSet}, visualize::VisualVertex, IndexType, NodeIndex, Owner, ParityVertexSoa, Vertex};
 use fixedbitset::FixedBitSet;
 use itertools::Itertools;
-use petgraph::{adj::IndexType, graph::NodeIndex};
 use pg_parser::PgBuilder;
+use serde::Serialize;
 use soa_rs::{Soa, Soars};
 use std::{
     collections::HashMap,
@@ -43,7 +38,7 @@ pub trait ParityGraph<Ix: IndexType = u32>: Sized {
 
     #[inline(always)]
     fn vertices_index_by_priority(&self, priority: Priority) -> impl Iterator<Item = NodeIndex<Ix>> + '_ {
-        self.vertices_index().filter(move |&v| self.priority(v) == priority)
+        self.vertices_index().filter(move |v| self.priority(*v) == priority)
     }
 
     /// List all vertices with the given priority, and any vertices with a lower priority with the same parity, so long as
@@ -304,6 +299,7 @@ impl<'a, Ix: IndexType> PgBuilder<'a> for ParityGameBuilder<Vertex, Ix> {
     }
 }
 
+#[derive(serde::Deserialize)]
 pub struct ParityGame<Ix: IndexType = u32, V: Soars = Vertex> {
     pub vertices: Soa<V>,
     /// Stored in CSR format, where the last element of edge_indexes is not an actual vertex, thus it is always safe to
@@ -681,5 +677,27 @@ impl<'a, Ix: IndexType, Parent: OptimisedGraph<Ix>> OptimisedGraph<Ix> for SubGa
     #[inline(always)]
     fn part_of_graph(&self, v_id: VertexId<Ix>) -> bool {
         self.game_vertices.contains(v_id.index())
+    }
+}
+
+// Serialize impl as the derive doesn't add the proper trait bounds.
+impl<Ix: IndexType, V: Soars> serde::Serialize for ParityGame<Ix, V>
+where
+    Ix: serde::Serialize,
+    V: serde::Serialize,
+    for<'a> <V as Soars>::Ref<'a>: Serialize,
+{
+    fn serialize<__S>(&self, __serializer: __S) -> serde::__private::Result<__S::Ok, __S::Error>
+    where
+        __S: serde::Serializer,
+    {
+        let mut __serde_state = serde::Serializer::serialize_struct(__serializer, "ParityGame", 6)?;
+        serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "vertices", &self.vertices)?;
+        serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "edge_indexes", &self.edge_indexes)?;
+        serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "edges", &self.edges)?;
+        serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "inverted_indexes", &self.inverted_indexes)?;
+        serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "inverted_edges", &self.inverted_edges)?;
+        serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "labels", &self.labels)?;
+        serde::ser::SerializeStruct::end(__serde_state)
     }
 }

@@ -3,7 +3,6 @@
 use crate::explicit::{ParityGame, ParityGameBuilder, ParityGraph};
 pub use datatypes::*;
 use eyre::ContextCompat;
-pub use petgraph;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufReader, Read};
