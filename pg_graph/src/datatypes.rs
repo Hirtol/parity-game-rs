@@ -1,5 +1,6 @@
 use crate::explicit::VertexId;
 use soa_rs::{Soa, Soars};
+use std::fmt::Debug;
 use std::hash::Hash;
 
 pub type Priority = u32;
@@ -134,7 +135,7 @@ impl<Ix: IndexType> ParityVertexSoa<Ix> for Soa<Vertex> {
     }
 }
 
-pub trait IndexType: Copy + PartialEq + PartialOrd + Hash + Default + 'static {
+pub trait IndexType: Copy + PartialEq + PartialOrd + Hash + Default + 'static + Debug {
     fn index(&self) -> usize;
     fn from_index(index: usize) -> Self;
 }
