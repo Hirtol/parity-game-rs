@@ -64,6 +64,7 @@ pub fn create_simple_subscriber(default_directives: &str) -> impl Subscriber {
     let format = tracing_subscriber::fmt::format()
         .with_source_location(false)
         .with_file(false)
+        .with_ansi(false)
         .with_timer(Uptime::default());
 
     tracing_subscriber::registry()

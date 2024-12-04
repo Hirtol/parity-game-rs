@@ -1,8 +1,10 @@
-use std::path::PathBuf;
+use std::{
+    fmt::{Formatter, Write},
+    path::PathBuf,
+};
 
-use pg_graph::explicit::reduced_register_game::ReducedRegisterGame;
 use pg_graph::{
-    explicit::{register_game::RegisterGame, ParityGame, ParityGraph},
+    explicit::{reduced_register_game::ReducedRegisterGame, register_game::RegisterGame, ParityGame, ParityGraph},
     symbolic::{
         register_game::SymbolicRegisterGame,
         register_game_one_hot::OneHotRegisterGame,
@@ -29,7 +31,7 @@ pub struct SolveCommand {
     #[clap(short, global = true)]
     register_game_k: Option<u32>,
     /// The controller of the game.
-    /// 
+    ///
     /// Defaults to `Even`.
     #[clap(short, global = true, value_enum, default_value_t)]
     controller: ClapOwner,
@@ -96,14 +98,14 @@ pub enum RegisterReductionType {
 pub enum ClapOwner {
     #[default]
     Even,
-    Odd
+    Odd,
 }
 
 impl From<ClapOwner> for Owner {
     fn from(value: ClapOwner) -> Self {
         match value {
             ClapOwner::Even => Owner::Even,
-            ClapOwner::Odd => Owner::Odd
+            ClapOwner::Odd => Owner::Odd,
         }
     }
 }
@@ -129,7 +131,32 @@ pub enum ExplicitSolvers {
     /// Use the Priority Promotion algorithm
     PP,
     /// Use Tangle Learning
-    TL
+    TL,
+}
+
+impl std::fmt::Display for ExplicitSolvers {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExplicitSolvers::Spm => f.write_str("spm"),
+            ExplicitSolvers::Zielonka => f.write_str("zielonka"),
+            ExplicitSolvers::QZielonka { tangles } => {
+                if *tangles {
+                    f.write_str("qwzt")
+                } else {
+                    f.write_str("qwz")
+                }
+            }
+            ExplicitSolvers::Qlz { tangles } => {
+                if *tangles {
+                    f.write_str("qlzt")
+                } else {
+                    f.write_str("qlz")
+                }
+            }
+            ExplicitSolvers::PP => f.write_str("pp"),
+            ExplicitSolvers::TL => f.write_str("tl"),
+        }
+    }
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -178,51 +205,62 @@ impl SolveCommand {
                             tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                             out.winners
                         }
-                        ExplicitSolvers::QZielonka {tangles} => {
+                        ExplicitSolvers::QZielonka { tangles } => {
                             if tangles {
-                                let mut solver = pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&parity_game);
+                                let mut solver =
+                                    pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&parity_game);
 
                                 let out = timed_solve!(solver.run());
                                 tracing::info!(n = solver.iterations, "Solved with iterations");
                                 out.winners
                             } else {
-                                let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&parity_game);
+                                let mut solver =
+                                    pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&parity_game);
 
                                 let out = timed_solve!(solver.run());
                                 tracing::info!(n = solver.iterations, "Solved with iterations");
                                 out.winners
                             }
                         }
-                        ExplicitSolvers::Qlz {tangles} => {
+                        ExplicitSolvers::Qlz { tangles } => {
                             if tangles {
-                                let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&parity_game);
+                                let mut solver =
+                                    pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&parity_game);
 
                                 let out = timed_solve!(solver.run());
                                 tracing::info!(n = solver.iterations, "Solved with iterations");
                                 out.winners
                             } else {
-                                let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&parity_game);
-    
+                                let mut solver =
+                                    pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&parity_game);
+
                                 let out = timed_solve!(solver.run());
                                 tracing::info!(n = solver.iterations, "Solved with iterations");
                                 out.winners
                             }
                         }
                         ExplicitSolvers::PP => {
-                            let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&parity_game);
+                            let mut solver =
+                                pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&parity_game);
 
                             let out = timed_solve!(solver.run());
                             tracing::info!(n = solver.promotions, "Solved with promotions");
                             out.winners
                         }
                         ExplicitSolvers::TL => {
-                            let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&parity_game);
+                            let mut solver =
+                                pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&parity_game);
 
                             let out = timed_solve!(solver.run());
-                            tracing::info!(tangles = solver.tangles.tangles_found, dominions = solver.tangles.dominions_found, iterations = solver.iterations, "Solved");
+                            tracing::info!(
+                                tangles = solver.tangles.tangles_found,
+                                dominions = solver.tangles.dominions_found,
+                                iterations = solver.iterations,
+                                "Solved"
+                            );
                             out.winners
                         }
-                    }
+                    },
                     Some(k) => {
                         let k = k as u8;
 
@@ -252,7 +290,7 @@ impl SolveCommand {
                                     pg_graph::explicit::solvers::small_progress::SmallProgressSolver::new(&rg_pg);
 
                                 rg.project_winners_original(&timed_solve!(solver.run()).winners)
-                            },
+                            }
                             ExplicitSolvers::PP => {
                                 // PP can't handle the reduced game properly (as it needs to handle the controller vertices)
                                 // So we construct the full game instead.
@@ -275,9 +313,9 @@ impl SolveCommand {
                                 let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&rg_pg);
                                 let out = timed_solve!(solver.run());
                                 tracing::info!(n = solver.promotions, "Solved with promotions");
-                                
+
                                 rg.project_winners_original(&out.winners)
-                            },
+                            }
                             ExplicitSolvers::TL => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
@@ -295,13 +333,19 @@ impl SolveCommand {
                                     "Converted from parity game to register game"
                                 );
 
-                                let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&rg_pg);
+                                let mut solver =
+                                    pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&rg_pg);
                                 let out = timed_solve!(solver.run());
-                                tracing::info!(tangles = solver.tangles.tangles_found, dominions = solver.tangles.dominions_found, iterations = solver.iterations, "Solved");
+                                tracing::info!(
+                                    tangles = solver.tangles.tangles_found,
+                                    dominions = solver.tangles.dominions_found,
+                                    iterations = solver.iterations,
+                                    "Solved"
+                                );
 
                                 rg.project_winners_original(&out.winners)
-                            },
-                            ExplicitSolvers::QZielonka {tangles} => {
+                            }
+                            ExplicitSolvers::QZielonka { tangles } => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                                     "Constructed Register Game"
@@ -316,22 +360,24 @@ impl SolveCommand {
                                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                                     "Converted from parity game to register game"
                                 );
-                                
+
                                 if tangles {
-                                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&rg_pg);
+                                    let mut solver =
+                                        pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&rg_pg);
 
                                     let out = timed_solve!(solver.run());
                                     tracing::info!(n = solver.iterations, "Solved with iterations");
                                     rg.project_winners_original(&out.winners)
                                 } else {
-                                    let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+                                    let mut solver =
+                                        pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
 
                                     let out = timed_solve!(solver.run());
                                     tracing::info!(n = solver.iterations, "Solved with iterations");
                                     rg.project_winners_original(&out.winners)
                                 }
                             }
-                            ExplicitSolvers::Qlz {tangles} => {
+                            ExplicitSolvers::Qlz { tangles } => {
                                 let rg = timed_solve!(
                                     RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
                                     "Constructed Register Game"
@@ -348,13 +394,15 @@ impl SolveCommand {
                                 );
 
                                 if tangles {
-                                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&rg_pg);
+                                    let mut solver =
+                                        pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&rg_pg);
 
                                     let out = timed_solve!(solver.run());
                                     tracing::info!(n = solver.iterations, "Solved with iterations");
                                     rg.project_winners_original(&out.winners)
                                 } else {
-                                    let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&rg_pg);
+                                    let mut solver =
+                                        pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&rg_pg);
 
                                     let out = timed_solve!(solver.run());
                                     tracing::info!(n = solver.iterations, "Solved with iterations");
@@ -377,7 +425,8 @@ impl SolveCommand {
                                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                                     "Converted from parity game to register game"
                                 );
-                                let mut solver = pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(&rg_pg, &rg);
+                                let mut solver =
+                                    pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(&rg_pg, &rg);
 
                                 let solution = timed_solve!(solver.run());
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
@@ -385,7 +434,11 @@ impl SolveCommand {
                             }
                             ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::Reduced => {
                                 let rg = timed_solve!(
-                                    ReducedRegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
+                                    ReducedRegisterGame::construct_2021_reduced(
+                                        &parity_game,
+                                        k,
+                                        self.controller.into()
+                                    ),
                                     "Constructed Reduced Register Game"
                                 );
 
@@ -398,7 +451,8 @@ impl SolveCommand {
                                     ratio = rg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                                     "Converted from parity game to register game"
                                 );
-                                let mut solver = pg_graph::explicit::solvers::fully_reduced_reg_zielonka::ZielonkaSolver::new(&rg);
+                                let mut solver =
+                                    pg_graph::explicit::solvers::fully_reduced_reg_zielonka::ZielonkaSolver::new(&rg);
 
                                 let solution = timed_solve!(solver.run());
                                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
@@ -469,7 +523,6 @@ impl SolveCommand {
                     )?;
                     symbolic_game.gc();
                     tracing::debug!(nodes = symbolic_game.bdd_node_count(), "Created symbolic game");
-                    
 
                     let solution = match solver {
                         SymbolicSolvers::Zielonka => {
@@ -557,26 +610,31 @@ impl SolveCommand {
         Ok(())
     }
 
-    fn run_srg(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8, controller: Owner) -> eyre::Result<Vec<Owner>> {
+    fn run_srg(
+        parity_game: &ParityGame,
+        solver: &SymbolicSolvers,
+        k: u8,
+        controller: Owner,
+    ) -> eyre::Result<Vec<Owner>> {
         let register_game = timed_solve!(
-                                SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, controller),
-                                "Constructed Register Game"
-                            )?;
+            SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, controller),
+            "Constructed Register Game"
+        )?;
         let game_to_solve = register_game.to_symbolic_parity_game()?;
         game_to_solve.gc();
         tracing::debug!(
-                                from_vertex = parity_game.vertex_count(),
-                                rg_vertex = game_to_solve.vertex_count(),
-                                rg_bdd_nodes = register_game.bdd_node_count(),
-                                ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
-                                "Converted from parity game to symbolic register game"
-                            );
+            from_vertex = parity_game.vertex_count(),
+            rg_vertex = game_to_solve.vertex_count(),
+            rg_bdd_nodes = register_game.bdd_node_count(),
+            ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
+            "Converted from parity game to symbolic register game"
+        );
         #[cfg(not(feature = "dhat-heap"))]
         tracing::debug!("Current memory usage: {} MB", crate::PEAK_ALLOC.current_usage_as_mb());
         let (w_even, w_odd) = match solver {
             SymbolicSolvers::Zielonka => {
                 let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);
-                
+
                 let solution = timed_solve!(solver.run_symbolic());
                 tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
                 solution
@@ -592,7 +650,12 @@ impl SolveCommand {
         Ok(winners)
     }
 
-    fn run_srg_one_hot(parity_game: &ParityGame, solver: &SymbolicSolvers, k: u8, controller: Owner) -> eyre::Result<Vec<Owner>> {
+    fn run_srg_one_hot(
+        parity_game: &ParityGame,
+        solver: &SymbolicSolvers,
+        k: u8,
+        controller: Owner,
+    ) -> eyre::Result<Vec<Owner>> {
         let register_game = timed_solve!(
             OneHotRegisterGame::<BDD>::from_symbolic(&parity_game, k, controller),
             "Constructed Register Game"

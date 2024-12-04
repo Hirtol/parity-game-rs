@@ -29,6 +29,8 @@ fixedbitset = {git = "https://github.com/Hirtol/fixedbitset"}
 tracing-test = "0.2.5"
 bzip2 = "0.4.4"
 serde = { version = "1", features = ["derive"] }
+bitcode = { version = "0.6.3", features = ["serde"] }
+
 
 oxidd = { git = "https://github.com/Hirtol/oxidd", default-features = false, features = ["manager-pointer", "bdd", "bcdd", "mtbdd", "zbdd", "multi-threading", "apply-cache-direct-mapped"] }
 oxidd-rules-bdd = { git = "https://github.com/Hirtol/oxidd" }

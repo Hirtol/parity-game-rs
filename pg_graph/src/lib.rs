@@ -16,20 +16,28 @@ pub mod visualize;
 
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn load_parity_game(pg_path: impl AsRef<Path> + Debug) -> eyre::Result<crate::explicit::ParityGame> {
-    let txt = if pg_path.as_ref().extension().context("No extension")?.to_string_lossy() == "bz2" {
-        let mut data = bzip2::read::BzDecoder::new(BufReader::new(File::open(pg_path)?));
-        let mut output = String::new();
-        data.read_to_string(&mut output)?;
-        output
-    } else {
-        std::fs::read_to_string(pg_path)?
-    };
-    let mut builder = ParityGameBuilder::new();
-    pg_parser::parse_pg(&mut txt.as_str(), &mut builder).map_err(|e| eyre::eyre!(e))?;
-    let parity_game = builder.build();
-    tracing::info!(size = parity_game.vertex_count(), edges = parity_game.edge_count(), "Loaded parity game");
+    match &*pg_path.as_ref().extension().context("No extension")?.to_string_lossy() {
+        "pgrs" => {
+            // Try to read our custom format
+            Ok(bitcode::deserialize(&std::fs::read(pg_path)?)?)
+        },
+        ext => {
+            let txt = if ext == "bz2" {
+                let mut data = bzip2::read::BzDecoder::new(BufReader::new(File::open(pg_path)?));
+                let mut output = String::new();
+                data.read_to_string(&mut output)?;
+                output
+            } else {
+                std::fs::read_to_string(pg_path)?
+            };
+            let mut builder = ParityGameBuilder::new();
+            pg_parser::parse_pg(&mut txt.as_str(), &mut builder).map_err(|e| eyre::eyre!(e))?;
+            let parity_game = builder.build();
+            tracing::info!(size = parity_game.vertex_count(), edges = parity_game.edge_count(), "Loaded parity game");
 
-    Ok(parity_game)
+            Ok(parity_game)
+        }
+    }
 }
 
 pub fn load_example(example: impl AsRef<Path>) -> ParityGame {

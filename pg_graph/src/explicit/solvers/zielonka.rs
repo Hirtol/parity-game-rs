@@ -30,7 +30,7 @@ impl<'a> ZielonkaSolver<'a> {
 
     fn zielonka<T: ParityGraph<u32>>(&mut self, game: &T) -> (VertexSet, VertexSet) {
         self.recursive_calls += 1;
-        // If all the vertices are ignord
+        // If all the vertices are ignored
         if game.vertex_count() == 0 {
             (VertexSet::default(), VertexSet::default())
         } else {
