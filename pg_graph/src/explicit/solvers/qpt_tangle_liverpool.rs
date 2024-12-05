@@ -56,7 +56,7 @@ impl<'a> TLZSolver<'a> {
                     &mut self.strategy,
                 );
 
-                crate::debug!("Found full dominion of size: {}, restarting", full_dominion.count_ones(..));
+                crate::debug!("Found full dominion of size: {}, restarting {:?}", full_dominion.count_ones(..), full_dominion.printable_vertices());
 
                 current_game.shrink_subgame(&full_dominion);
                 self.tangles.intersect_tangles(&current_game);
@@ -134,6 +134,7 @@ impl<'a> TLZSolver<'a> {
         crate::debug!("Starting vertices attractor: {:?}", starting_set.printable_vertices());
         // Reset the strategy for top vertices for better leak detection
         for v in starting_set.ones() {
+            // self.strategy.fill(VertexId::new(NO_STRATEGY as usize));
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
 
@@ -142,8 +143,10 @@ impl<'a> TLZSolver<'a> {
 
         // ** Try extract tangles **
         if !self.tangles.any_leaks_in_region(&g_1, d, &g_1_attr, &starting_set, &self.strategy) {
-            // We know it's globally closed if this holds, no need to find tangles.
-            if d == self.max_priority {
+            // We know it's globally closed and all plays are guaranteed to win if this holds, no need to find tangles.
+            // In base TL we only need the check for d == self.max_priority, but we're not guaranteed an alpha-maximal decomposition of the game here, so
+            // we need the additional check to ensure that it is truly globally closed. Check pgsolver/elevatorverification(-u,_3).gm.bz2 for an example of such a violation.
+            if d == self.max_priority && !self.tangles.any_leaks_in_region(root_game, d, &g_1_attr, &starting_set, &self.strategy) {
                 self.tangles.dominions_found += 1;
                 let dom = Some(Dominion {
                     dominating_p: d,

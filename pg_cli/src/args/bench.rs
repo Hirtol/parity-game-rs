@@ -109,7 +109,7 @@ macro_rules! timed_solve {
 }
 
 impl BenchCommand {
-    #[tracing::instrument(name="Benchmark Register Games", skip(self), fields(path=?self.benchmark_games))]
+    #[tracing::instrument(name="Benchmark Games", skip(self))]
     pub fn run(self) -> eyre::Result<()> {
         let games = std::fs::read_dir(&self.benchmark_games)?
             .flatten()
@@ -182,10 +182,10 @@ impl BenchCommand {
         use crate::args::solve::ExplicitSolvers::*;
         let algos = [Zielonka, PP, TL, Qlz { tangles: true }, Qlz { tangles: false }];
 
+        tracing::info!(?game, "Loading next parity game");
         let parity_game = pg_graph::load_parity_game(game)?;
         // Serialize the parity game for faster loading
         let temp_pg = tmp_dir.join(game.with_extension("pgrs").file_name().unwrap());
-        tracing::info!(?temp_pg, "Trying to write");
         std::fs::write(&temp_pg, bitcode::serialize(&parity_game)?)?;
 
         let parity_game_states = parity_game.vertex_count();
