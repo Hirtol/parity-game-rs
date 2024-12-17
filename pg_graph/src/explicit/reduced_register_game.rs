@@ -370,7 +370,9 @@ impl RegisterParityGraph<u32> for ParityGame<u32, GameRegisterVertex> {
         register_v: VertexId<u32>,
         root_vertex: VertexId<u32>,
     ) -> impl Iterator<Item = VertexId<u32>> + '_ {
-        self.edges(register_v).filter(move |v| self.vertices.original_v()[v.index()] == root_vertex)
+        self.edges(register_v)
+            .skip_while(move |v| self.vertices.original_v()[v.index()] != root_vertex)
+            .take_while(move |v| self.vertices.original_v()[v.index()] == root_vertex)
     }
 
     #[inline(always)]
