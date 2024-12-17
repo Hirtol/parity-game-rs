@@ -1,8 +1,4 @@
-use std::{
-    fmt::{Formatter, Write},
-    path::PathBuf,
-};
-
+use eyre::Context;
 use pg_graph::{
     explicit::{reduced_register_game::ReducedRegisterGame, register_game::RegisterGame, ParityGame, ParityGraph},
     symbolic::{
@@ -16,6 +12,11 @@ use pg_graph::{
     visualize::DotWriter,
     Owner,
 };
+use std::{
+    fmt::{Formatter, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 
 #[derive(clap::Args, Debug)]
 pub struct SolveCommand {
@@ -26,10 +27,9 @@ pub struct SolveCommand {
     /// Whether to first convert the given game into an explicit expanded `k`-register game.
     ///
     /// Creates a `k`-register-index game, upper bound for valid results is `1 + log(n)`
-    /// Provide `k = 0` to use the upper-bound k for correct results.
-    /// Default assumes `k = 1 + log(n)`, where `n` is the amount of vertices in the parity game.
+    /// If left empty the parametrised form of Lehtinen's algorithm will be used to solve the game correctly.
     #[clap(short, global = true)]
-    register_game_k: Option<u32>,
+    register_game_k: Option<RegisterGameIndex>,
     /// The controller of the game.
     ///
     /// Defaults to `Even`.
@@ -42,6 +42,33 @@ pub struct SolveCommand {
     /// Whether to print which vertices are won by which player.
     #[clap(short, global = true)]
     print_solution: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RegisterGameIndex {
+    /// Create a register game with the given `k`
+    Number(u32),
+    /// Run the parametrised form of Lehtinen's algorithm, and report the discovered Register index
+    Parametrised,
+}
+
+impl FromStr for RegisterGameIndex {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<u32>()
+            .map(Self::Number)
+            .context("Could not parse register index")
+            .or_else(|_| {
+                if s == "param" {
+                    Ok(Self::Parametrised)
+                } else {
+                    Err(eyre::eyre!(
+                        "Either provide a register-index as a number, or 'param' to run the parametrised version"
+                    ))
+                }
+            })
+    }
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -62,13 +89,6 @@ pub struct ExplicitSolveCommand {
 
 #[derive(clap::Args, Debug)]
 pub struct SymbolicSolveCommand {
-    /// The type of register game instantiation to use.
-    ///
-    /// Using `Explicit` uses the naive expansion algorithm and subsequently converts that to a symbolic parity game.
-    ///
-    /// Using `Symbolic` directly constructs the symbolic register game, and converts that to a symbolic parity game.
-    #[clap(short = 't', global = true, value_enum, default_value_t)]
-    register_game_type: RegisterGameType,
     #[clap(short = 'o', global = true, default_value = "false")]
     one_hot: bool,
     /// Which solver to use, by default will use Zielonka
@@ -83,7 +103,7 @@ pub enum RegisterGameType {
     Symbolic,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Default, PartialEq)]
+#[derive(clap::ValueEnum, Debug, Clone, Default, PartialEq, Copy)]
 pub enum RegisterReductionType {
     #[default]
     /// No reduction is done, the full state-space is explored with all vertices and edges created in a game graph
@@ -94,7 +114,7 @@ pub enum RegisterReductionType {
     Reduced,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Default)]
+#[derive(clap::ValueEnum, Debug, Clone, Default, Copy)]
 pub enum ClapOwner {
     #[default]
     Even,
@@ -261,300 +281,45 @@ impl SolveCommand {
                             out.winners
                         }
                     },
-                    Some(k) => {
-                        let k = k as u8;
+                    Some(k) => match k {
+                        RegisterGameIndex::Number(k) => Self::run_erg(
+                            &parity_game,
+                            &solver,
+                            k as u8,
+                            &explicit.reduced,
+                            self.controller.into(),
+                        )?,
+                        RegisterGameIndex::Parametrised => {
+                            tracing::debug!("Running parametrised Lehtinen");
+                            let max_k = RegisterGame::max_register_index(&parity_game);
+                            let mut output = None;
 
-                        tracing::debug!(k, "Constructing with register index");
+                            timed_solve! {
+                                for i in 0..max_k {
+                                    tracing::debug!(k=i, owner=?Owner::Even, "Constructing with register index");
+                                    let even_sol = Self::run_erg(&parity_game, &solver, i, &explicit.reduced, Owner::Even)?;
+                                    tracing::debug!(k=i, owner=?Owner::Odd, "Constructing with register index");
+                                    let odd_sol = Self::run_erg(&parity_game, &solver, i, &explicit.reduced, Owner::Odd)?;
 
-                        match solver {
-                            ExplicitSolvers::Spm => {
-                                // SPM can't handle the reduced game properly (as it needs to handle the controller vertices)
-                                // So we construct the full game instead.
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Register Game"
-                                );
-                                let rg_pg = rg.to_normal_game()?;
-
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-
-                                let mut solver =
-                                    pg_graph::explicit::solvers::small_progress::SmallProgressSolver::new(&rg_pg);
-
-                                rg.project_winners_original(&timed_solve!(solver.run()).winners)
+                                    if even_sol == odd_sol {
+                                        tracing::info!(k=i, "Discovered register index");
+                                        output = Some(even_sol);
+                                        break;
+                                    }
+                                }, "Finished running parametrised Lehtinen"
                             }
-                            ExplicitSolvers::PP => {
-                                // PP can't handle the reduced game properly (as it needs to handle the controller vertices)
-                                // So we construct the full game instead.
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Register Game"
-                                );
-                                let rg_pg = rg.to_small_game()?;
 
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-
-                                let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&rg_pg);
-                                let out = timed_solve!(solver.run());
-                                tracing::info!(n = solver.promotions, "Solved with promotions");
-
-                                rg.project_winners_original(&out.winners)
-                            }
-                            ExplicitSolvers::TL => {
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Register Game"
-                                );
-                                let rg_pg = rg.to_normal_game()?;
-
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-
-                                let mut solver =
-                                    pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&rg_pg);
-                                let out = timed_solve!(solver.run());
-                                tracing::info!(
-                                    tangles = solver.tangles.tangles_found,
-                                    dominions = solver.tangles.dominions_found,
-                                    iterations = solver.iterations,
-                                    "Solved"
-                                );
-
-                                rg.project_winners_original(&out.winners)
-                            }
-                            ExplicitSolvers::QZielonka { tangles } => {
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Register Game"
-                                );
-                                let rg_pg = rg.to_normal_game()?;
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-
-                                if tangles {
-                                    let mut solver =
-                                        pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&rg_pg);
-
-                                    let out = timed_solve!(solver.run());
-                                    tracing::info!(n = solver.iterations, "Solved with iterations");
-                                    rg.project_winners_original(&out.winners)
-                                } else {
-                                    let mut solver =
-                                        pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
-
-                                    let out = timed_solve!(solver.run());
-                                    tracing::info!(n = solver.iterations, "Solved with iterations");
-                                    rg.project_winners_original(&out.winners)
-                                }
-                            }
-                            ExplicitSolvers::Qlz { tangles } => {
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Register Game"
-                                );
-                                let rg_pg = rg.to_normal_game()?;
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-
-                                if tangles {
-                                    let mut solver =
-                                        pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&rg_pg);
-
-                                    let out = timed_solve!(solver.run());
-                                    tracing::info!(n = solver.iterations, "Solved with iterations");
-                                    rg.project_winners_original(&out.winners)
-                                } else {
-                                    let mut solver =
-                                        pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&rg_pg);
-
-                                    let out = timed_solve!(solver.run());
-                                    tracing::info!(n = solver.iterations, "Solved with iterations");
-                                    rg.project_winners_original(&out.winners)
-                                }
-                            }
-                            ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::PartialReduced => {
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021_reduced(&parity_game, k, self.controller.into()),
-                                    "Constructed Partial Reduced Register Game"
-                                );
-                                let rg_pg = rg.to_small_game()?;
-
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-                                let mut solver =
-                                    pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(&rg_pg, &rg);
-
-                                let solution = timed_solve!(solver.run());
-                                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
-                                rg.project_winners_original(&solution.winners)
-                            }
-                            ExplicitSolvers::Zielonka if explicit.reduced == RegisterReductionType::Reduced => {
-                                let rg = timed_solve!(
-                                    ReducedRegisterGame::construct_2021_reduced(
-                                        &parity_game,
-                                        k,
-                                        self.controller.into()
-                                    ),
-                                    "Constructed Reduced Register Game"
-                                );
-
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg.vertex_count(),
-                                    ratio = rg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg.edge_count(),
-                                    ratio = rg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-                                let mut solver =
-                                    pg_graph::explicit::solvers::fully_reduced_reg_zielonka::ZielonkaSolver::new(&rg);
-
-                                let solution = timed_solve!(solver.run());
-                                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
-                                rg.project_winners_original(&solution.winners)
-                            }
-                            ExplicitSolvers::Zielonka => {
-                                let rg = timed_solve!(
-                                    RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                                    "Constructed Register Game"
-                                );
-                                let rg_pg = rg.to_normal_game()?;
-
-                                tracing::debug!(
-                                    from_vertex = rg.original_game.vertex_count(),
-                                    to_vertex = rg_pg.vertex_count(),
-                                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                                    from_edges = rg.original_game.edge_count(),
-                                    to_edges = rg_pg.edge_count(),
-                                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
-                                    "Converted from parity game to register game"
-                                );
-                                let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(&rg_pg);
-
-                                let solution = timed_solve!(solver.run());
-                                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
-                                rg.project_winners_original(&solution.winners)
-                            }
+                            output.expect("Could not find a solution within the k bounds")
                         }
-                    }
+                    },
                 }
             }
-            SolveType::Symbolic(symbolic) => match symbolic.register_game_type {
-                RegisterGameType::Explicit => {
-                    let register_game = if let Some(k) = self.register_game_k {
-                        let k = k as u8;
+            SolveType::Symbolic(symbolic) => {
+                let solver = symbolic.solver.unwrap_or(SymbolicSolvers::Zielonka);
+                tracing::info!(?solver, "Using symbolic solver");
 
-                        tracing::debug!(k, "Constructing with register index");
-                        let register_game = timed_solve!(
-                            RegisterGame::construct_2021(&parity_game, k, self.controller.into()),
-                            "Constructed Register Game"
-                        );
-
-                        Some((register_game.to_normal_game()?, register_game))
-                    } else {
-                        None
-                    };
-
-                    let solver = symbolic.solver.unwrap_or(SymbolicSolvers::Zielonka);
-                    tracing::info!(?solver, "Using symbolic solver");
-
-                    let game_to_solve = if let Some((rg_pg, rg)) = &register_game {
-                        tracing::debug!(
-                            from_vertex = rg.original_game.vertex_count(),
-                            to_vertex = rg_pg.vertex_count(),
-                            ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
-                            from_edges = rg.original_game.edge_count(),
-                            to_edges = rg_pg.edge_count(),
-                            "Converted from parity game to register game"
-                        );
-                        rg_pg
-                    } else {
-                        &parity_game
-                    };
-
-                    let symbolic_game = timed_solve!(
-                        pg_graph::symbolic::SymbolicParityGame::<BDD>::from_explicit(game_to_solve),
-                        "Constructed Symbolic PG"
-                    )?;
-                    symbolic_game.gc();
-                    tracing::debug!(nodes = symbolic_game.bdd_node_count(), "Created symbolic game");
-
-                    let solution = match solver {
-                        SymbolicSolvers::Zielonka => {
-                            let mut solver = SymbolicZielonkaSolver::new(&symbolic_game);
-
-                            let solution = timed_solve!(solver.run());
-                            tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
-                            solution
-                        }
-                    };
-
-                    if let Some((_, rg)) = register_game {
-                        rg.project_winners_original(&solution.winners)
-                    } else {
-                        solution.winners
-                    }
-                }
-                RegisterGameType::Symbolic => {
-                    let solver = symbolic.solver.unwrap_or(SymbolicSolvers::Zielonka);
-                    tracing::info!(?solver, "Using symbolic solver");
-
-                    if let Some(k) = self.register_game_k {
-                        let k = k as u8;
-
-                        tracing::debug!(k, "Constructing with register index");
-
-                        if symbolic.one_hot {
-                            Self::run_srg_one_hot(&parity_game, &solver, k, self.controller.into())?
-                        } else {
-                            Self::run_srg(&parity_game, &solver, k, self.controller.into())?
-                        }
-                    } else {
+                match self.register_game_k {
+                    None => {
                         let game_to_solve = timed_solve!(
                             pg_graph::symbolic::SymbolicParityGame::<BDD>::from_explicit(&parity_game),
                             "Constructed Symbolic PG"
@@ -574,8 +339,41 @@ impl SolveCommand {
 
                         solution.winners
                     }
+                    Some(k) => match k {
+                        RegisterGameIndex::Number(k) => {
+                            let k = k as u8;
+
+                            tracing::debug!(k, "Constructing with register index");
+
+                            if symbolic.one_hot {
+                                Self::run_srg_one_hot(&parity_game, &solver, k, self.controller.into())?
+                            } else {
+                                Self::run_srg(&parity_game, &solver, k, self.controller.into())?
+                            }
+                        }
+                        RegisterGameIndex::Parametrised => {
+                            tracing::debug!("Running parametrised Lehtinen");
+                            let max_k = RegisterGame::max_register_index(&parity_game);
+                            let mut output = None;
+
+                            for i in 0..max_k {
+                                tracing::debug!(k=i, owner=?Owner::Even, "Constructing with register index");
+                                let even_sol = Self::run_srg(&parity_game, &solver, i, Owner::Even)?;
+                                tracing::debug!(k=i, owner=?Owner::Odd, "Constructing with register index");
+                                let odd_sol = Self::run_srg(&parity_game, &solver, i, Owner::Odd)?;
+
+                                if even_sol == odd_sol {
+                                    tracing::info!(k = i, "Discovered register index");
+                                    output = Some(even_sol);
+                                    break;
+                                }
+                            }
+
+                            output.expect("Could not find a solution within the k bounds")
+                        }
+                    },
                 }
-            },
+            }
         };
 
         let dot_output = self
@@ -608,6 +406,218 @@ impl SolveCommand {
         }
 
         Ok(())
+    }
+
+    fn run_erg(
+        parity_game: &ParityGame,
+        solver: &ExplicitSolvers,
+        k: u8,
+        reduced: &RegisterReductionType,
+        controller: Owner,
+    ) -> eyre::Result<Vec<Owner>> {
+        Ok(match solver {
+            ExplicitSolvers::Spm => {
+                // SPM can't handle the reduced game properly (as it needs to handle the controller vertices)
+                // So we construct the full game instead.
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021(&parity_game, k, controller.into()),
+                    "Constructed Register Game"
+                );
+                let rg_pg = rg.to_normal_game()?;
+
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+
+                let mut solver = pg_graph::explicit::solvers::small_progress::SmallProgressSolver::new(&rg_pg);
+
+                rg.project_winners_original(&timed_solve!(solver.run()).winners)
+            }
+            ExplicitSolvers::PP => {
+                // PP can't handle the reduced game properly (as it needs to handle the controller vertices)
+                // So we construct the full game instead.
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021(parity_game, k, controller),
+                    "Constructed Register Game"
+                );
+                let rg_pg = rg.to_small_game()?;
+
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+
+                let mut solver = pg_graph::explicit::solvers::priority_promotion::PPSolver::new(&rg_pg);
+                let out = timed_solve!(solver.run());
+                tracing::info!(n = solver.promotions, "Solved with promotions");
+
+                rg.project_winners_original(&out.winners)
+            }
+            ExplicitSolvers::TL => {
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021(&parity_game, k, controller.into()),
+                    "Constructed Register Game"
+                );
+                let rg_pg = rg.to_normal_game()?;
+
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+
+                let mut solver = pg_graph::explicit::solvers::tangle_learning::TangleSolver::new(&rg_pg);
+                let out = timed_solve!(solver.run());
+                tracing::info!(
+                    tangles = solver.tangles.tangles_found,
+                    dominions = solver.tangles.dominions_found,
+                    iterations = solver.iterations,
+                    "Solved"
+                );
+
+                rg.project_winners_original(&out.winners)
+            }
+            ExplicitSolvers::QZielonka { tangles } => {
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021(parity_game, k, controller),
+                    "Constructed Register Game"
+                );
+                let rg_pg = rg.to_normal_game()?;
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+
+                if *tangles {
+                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_zielonka::ZielonkaSolver::new(&rg_pg);
+
+                    let out = timed_solve!(solver.run());
+                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                    rg.project_winners_original(&out.winners)
+                } else {
+                    let mut solver = pg_graph::explicit::solvers::qpt_zielonka::ZielonkaSolver::new(&rg_pg);
+
+                    let out = timed_solve!(solver.run());
+                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                    rg.project_winners_original(&out.winners)
+                }
+            }
+            ExplicitSolvers::Qlz { tangles } => {
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021(parity_game, k, controller),
+                    "Constructed Register Game"
+                );
+                let rg_pg = rg.to_normal_game()?;
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+
+                if *tangles {
+                    let mut solver = pg_graph::explicit::solvers::qpt_tangle_liverpool::TLZSolver::new(&rg_pg);
+
+                    let out = timed_solve!(solver.run());
+                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                    rg.project_winners_original(&out.winners)
+                } else {
+                    let mut solver = pg_graph::explicit::solvers::qpt_liverpool::LiverpoolSolver::new(&rg_pg);
+
+                    let out = timed_solve!(solver.run());
+                    tracing::info!(n = solver.iterations, "Solved with iterations");
+                    rg.project_winners_original(&out.winners)
+                }
+            }
+            ExplicitSolvers::Zielonka if *reduced == RegisterReductionType::PartialReduced => {
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021_reduced(&parity_game, k, controller.into()),
+                    "Constructed Partial Reduced Register Game"
+                );
+                let rg_pg = rg.to_small_game()?;
+
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+                let mut solver = pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(&rg_pg, &rg);
+
+                let solution = timed_solve!(solver.run());
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                rg.project_winners_original(&solution.winners)
+            }
+            ExplicitSolvers::Zielonka if *reduced == RegisterReductionType::Reduced => {
+                let rg = timed_solve!(
+                    ReducedRegisterGame::construct_2021_reduced(&parity_game, k, controller.into()),
+                    "Constructed Reduced Register Game"
+                );
+
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg.vertex_count(),
+                    ratio = rg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg.edge_count(),
+                    ratio = rg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+                let mut solver = pg_graph::explicit::solvers::fully_reduced_reg_zielonka::ZielonkaSolver::new(&rg);
+
+                let solution = timed_solve!(solver.run());
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                rg.project_winners_original(&solution.winners)
+            }
+            ExplicitSolvers::Zielonka => {
+                let rg = timed_solve!(
+                    RegisterGame::construct_2021(parity_game, k, controller),
+                    "Constructed Register Game"
+                );
+                let rg_pg = rg.to_normal_game()?;
+
+                tracing::debug!(
+                    from_vertex = rg.original_game.vertex_count(),
+                    to_vertex = rg_pg.vertex_count(),
+                    ratio = rg_pg.vertex_count() / rg.original_game.vertex_count(),
+                    from_edges = rg.original_game.edge_count(),
+                    to_edges = rg_pg.edge_count(),
+                    ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
+                    "Converted from parity game to register game"
+                );
+                let mut solver = pg_graph::explicit::solvers::zielonka::ZielonkaSolver::new(&rg_pg);
+
+                let solution = timed_solve!(solver.run());
+                tracing::info!(n = solver.recursive_calls, "Solved with recursive calls");
+                rg.project_winners_original(&solution.winners)
+            }
+        })
     }
 
     fn run_srg(

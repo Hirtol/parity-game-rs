@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use oxidd_core::util::OptBool;
 use oxidd_core::WorkerManager;
 
@@ -48,7 +49,7 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
     fn zielonka(&mut self, game: &SymbolicParityGame<F>) -> symbolic::Result<(F, F)> {
         self.recursive_calls += 1;
 
-        // If all the vertices are ignord
+        // If all the vertices are ignored
         if game.vertices == game.base_false {
             Ok((game.base_false.clone(), game.base_false.clone()))
         } else {

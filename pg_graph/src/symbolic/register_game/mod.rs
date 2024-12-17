@@ -116,13 +116,17 @@ where
         })?;
 
         tracing::debug!("Starting symbolic parity game construction");
+        let now = std::time::Instant::now();
         let sg = SymbolicParityGame::from_explicit_impl_vars(
             explicit,
             manager.clone(),
             variables.vertex_vars().iter().cloned().collect(),
             edge_variables.vertex_vars().iter().cloned().collect(),
         )?;
-
+        tracing::debug!(took=?now.elapsed(), "Finished symbolic parity game construction");
+        // Track construction time
+        let now = std::time::Instant::now();
+        
         tracing::debug!("Starting player vertex set construction");
 
         let (s_even, s_odd) = match controller {
@@ -360,7 +364,9 @@ where
         }
 
         manager.with_manager_exclusive(|man| man.set_threading_enabled(true));
-
+        
+        tracing::debug!(took=?now.elapsed(), "Finished symbolic register game construction");
+        
         Ok(Self {
             k: k as Rank,
             controller,
