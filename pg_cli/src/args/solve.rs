@@ -356,17 +356,19 @@ impl SolveCommand {
                             let max_k = RegisterGame::max_register_index(&parity_game);
                             let mut output = None;
 
-                            for i in 0..max_k {
-                                tracing::debug!(k=i, owner=?Owner::Even, "Constructing with register index");
-                                let even_sol = Self::run_srg(&parity_game, &solver, i, Owner::Even)?;
-                                tracing::debug!(k=i, owner=?Owner::Odd, "Constructing with register index");
-                                let odd_sol = Self::run_srg(&parity_game, &solver, i, Owner::Odd)?;
-
-                                if even_sol == odd_sol {
-                                    tracing::info!(k = i, "Discovered register index");
-                                    output = Some(even_sol);
-                                    break;
-                                }
+                            timed_solve! {
+                                for i in 0..max_k {
+                                    tracing::debug!(k=i, owner=?Owner::Even, "Constructing with register index");
+                                    let even_sol = Self::run_srg(&parity_game, &solver, i, Owner::Even)?;
+                                    tracing::debug!(k=i, owner=?Owner::Odd, "Constructing with register index");
+                                    let odd_sol = Self::run_srg(&parity_game, &solver, i, Owner::Odd)?;
+    
+                                    if even_sol == odd_sol {
+                                        tracing::info!(k = i, "Discovered register index");
+                                        output = Some(even_sol);
+                                        break;
+                                    }
+                                }, "Finished running parametrised Lehtinen" 
                             }
 
                             output.expect("Could not find a solution within the k bounds")

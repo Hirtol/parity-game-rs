@@ -89,7 +89,7 @@ impl<'a, F: GeneralBooleanFunction> SymbolicZielonkaSolver<'a, F>
                     &mut even
                 };
                 *not_attraction_owner_set = not_attraction_owner_set.or(&b_attr)?;
-
+                
                 Ok((even, odd))
             }
         }
