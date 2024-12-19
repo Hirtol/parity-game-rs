@@ -470,7 +470,6 @@ impl BenchCommand {
                             std::thread::sleep(Duration::from_millis(10))
                         }
                     }
-                    tracing::info!("Stopping thread");
                 });
 
                 loop {
