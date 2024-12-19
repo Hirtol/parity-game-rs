@@ -91,6 +91,10 @@ struct AlgoRgCsvOutput {
     /// Total time to run explicit parametrised Lehtinen
     #[serde_as(as = "DurationSecondsWithFrac<f64>")]
     erg_lehtinen_time: Duration,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    erg_jit_lehtinen_time: Duration,
+    #[serde_as(as = "DurationSecondsWithFrac<f64>")]
+    erg_reduced_lehtinen_time: Duration,
     parity_game_states: usize,
 }
 
@@ -373,7 +377,7 @@ impl BenchCommand {
                 }
             }
         }
-        let algos = [Algos::Srg, Algos::Erg];
+        let algos = [Algos::Srg, Algos::Erg, Algos::ErgReduced, Algos::ErgJit];
 
         tracing::info!(?game, "Loading next parity game");
         let parity_game = pg_graph::load_parity_game(game)?;
@@ -422,13 +426,15 @@ impl BenchCommand {
                         final_cmd.arg("explicit")
                             .arg("-r")
                             .arg("param")
-                            .arg("-s partial-reduced")
+                            .arg("-s")
+                            .arg("partial-reduced")
                     },
                     Algos::ErgJit => {
                         final_cmd.arg("explicit")
                             .arg("-r")
                             .arg("param")
-                            .arg("-s reduced")
+                            .arg("-s")
+                            .arg("reduced")
                     }
                     _ => unreachable!(),
                 };
@@ -564,7 +570,7 @@ impl BenchCommand {
                         RG_CONSTR_RX.captures_iter(&std_out)
                     }
                     _ => {
-                        static RG_CONSTR_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Constructed Register Game elapsed=(.*)").unwrap());
+                        static RG_CONSTR_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Constructed.*?Register Game elapsed=(.*)").unwrap());
                         RG_CONSTR_RX.captures_iter(&std_out)
                     }
                 };
@@ -605,6 +611,8 @@ impl BenchCommand {
             reg_index: found_index,
             srg_lehtinen_time: results.entry(Algos::Srg).or_default().iter().sum::<Duration>() / RUNS,
             erg_lehtinen_time: results.entry(Algos::Erg).or_default().iter().sum::<Duration>() / RUNS,
+            erg_jit_lehtinen_time: results.entry(Algos::ErgJit).or_default().iter().sum::<Duration>() / RUNS,
+            erg_reduced_lehtinen_time: results.entry(Algos::ErgReduced).or_default().iter().sum::<Duration>() / RUNS,
             parity_game_states,
         })
     }
