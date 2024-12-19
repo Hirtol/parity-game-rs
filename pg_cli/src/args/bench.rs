@@ -50,8 +50,8 @@ pub enum BenchmarkObjective {
         #[clap(long = "exe")]
         cli_path: PathBuf,
         /// Timeout in seconds
-        #[clap(long, default_value = "30")]
-        timeout: u64,
+        #[clap(long, default_value = "30.0")]
+        timeout: f64,
         /// Register Game Benches
         #[clap(long)]
         rg: bool,
@@ -171,14 +171,14 @@ impl BenchCommand {
                     std::fs::create_dir_all(logs_dir)?;
 
                     if *rg {
-                        let out = Self::run_rg_bench_external(cli_path, temp_dir, logs_dir, &game.path(), Duration::from_secs(*timeout));
+                        let out = Self::run_rg_bench_external(cli_path, temp_dir, logs_dir, &game.path(), Duration::from_secs_f64(*timeout));
                         if let Ok(out) = &out {
                             tracing::info!("Completed game, results: {out:#?}");
                             writer.serialize(out)?;
                         }
                         out.map(|v| ())
                     } else {
-                        let out = Self::run_algo_bench_external(cli_path, temp_dir, logs_dir, &game.path(), Duration::from_secs(*timeout));
+                        let out = Self::run_algo_bench_external(cli_path, temp_dir, logs_dir, &game.path(), Duration::from_secs_f64(*timeout));
                         if let Ok(out) = &out {
                             tracing::info!("Completed game, results: {out:#?}");
                             writer.serialize(out)?;
@@ -471,25 +471,38 @@ impl BenchCommand {
 
                             let timeout_reached = {
                                 static SYMBOLIC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Finished symbolic parity game construction took=(.*)").unwrap());
+                                static GC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Garbage collection elapsed=(.*)").unwrap());
                                 static SOLVED_CNT_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Solving done elapsed").unwrap());
                                 
                                 match algo {
-                                    Algos::Srg => if let Some(constructed_game) = SYMBOLIC_RX.captures(&stdoutput) {
-                                        let mut match_count = SYMBOLIC_RX.find_iter(&stdoutput).count();
+                                    Algos::Srg => if SYMBOLIC_RX.is_match(&stdoutput) && GC_RX.is_match(&stdoutput) {
+                                        let mut found_construction_times = SYMBOLIC_RX.captures_iter(&stdoutput)
+                                            .flat_map(|m| m.get(1))
+                                            .map(|found_constr_time| {
+                                                let match_str = std::str::from_utf8(found_constr_time.as_bytes()).unwrap();
+                                                parse_duration(match_str).expect("Failed to parse duration")
+                                            })
+                                            .collect_vec();
+                                        let mut garbage_collection_time = GC_RX.captures_iter(&stdoutput)
+                                            .flat_map(|m| m.get(1))
+                                            .map(|found_gc_time| {
+                                                let match_str = std::str::from_utf8(found_gc_time.as_bytes()).unwrap();
+                                                parse_duration(match_str).expect("Failed to parse duration")
+                                            })
+                                            .collect_vec();
                                         let solved_cnt = SOLVED_CNT_RX.find_iter(&stdoutput).count();
-                                        // if we've found a match then we subtract RUNS * time_taken from now to allow a more generous timeout
-                                        let found_construction_time = constructed_game.get(1).expect("No construct time");
-                                        let match_str = std::str::from_utf8(found_construction_time.as_bytes())?;
-                                        let time_taken = parse_duration(match_str).ok_or_else(|| eyre::eyre!("Failed to parse duration: {}", match_str))?;
-                                        
+
                                         // This holds if we're busy creating a new game, then add 1 to match count
                                         // Otherwise just subtract the construction time.
-                                        if solved_cnt == match_count {
-                                            match_count += 1;
-                                        } 
-                                        
-                                        let symbolic_construct_time = time_taken * match_count as u32;
-                                        (now.elapsed().saturating_sub(symbolic_construct_time)) > timeout
+                                        if solved_cnt == found_construction_times.len() {
+                                            // Pretend that the current encoding will take a similar amount of time
+                                            found_construction_times.push(found_construction_times[0]);
+                                            garbage_collection_time.push(garbage_collection_time[0]);
+                                        }
+
+                                        // GC of the symbolic tree takes time which we account for here.
+                                        let total_time_taken = found_construction_times.iter().sum::<Duration>() + garbage_collection_time.iter().sum();
+                                        (now.elapsed().saturating_sub(total_time_taken)) > timeout
                                     } else {
                                         // Can't time out while constructing
                                         false
@@ -529,7 +542,7 @@ impl BenchCommand {
                             eyre::bail!(err);
                         }
                     }
-                    std::thread::sleep(Duration::from_millis(10));
+                    std::thread::sleep(Duration::from_millis(100));
                 }
                 if let Some(std) = &mut child.stdout {
                     let _ = std.read_to_end(&mut stdoutput)?;
@@ -541,20 +554,34 @@ impl BenchCommand {
                 std::fs::write(run_log, &std_out)?;
 
                 static RESULTS_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Results even_wins=(\d+) odd_wins=(\d+)").unwrap());
-                static SOLVING_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Finished running parametrised Lehtinen elapsed=(.*)").unwrap());
+                static SOLVING_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Solving done elapsed=(.*)").unwrap());
                 static RG_INDEX_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Discovered register index k=(\d+)").unwrap());
 
+                let solving = SOLVING_RX.captures_iter(&std_out);
+                let rg_construct = match algo {
+                    Algos::Srg => {
+                        static RG_CONSTR_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Finished symbolic register game construction took=(.*)").unwrap());
+                        RG_CONSTR_RX.captures_iter(&std_out)
+                    }
+                    _ => {
+                        static RG_CONSTR_RX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"Constructed Register Game elapsed=(.*)").unwrap());
+                        RG_CONSTR_RX.captures_iter(&std_out)
+                    }
+                };
                 let solution = RESULTS_RX.captures(&std_out).context("No results")?;
-                let solving = SOLVING_RX.captures(&std_out).context("No solve time")?;
                 let rg_index = RG_INDEX_RX.captures(&std_out).context("No solve time")?;
 
                 let output: (usize, usize) = (solution.get(1).context("No even")?.as_str().parse()?, solution.get(2).context("No even")?.as_str().parse()?);
 
-                let took = solving.get(1).context("No solving duration")?;
+                let mut total_solve_time = Duration::from_secs(0);
+                for (constr_time, solve_time) in solving.zip(rg_construct) {
+                    let constr_time = constr_time.get(1).expect("No construct time");
+                    let solve_time = solve_time.get(1).expect("No solve time");
+                    total_solve_time += parse_duration(constr_time.as_str()).ok_or_else(|| eyre::eyre!("Failed to parse duration: {}", constr_time.as_str()))?;
+                    total_solve_time += parse_duration(solve_time.as_str()).ok_or_else(|| eyre::eyre!("Failed to parse duration: {}", solve_time.as_str()))?;
+                }
                 let reg_index = rg_index.get(1).context("No register index found")?.as_str().parse()?;
                 found_index = Some(reg_index);
-                // let time_taken = Duration::from_secs_f64(f64::from_str(took.as_str())?);
-                let time_taken = parse_duration(took.as_str()).ok_or_else(|| eyre::eyre!("Failed to parse duration: {}", took.as_str()))?;
 
                 // Verify solution
                 if let Some(previous) = &previous_solution {
@@ -565,7 +592,7 @@ impl BenchCommand {
 
                 let to_mut = results.entry(*algo).or_insert_with(Vec::new);
 
-                to_mut.push(time_taken)
+                to_mut.push(total_solve_time)
             }
 
             tracing::debug!("Completed run: {i}")

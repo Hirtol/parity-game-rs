@@ -571,8 +571,14 @@ impl SolveCommand {
             SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, controller),
             "Constructed Register Game"
         )?;
-        let game_to_solve = register_game.to_symbolic_parity_game()?;
-        game_to_solve.gc();
+        let game_to_solve = timed_solve!(
+            {
+                let game_to_solve = register_game.to_symbolic_parity_game()?;
+                game_to_solve.gc();
+                game_to_solve
+            },
+            "Garbage collection"
+        );
         tracing::debug!(
             from_vertex = parity_game.vertex_count(),
             rg_vertex = game_to_solve.vertex_count(),
