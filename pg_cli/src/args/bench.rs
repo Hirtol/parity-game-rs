@@ -14,6 +14,7 @@ use pg_graph::{
 use regex::Regex;
 use serde_with::{serde_as, DurationSecondsWithFrac};
 use std::fmt::{Formatter, Write};
+use std::io::Read;
 use std::sync::{LazyLock, OnceLock};
 use std::{
     path::{Path, PathBuf},
@@ -438,7 +439,8 @@ impl BenchCommand {
                     .spawn()?;
                 let child_pid = sysinfo::Pid::from_u32(child.id());
                 let now = std::time::Instant::now();
-
+                let mut stdoutput = Vec::new();
+                let mut buf = vec![0; 1024];
                 loop {
                     match child.try_wait() {
                         Ok(Some(status)) => {
@@ -453,16 +455,52 @@ impl BenchCommand {
                             break;
                         }
                         Ok(None) => {
+                            if let Some(std) = &mut child.stdout {
+                                let bytes_read = std.read(&mut buf)?;
+                                stdoutput.extend_from_slice(&buf[..bytes_read])
+                            }
+
                             sys.refresh_processes(ProcessesToUpdate::All, true);
                             let oom = if let Some(proc) = sys.process(child_pid) {
                                 const MAX_MEM: u64 = 8e9 as u64;
                                 let mem_usage = proc.memory();
-                                // tracing::warn!("Child Process using Mem: {:?} MB", mem_usage as f64 / 10e5);
                                 mem_usage >= MAX_MEM
                             } else {
                                 false
                             };
-                            if now.elapsed() > timeout || oom {
+
+                            let timeout_reached = {
+                                static SYMBOLIC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Finished symbolic parity game construction took=(.*)").unwrap());
+                                static SOLVED_CNT_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Solving done elapsed").unwrap());
+                                
+                                match algo {
+                                    Algos::Srg => if let Some(constructed_game) = SYMBOLIC_RX.captures(&stdoutput) {
+                                        let mut match_count = SYMBOLIC_RX.find_iter(&stdoutput).count();
+                                        let solved_cnt = SOLVED_CNT_RX.find_iter(&stdoutput).count();
+                                        // if we've found a match then we subtract RUNS * time_taken from now to allow a more generous timeout
+                                        let found_construction_time = constructed_game.get(1).expect("No construct time");
+                                        let match_str = std::str::from_utf8(found_construction_time.as_bytes())?;
+                                        let time_taken = parse_duration(match_str).ok_or_else(|| eyre::eyre!("Failed to parse duration: {}", match_str))?;
+                                        
+                                        // This holds if we're busy creating a new game, then add 1 to match count
+                                        // Otherwise just subtract the construction time.
+                                        if solved_cnt == match_count {
+                                            match_count += 1;
+                                        } 
+                                        
+                                        let symbolic_construct_time = time_taken * match_count as u32;
+                                        (now.elapsed().saturating_sub(symbolic_construct_time)) > timeout
+                                    } else {
+                                        // Can't time out while constructing
+                                        false
+                                    }
+                                    _ => {
+                                        now.elapsed() > timeout
+                                    }
+                                }
+                            };
+
+                            if timeout_reached || oom {
                                 tracing::warn!(?timeout, ?algo, ?game, "Timeout or OOM reached, skipping and assuming 2 * timeout");
                                 let _ = child.kill();
                                 algos_to_skip.push(*algo);
@@ -470,6 +508,19 @@ impl BenchCommand {
                                 let mut to_mut = results.entry(*algo).insert_entry(Vec::new());
                                 // Assume it would've cost twice the time-out to run
                                 to_mut.get_mut().push(RUNS * timeout * 2);
+                                // Persist the log
+                                if let Some(std) = &mut child.stdout {
+                                    let _ = std.read_to_end(&mut stdoutput)?;
+                                }
+                                let mut std_out = String::from_utf8(stdoutput)?;
+                                if oom {
+                                    std_out.push_str("\nPREEMPTIVE EXIT: OOM REACHED");
+                                } else if timeout_reached {
+                                    std_out.push_str("\nPREEMPTIVE EXIT: TIMEOUT REACHED");
+                                }
+
+                                let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
+                                std::fs::write(run_log, &std_out)?;
                                 continue 'outer;
                             }
                         }
@@ -480,8 +531,11 @@ impl BenchCommand {
                     }
                     std::thread::sleep(Duration::from_millis(10));
                 }
-                let output = child.wait_with_output()?;
-                let std_out = String::from_utf8(output.stdout)?;
+                if let Some(std) = &mut child.stdout {
+                    let _ = std.read_to_end(&mut stdoutput)?;
+                }
+                // let output = child.wait_with_output()?;
+                let std_out = String::from_utf8(stdoutput)?;
 
                 let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
                 std::fs::write(run_log, &std_out)?;
