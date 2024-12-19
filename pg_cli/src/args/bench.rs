@@ -15,7 +15,8 @@ use regex::Regex;
 use serde_with::{serde_as, DurationSecondsWithFrac};
 use std::fmt::{Formatter, Write};
 use std::io::Read;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -87,14 +88,14 @@ struct AlgoRgCsvOutput {
     reg_index: Option<Rank>,
     /// Total time to run symbolic parametrised Lehtinen
     #[serde_as(as = "DurationSecondsWithFrac<f64>")]
-    srg_lehtinen_time: Duration,
+    srg_lehtinen_solve: Duration,
     /// Total time to run explicit parametrised Lehtinen
     #[serde_as(as = "DurationSecondsWithFrac<f64>")]
-    erg_lehtinen_time: Duration,
+    erg_lehtinen_solve: Duration,
     #[serde_as(as = "DurationSecondsWithFrac<f64>")]
-    erg_jit_lehtinen_time: Duration,
+    erg_jit_lehtinen_solve: Duration,
     #[serde_as(as = "DurationSecondsWithFrac<f64>")]
-    erg_reduced_lehtinen_time: Duration,
+    erg_reduced_lehtinen_solve: Duration,
     parity_game_states: usize,
 }
 
@@ -445,8 +446,33 @@ impl BenchCommand {
                     .spawn()?;
                 let child_pid = sysinfo::Pid::from_u32(child.id());
                 let now = std::time::Instant::now();
-                let mut stdoutput = Vec::new();
-                let mut buf = vec![0; 1024];
+                let stdoutput = Arc::new(Mutex::new(Vec::new()));
+
+                let cancel = Arc::new(AtomicBool::new(false));
+                let clone = stdoutput.clone();
+                let cancel_clone = cancel.clone();
+                let mut pipe = child.stdout.take();
+                std::thread::spawn(move || {
+                    let mut buf = vec![0; 1024];
+                    
+                    loop {
+                        if cancel_clone.load(Ordering::SeqCst) {
+                            if let Some(std) = &mut pipe {
+                                std.read_to_end(&mut clone.lock().unwrap()).unwrap();
+                            }
+                            cancel_clone.store(false, Ordering::SeqCst);
+                            break;
+                        } else {
+                            if let Some(std) = &mut pipe {
+                                let bytes_read = std.read(&mut buf).unwrap();
+                                clone.lock().unwrap().extend_from_slice(&buf[..bytes_read])
+                            }
+                            std::thread::sleep(Duration::from_millis(10))
+                        }
+                    }
+                    tracing::info!("Stopping thread");
+                });
+
                 loop {
                     match child.try_wait() {
                         Ok(Some(status)) => {
@@ -461,11 +487,6 @@ impl BenchCommand {
                             break;
                         }
                         Ok(None) => {
-                            if let Some(std) = &mut child.stdout {
-                                let bytes_read = std.read(&mut buf)?;
-                                stdoutput.extend_from_slice(&buf[..bytes_read])
-                            }
-
                             sys.refresh_processes(ProcessesToUpdate::All, true);
                             let oom = if let Some(proc) = sys.process(child_pid) {
                                 const MAX_MEM: u64 = 8e9 as u64;
@@ -479,7 +500,7 @@ impl BenchCommand {
                                 static SYMBOLIC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Finished symbolic parity game construction took=(.*)").unwrap());
                                 static GC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Garbage collection elapsed=(.*)").unwrap());
                                 static SOLVED_CNT_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Solving done elapsed").unwrap());
-                                
+                                let stdoutput = stdoutput.lock().unwrap();
                                 match algo {
                                     Algos::Srg => if SYMBOLIC_RX.is_match(&stdoutput) && GC_RX.is_match(&stdoutput) {
                                         let mut found_construction_times = SYMBOLIC_RX.captures_iter(&stdoutput)
@@ -527,11 +548,11 @@ impl BenchCommand {
                                 let mut to_mut = results.entry(*algo).insert_entry(Vec::new());
                                 // Assume it would've cost twice the time-out to run
                                 to_mut.get_mut().push(RUNS * timeout * 2);
-                                // Persist the log
-                                if let Some(std) = &mut child.stdout {
-                                    let _ = std.read_to_end(&mut stdoutput)?;
-                                }
-                                let mut std_out = String::from_utf8(stdoutput)?;
+                                // Persist the log, wait for our reading thread to finish
+                                cancel.store(true, Ordering::SeqCst);
+                                while cancel.load(Ordering::SeqCst) {}
+
+                                let mut std_out = String::from_utf8(stdoutput.lock().unwrap().to_vec())?;
                                 if oom {
                                     std_out.push_str("\nPREEMPTIVE EXIT: OOM REACHED");
                                 } else if timeout_reached {
@@ -548,13 +569,12 @@ impl BenchCommand {
                             eyre::bail!(err);
                         }
                     }
-                    std::thread::sleep(Duration::from_millis(100));
+                    std::thread::sleep(Duration::from_millis(10));
                 }
-                if let Some(std) = &mut child.stdout {
-                    let _ = std.read_to_end(&mut stdoutput)?;
-                }
-                // let output = child.wait_with_output()?;
-                let std_out = String::from_utf8(stdoutput)?;
+                // Persist the log, wait for our reading thread to finish
+                cancel.store(true, Ordering::SeqCst);
+                while cancel.load(Ordering::SeqCst) {}
+                let std_out = String::from_utf8(stdoutput.lock().unwrap().to_vec())?;
 
                 let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
                 std::fs::write(run_log, &std_out)?;
@@ -609,10 +629,10 @@ impl BenchCommand {
         Ok(AlgoRgCsvOutput {
             name: game.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
             reg_index: found_index,
-            srg_lehtinen_time: results.entry(Algos::Srg).or_default().iter().sum::<Duration>() / RUNS,
-            erg_lehtinen_time: results.entry(Algos::Erg).or_default().iter().sum::<Duration>() / RUNS,
-            erg_jit_lehtinen_time: results.entry(Algos::ErgJit).or_default().iter().sum::<Duration>() / RUNS,
-            erg_reduced_lehtinen_time: results.entry(Algos::ErgReduced).or_default().iter().sum::<Duration>() / RUNS,
+            srg_lehtinen_solve: results.entry(Algos::Srg).or_default().iter().sum::<Duration>() / RUNS,
+            erg_lehtinen_solve: results.entry(Algos::Erg).or_default().iter().sum::<Duration>() / RUNS,
+            erg_jit_lehtinen_solve: results.entry(Algos::ErgJit).or_default().iter().sum::<Duration>() / RUNS,
+            erg_reduced_lehtinen_solve: results.entry(Algos::ErgReduced).or_default().iter().sum::<Duration>() / RUNS,
             parity_game_states,
         })
     }
