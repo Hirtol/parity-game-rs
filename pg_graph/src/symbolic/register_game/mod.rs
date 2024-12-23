@@ -93,7 +93,7 @@ where
 
         let extra_priorities = if controller == Owner::Even { 1 } else { 2 };
         let max_reg_priority = 2 * k + extra_priorities;
-        let register_bits_needed = (explicit.priority_max() as f64 + 1.).log2().ceil() as usize;
+        let register_bits_needed = (explicit.priority_max() as f64 + 1.).log2().ceil().max(1.) as usize;
         // Calculate the amount of variables we'll need for the binary encodings of the registers and vertices.
         let n_register_vars = register_bits_needed * num_registers;
         let n_vertex_vars = (explicit.vertex_count() as f64).log2().ceil() as usize;

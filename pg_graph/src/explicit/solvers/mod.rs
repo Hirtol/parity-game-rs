@@ -312,10 +312,10 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         let mut current_original_vertex_id = game.underlying_vertex_id(v);
                         let mut current_group_has_edge = attract_set.contains(v.index());
                         let mut output = true;
-
+                        
                         for v in iter {
                             let node_original_v = game.underlying_vertex_id(v);
-
+                        
                             if current_original_vertex_id != node_original_v {
                                 if !current_group_has_edge {
                                     output = false;
@@ -332,11 +332,11 @@ impl<Ix: IndexType> AttractionComputer<Ix> {
                         }
                         // Shorter, but substantially slower way of computing the above
                         // game.edges(predecessor)
-                        //         .chunk_by(|v| game.get(*v).unwrap().original_v)
+                        //         .chunk_by(|v| game.underlying_vertex_id(*v))
                         //         .into_iter()
                         //         .all(|(_, mut chunk)| {
-                        //             chunk.any(|v| attract_set.contains(&v))
-                        //         });
+                        //             chunk.any(|v| attract_set.contains(v.index()))
+                        //         })
                         output
                     }
                 } else {
