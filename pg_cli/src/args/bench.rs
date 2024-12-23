@@ -454,7 +454,7 @@ impl BenchCommand {
                 let mut pipe = child.stdout.take();
                 std::thread::spawn(move || {
                     let mut buf = vec![0; 1024];
-                    
+
                     loop {
                         if cancel_clone.load(Ordering::SeqCst) {
                             if let Some(std) = &mut pipe {
@@ -480,6 +480,18 @@ impl BenchCommand {
 
                                 tracing::error!("Failed to execute {algo:?}, status code: {status:?}, out: {}, err: {}", String::from_utf8(output.stdout)?, String::from_utf8(output.stderr)?);
                                 algos_to_skip.push(*algo);
+                                let mut to_mut = results.entry(*algo).insert_entry(Vec::new());
+                                // Assume it would've cost twice the time-out to run
+                                to_mut.get_mut().push(RUNS * timeout * 2);
+                                // Persist the log, wait for our reading thread to finish
+                                cancel.store(true, Ordering::SeqCst);
+                                while cancel.load(Ordering::SeqCst) {}
+
+                                let mut std_out = String::from_utf8(stdoutput.lock().unwrap().to_vec())?;
+                                std_out.push_str("\nPREEMPTIVE EXIT: CRASHED");
+
+                                let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
+                                std::fs::write(run_log, &std_out)?;
                                 continue 'outer;
                             };
                             // Exited successfully
@@ -568,7 +580,7 @@ impl BenchCommand {
                             eyre::bail!(err);
                         }
                     }
-                    std::thread::sleep(Duration::from_millis(10));
+                    std::thread::sleep(Duration::from_millis(100));
                 }
                 // Persist the log, wait for our reading thread to finish
                 cancel.store(true, Ordering::SeqCst);

@@ -423,21 +423,10 @@ where
     /// The returned BDDs will reference _only_ the variables corresponding to the binary encoding of the original parity game's vertices.
     pub fn projected_winning_regions(&self, w_even: &F, w_odd: &F) -> symbolic::Result<(F, F)> {
         // The principle is simple:
-        // Every vertex with zeroed registers, zero priority, and next move `reset`, is implicitly a 'starting' vertice in the register game.
-        // Only one such vertex would exist for every vertex in the underlying parity game, so we can safely use their result
-        // for the desired effect.
-        let zero_registers = self
-            .variables
-            .register_vars()
-            .iter()
-            .try_fold(self.base_true.clone(), |acc, next| acc.diff(next))?;
-        let zero_prio = CachedBinaryEncoder::encode_impl(self.variables.priority_vars(), 0u32)?;
+        // The register game vertices with the same underlying vertex in the parity game should all belong to the same winning region by definition.
+        // So we can do a simple projection as below.
 
-        let projector_func = zero_registers
-            .and(&zero_prio)?
-            .and(&self.variables.next_move_var().not()?)?;
-
-        Ok((w_even.and(&projector_func)?, w_odd.and(&projector_func)?))
+        Ok((w_even.clone(), w_odd.clone()))
     }
 
     /// Project the winning regions within the register game to the underlying vertices of the original parity game.
@@ -638,11 +627,11 @@ fn check_rg_invariants(pg: &ParityGame) -> symbolic::Result<()> {
 
     // This is implicitly assumed in the definition of the game, and is used in our projection and E_i construction.
     // This could _most likely_ just be replaced by using the lowest priority in the game, but cba to test that right now.
-    if !priorities.contains(&0) {
-        return Err(symbolic::BddError::InvariantViolated(
-            "A register game requires a zero priority to be present in the game".to_string(),
-        ));
-    }
+    // if !priorities.contains(&0) {
+    //     return Err(symbolic::BddError::InvariantViolated(
+    //         "A register game requires a zero priority to be present in the game".to_string(),
+    //     ));
+    // }
 
     // if priorities.len() < 2 {
     //     return Err(symbolic::BddError::InvariantViolated("A register game requires at least two distinct priorities".to_string()));
