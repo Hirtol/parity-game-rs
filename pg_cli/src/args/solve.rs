@@ -39,6 +39,9 @@ pub struct SolveCommand {
     /// Green = Even, Red = Odd
     #[clap(short = 'd', global = true)]
     solution_dot: Option<PathBuf>,
+    /// Only parse/convert the (register) game, don't try to solve it.
+    #[clap(short = 'n', global = true)]
+    no_solve: bool,
     /// Whether to print which vertices are won by which player.
     #[clap(short, global = true)]
     print_solution: bool,
@@ -288,6 +291,7 @@ impl SolveCommand {
                             k as u8,
                             &explicit.reduced,
                             self.controller.into(),
+                            self.no_solve
                         )?,
                         RegisterGameIndex::Parametrised => {
                             tracing::debug!("Running parametrised Lehtinen");
@@ -297,9 +301,9 @@ impl SolveCommand {
                             timed_solve! {
                                 for i in 0..max_k {
                                     tracing::debug!(k=i, owner=?Owner::Even, "Constructing with register index");
-                                    let even_sol = Self::run_erg(&parity_game, &solver, i, &explicit.reduced, Owner::Even)?;
+                                    let even_sol = Self::run_erg(&parity_game, &solver, i, &explicit.reduced, Owner::Even, self.no_solve)?;
                                     tracing::debug!(k=i, owner=?Owner::Odd, "Constructing with register index");
-                                    let odd_sol = Self::run_erg(&parity_game, &solver, i, &explicit.reduced, Owner::Odd)?;
+                                    let odd_sol = Self::run_erg(&parity_game, &solver, i, &explicit.reduced, Owner::Odd, self.no_solve)?;
 
                                     if even_sol == odd_sol {
                                         tracing::info!(k=i, "Discovered register index");
@@ -348,7 +352,7 @@ impl SolveCommand {
                             if symbolic.one_hot {
                                 Self::run_srg_one_hot(&parity_game, &solver, k, self.controller.into())?
                             } else {
-                                Self::run_srg(&parity_game, &solver, k, self.controller.into())?
+                                Self::run_srg(&parity_game, &solver, k, self.controller.into(), self.no_solve)?
                             }
                         }
                         RegisterGameIndex::Parametrised => {
@@ -359,9 +363,9 @@ impl SolveCommand {
                             timed_solve! {
                                 for i in 0..max_k {
                                     tracing::debug!(k=i, owner=?Owner::Even, "Constructing with register index");
-                                    let even_sol = Self::run_srg(&parity_game, &solver, i, Owner::Even)?;
+                                    let even_sol = Self::run_srg(&parity_game, &solver, i, Owner::Even, self.no_solve)?;
                                     tracing::debug!(k=i, owner=?Owner::Odd, "Constructing with register index");
-                                    let odd_sol = Self::run_srg(&parity_game, &solver, i, Owner::Odd)?;
+                                    let odd_sol = Self::run_srg(&parity_game, &solver, i, Owner::Odd, self.no_solve)?;
     
                                     if even_sol == odd_sol {
                                         tracing::info!(k = i, "Discovered register index");
@@ -416,9 +420,12 @@ impl SolveCommand {
         k: u8,
         reduced: &RegisterReductionType,
         controller: Owner,
+        skip_solve: bool,
     ) -> eyre::Result<Vec<Owner>> {
         macro_rules! make_rg_pg {
             () => {{
+                tracing::debug!(k, "Constructing with register index");
+                
                 let rg = timed_solve!(
                     RegisterGame::construct_2021(&parity_game, k, controller.into()),
                     "Constructed Register Game"
@@ -434,6 +441,11 @@ impl SolveCommand {
                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                     "Converted from parity game to register game"
                 );
+                
+                if skip_solve {
+                    return Ok(Vec::new());
+                }
+                
                 (rg, rg_pg)
             }};
         }
@@ -508,6 +520,8 @@ impl SolveCommand {
                 }
             }
             ExplicitSolvers::Zielonka if *reduced == RegisterReductionType::PartialReduced => {
+                tracing::debug!(k, "Constructing with register index");
+                
                 let rg = timed_solve!(
                     RegisterGame::construct_2021_reduced(parity_game, k, controller),
                     "Constructed Partial Reduced Register Game"
@@ -523,6 +537,10 @@ impl SolveCommand {
                     ratio = rg_pg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                     "Converted from parity game to register game"
                 );
+                if skip_solve {
+                    return Ok(Vec::new())
+                }
+                
                 let mut solver = pg_graph::explicit::solvers::register_zielonka::ZielonkaSolver::new(&rg_pg, &rg);
 
                 let solution = timed_solve!(solver.run());
@@ -530,6 +548,8 @@ impl SolveCommand {
                 rg.project_winners_original(&solution.winners)
             }
             ExplicitSolvers::Zielonka if *reduced == RegisterReductionType::Reduced => {
+                tracing::debug!(k, "Constructing with register index");
+                
                 let rg = timed_solve!(
                     ReducedRegisterGame::construct_2021_reduced(parity_game, k, controller),
                     "Constructed Reduced Register Game"
@@ -544,6 +564,10 @@ impl SolveCommand {
                     ratio = rg.edge_count() as f64 / rg.original_game.edge_count() as f64,
                     "Converted from parity game to register game"
                 );
+                if skip_solve {
+                    return Ok(Vec::new())
+                }
+                
                 let mut solver = pg_graph::explicit::solvers::fully_reduced_reg_zielonka::ZielonkaSolver::new(&rg);
 
                 let solution = timed_solve!(solver.run());
@@ -566,6 +590,7 @@ impl SolveCommand {
         solver: &SymbolicSolvers,
         k: u8,
         controller: Owner,
+        skip_solve: bool,
     ) -> eyre::Result<Vec<Owner>> {
         let register_game = timed_solve!(
             SymbolicRegisterGame::<BDD>::from_symbolic(parity_game, k, controller),
@@ -586,6 +611,9 @@ impl SolveCommand {
             ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
             "Converted from parity game to symbolic register game"
         );
+        if skip_solve {
+            return Ok(Vec::new())
+        }
         #[cfg(not(feature = "dhat-heap"))]
         tracing::debug!("Current memory usage: {} MB", crate::PEAK_ALLOC.current_usage_as_mb());
         let (w_even, w_odd) = match solver {

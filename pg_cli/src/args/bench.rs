@@ -1,3 +1,4 @@
+use ahash::HashMap;
 use eyre::{eyre, ContextCompat};
 use itertools::Itertools;
 use pg_graph::{
@@ -51,12 +52,26 @@ pub enum BenchmarkObjective {
         #[clap(long = "exe")]
         cli_path: PathBuf,
         /// Timeout in seconds
-        #[clap(long, default_value = "30.0")]
+        #[clap(long, default_value = "50.0")]
         timeout: f64,
         /// Register Game Benches
         #[clap(long)]
         rg: bool,
     },
+    RgConstruct {
+        #[clap(default_value = "temp_dir")]
+        temp_dir: PathBuf,
+        #[clap(default_value = "logs")]
+        logs_dir: PathBuf,
+        #[clap(long = "exe")]
+        cli_path: PathBuf,
+        /// Timeout in seconds
+        #[clap(long, default_value = "50.0")]
+        timeout: f64,
+        /// CSV file which contains the register indexes.
+        #[clap(default_value = "r_index.csv")]
+        index_map: PathBuf,
+    }
 }
 
 #[serde_as]
@@ -190,6 +205,22 @@ impl BenchCommand {
                         }
                         out.map(|v| ())
                     }
+                }
+                BenchmarkObjective::RgConstruct { temp_dir, logs_dir, cli_path, timeout, index_map } => {
+                    let mut reader = csv::ReaderBuilder::default()
+                        .from_path(index_map)?;
+
+                    std::fs::create_dir_all(temp_dir)?;
+                    std::fs::create_dir_all(logs_dir)?;
+                    let Some(r_index) = reader.records().flatten().find(|n| game.file_name().to_string_lossy().contains(n.get(0).unwrap())) else {
+                        tracing::warn!("Skipping: {:?} due to missing register index", game);
+                        continue;
+                    };
+                    let k: f32 = r_index.get(1).context("no r-index")?.parse()?;
+                    let k = k as u8;
+
+                    Self::run_rg_construct_bench_external(cli_path, temp_dir, logs_dir, &game.path(), Duration::from_secs_f64(*timeout), k)?;
+                    Ok(())
                 }
             };
 
@@ -378,7 +409,7 @@ impl BenchCommand {
                 }
             }
         }
-        let algos = [Algos::Srg, Algos::Erg, Algos::ErgReduced, Algos::ErgJit];
+        let algos = [Algos::Srg, Algos::ErgReduced];
 
         tracing::info!(?game, "Loading next parity game");
         let parity_game = pg_graph::load_parity_game(game)?;
@@ -498,7 +529,7 @@ impl BenchCommand {
                             break;
                         }
                         Ok(None) => {
-                            sys.refresh_processes(ProcessesToUpdate::All, true);
+                            sys.refresh_processes(ProcessesToUpdate::Some(&[child_pid]), true);
                             let oom = if let Some(proc) = sys.process(child_pid) {
                                 const MAX_MEM: u64 = 8e9 as u64;
                                 let mem_usage = proc.memory();
@@ -646,6 +677,238 @@ impl BenchCommand {
             erg_reduced_lehtinen_solve: results.entry(Algos::ErgReduced).or_default().iter().sum::<Duration>() / RUNS,
             parity_game_states,
         })
+    }
+
+    /// # Arguments
+    /// * `indexes` - Game name -> Register-index map
+    #[tracing::instrument(skip_all, name = "Run benchmark")]
+    fn run_rg_construct_bench_external(cli_path: &Path, tmp_dir: &Path, logs_dir: &Path, game: &Path, timeout: Duration, k: u8) -> eyre::Result<()> {
+        use crate::args::solve::ExplicitSolvers::*;
+        #[derive(PartialOrd, PartialEq, Debug, Copy, Clone, Hash, Ord, Eq)]
+        enum Algos {
+            Srg,
+            Erg,
+            ErgReduced,
+            ErgJit,
+        }
+        impl std::fmt::Display for Algos {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Algos::Srg => f.write_str("srg"),
+                    Algos::Erg => f.write_str("erg"),
+                    Algos::ErgReduced => f.write_str("ergreduced"),
+                    Algos::ErgJit => f.write_str("ergjit"),
+                }
+            }
+        }
+        let algos = [Algos::Srg, Algos::ErgReduced, Algos::Erg, Algos::ErgJit];
+
+        tracing::info!(?game, "Loading next parity game");
+        let parity_game = pg_graph::load_parity_game(game)?;
+        // Serialize the parity game for faster loading
+        let temp_pg = tmp_dir.join(game.with_extension("pgrs").file_name().unwrap());
+        std::fs::write(&temp_pg, bitcode::serialize(&parity_game)?)?;
+
+        let make_cmd = || {
+            let mut cmd = std::process::Command::new(cli_path);
+            cmd.arg("s").arg(&temp_pg).arg("--simple-trace").arg("-n");
+            cmd
+        };
+
+        // 3 runs for each for consistency
+        const RUNS: u32 = 3;
+        let mut algos_to_skip = Vec::new();
+        let mut sys = sysinfo::System::new_all();
+
+        for i in 0..RUNS {
+            // For verification whilst running the benchmarks, just in case.
+            let mut previous_solution: Option<(usize, usize)> = None;
+
+            'outer: for algo in &algos {
+                if algos_to_skip.contains(algo) {
+                    tracing::trace!(?algo, "Skipping due to previous timeout");
+                    continue;
+                }
+                tracing::debug!(?i, ?algo, "Running next algorithm");
+                let mut final_cmd = make_cmd();
+                match algo {
+                    Algos::Srg => {
+                        final_cmd.arg("symbolic")
+                            .arg("-r")
+                            .arg(format!("{k}"))
+                    }
+                    Algos::Erg => {
+                        final_cmd.arg("explicit")
+                            .arg("-r")
+                            .arg(format!("{k}"))
+                    },
+                    Algos::ErgReduced => {
+                        final_cmd.arg("explicit")
+                            .arg("-r")
+                            .arg(format!("{k}"))
+                            .arg("-s")
+                            .arg("partial-reduced")
+                    },
+                    Algos::ErgJit => {
+                        final_cmd.arg("explicit")
+                            .arg("-r")
+                            .arg(format!("{k}"))
+                            .arg("-s")
+                            .arg("reduced")
+                    }
+                    _ => unreachable!(),
+                };
+
+                let mut child = final_cmd
+                    .stderr(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()?;
+                let child_pid = sysinfo::Pid::from_u32(child.id());
+                let now = std::time::Instant::now();
+                let stdoutput = Arc::new(Mutex::new(Vec::new()));
+
+                let cancel = Arc::new(AtomicBool::new(false));
+                let clone = stdoutput.clone();
+                let cancel_clone = cancel.clone();
+                let mut pipe = child.stdout.take();
+                std::thread::spawn(move || {
+                    let mut buf = vec![0; 1024];
+
+                    loop {
+                        if cancel_clone.load(Ordering::SeqCst) {
+                            if let Some(std) = &mut pipe {
+                                std.read_to_end(&mut clone.lock().unwrap()).unwrap();
+                            }
+                            cancel_clone.store(false, Ordering::SeqCst);
+                            break;
+                        } else {
+                            if let Some(std) = &mut pipe {
+                                let bytes_read = std.read(&mut buf).unwrap();
+                                clone.lock().unwrap().extend_from_slice(&buf[..bytes_read])
+                            }
+                            std::thread::sleep(Duration::from_millis(10))
+                        }
+                    }
+                });
+
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            if !status.success() {
+                                let output = child.wait_with_output()?;
+
+                                tracing::error!("Failed to execute {algo:?}, status code: {status:?}, out: {}, err: {}", String::from_utf8(output.stdout)?, String::from_utf8(output.stderr)?);
+                                algos_to_skip.push(*algo);
+                                // Persist the log, wait for our reading thread to finish
+                                cancel.store(true, Ordering::SeqCst);
+                                while cancel.load(Ordering::SeqCst) {}
+
+                                let mut std_out = String::from_utf8(stdoutput.lock().unwrap().to_vec())?;
+                                std_out.push_str("\nPREEMPTIVE EXIT: CRASHED");
+
+                                let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
+                                std::fs::write(run_log, &std_out)?;
+                                continue 'outer;
+                            };
+                            // Exited successfully
+                            break;
+                        }
+                        Ok(None) => {
+                            sys.refresh_processes(ProcessesToUpdate::Some(&[child_pid]), true);
+                            let oom = if let Some(proc) = sys.process(child_pid) {
+                                const MAX_MEM: u64 = 8e9 as u64;
+                                let mem_usage = proc.memory();
+                                mem_usage >= MAX_MEM
+                            } else {
+                                false
+                            };
+
+                            let timeout_reached = {
+                                static SYMBOLIC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Finished symbolic parity game construction took=(.*)").unwrap());
+                                static GC_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Garbage collection elapsed=(.*)").unwrap());
+                                static SOLVED_CNT_RX: LazyLock<regex::bytes::Regex> = LazyLock::new(|| regex::bytes::Regex::new(r"Solving done elapsed").unwrap());
+                                let stdoutput = stdoutput.lock().unwrap();
+                                match algo {
+                                    Algos::Srg => if SYMBOLIC_RX.is_match(&stdoutput) && GC_RX.is_match(&stdoutput) {
+                                        let mut found_construction_times = SYMBOLIC_RX.captures_iter(&stdoutput)
+                                            .flat_map(|m| m.get(1))
+                                            .map(|found_constr_time| {
+                                                let match_str = std::str::from_utf8(found_constr_time.as_bytes()).unwrap();
+                                                parse_duration(match_str).expect("Failed to parse duration")
+                                            })
+                                            .collect_vec();
+                                        let mut garbage_collection_time = GC_RX.captures_iter(&stdoutput)
+                                            .flat_map(|m| m.get(1))
+                                            .map(|found_gc_time| {
+                                                let match_str = std::str::from_utf8(found_gc_time.as_bytes()).unwrap();
+                                                parse_duration(match_str).expect("Failed to parse duration")
+                                            })
+                                            .collect_vec();
+                                        let solved_cnt = SOLVED_CNT_RX.find_iter(&stdoutput).count();
+
+                                        // This holds if we're busy creating a new game, then add 1 to match count
+                                        // Otherwise just subtract the construction time.
+                                        if solved_cnt == found_construction_times.len() {
+                                            // Pretend that the current encoding will take a similar amount of time
+                                            found_construction_times.push(found_construction_times[0]);
+                                            garbage_collection_time.push(garbage_collection_time[0]);
+                                        }
+
+                                        // GC of the symbolic tree takes time which we account for here.
+                                        let total_time_taken = found_construction_times.iter().sum::<Duration>() + garbage_collection_time.iter().sum();
+                                        (now.elapsed().saturating_sub(total_time_taken)) > timeout
+                                    } else {
+                                        // Can't time out while constructing
+                                        false
+                                    }
+                                    _ => {
+                                        now.elapsed() > timeout
+                                    }
+                                }
+                            };
+
+                            if timeout_reached || oom {
+                                tracing::warn!(?timeout, ?algo, ?game, "Timeout or OOM reached, skipping and assuming 2 * timeout");
+                                let _ = child.kill();
+                                algos_to_skip.push(*algo);
+                                // Persist the log, wait for our reading thread to finish
+                                cancel.store(true, Ordering::SeqCst);
+                                while cancel.load(Ordering::SeqCst) {}
+
+                                let mut std_out = String::from_utf8(stdoutput.lock().unwrap().to_vec())?;
+                                if oom {
+                                    std_out.push_str("\nPREEMPTIVE EXIT: OOM REACHED");
+                                } else if timeout_reached {
+                                    std_out.push_str("\nPREEMPTIVE EXIT: TIMEOUT REACHED");
+                                }
+
+                                let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
+                                std::fs::write(run_log, &std_out)?;
+                                continue 'outer;
+                            }
+                        }
+                        Err(err) => {
+                            tracing::error!(?err, "Underlying process panicked");
+                            eyre::bail!(err);
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                // Persist the log, wait for our reading thread to finish
+                cancel.store(true, Ordering::SeqCst);
+                while cancel.load(Ordering::SeqCst) {}
+                let std_out = String::from_utf8(stdoutput.lock().unwrap().to_vec())?;
+
+                let run_log = logs_dir.join(format!("{}_{algo}_n_{i}.txt", game.file_stem().unwrap().to_string_lossy()));
+                std::fs::write(run_log, &std_out)?;
+            }
+
+            tracing::debug!("Completed run: {i}")
+        }
+
+        std::fs::remove_file(temp_pg)?;
+
+        Ok(())
     }
 
     #[tracing::instrument(name = "Run benchmark")]
