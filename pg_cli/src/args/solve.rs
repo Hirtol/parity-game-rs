@@ -611,11 +611,13 @@ impl SolveCommand {
             ratio = game_to_solve.vertex_count() / parity_game.vertex_count(),
             "Converted from parity game to symbolic register game"
         );
+        #[cfg(not(feature = "dhat-heap"))]
+        tracing::debug!("Current memory usage: {} MB", crate::PEAK_ALLOC.current_usage_as_mb());
+
         if skip_solve {
             return Ok(Vec::new())
         }
-        #[cfg(not(feature = "dhat-heap"))]
-        tracing::debug!("Current memory usage: {} MB", crate::PEAK_ALLOC.current_usage_as_mb());
+        
         let (w_even, w_odd) = match solver {
             SymbolicSolvers::Zielonka => {
                 let mut solver = SymbolicRegisterZielonkaSolver::new(&register_game);
