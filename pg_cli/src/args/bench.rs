@@ -722,8 +722,6 @@ impl BenchCommand {
 
         for i in 0..RUNS {
             // For verification whilst running the benchmarks, just in case.
-            let mut previous_solution: Option<(usize, usize)> = None;
-
             'outer: for algo in &algos {
                 if algos_to_skip.contains(algo) {
                     tracing::trace!(?algo, "Skipping due to previous timeout");
