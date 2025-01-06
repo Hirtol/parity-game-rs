@@ -26,7 +26,6 @@ impl<'a> LiverpoolSolver<'a> {
     }
 
     #[tracing::instrument(name = "Run Liverpool Zielonka", skip(self))]
-    // #[profiling::function]
     pub fn run(&mut self) -> SolverOutput {
         crate::debug!("Searching with min_precision: {}", self.min_precision);
         let (_even, odd) = self.zielonka(
@@ -38,8 +37,7 @@ impl<'a> LiverpoolSolver<'a> {
         SolverOutput::from_winning(self.game.vertex_count(), &odd)
     }
 
-    /// Returns the winning regions `(W_even, W_odd)` as well as a flag indicating whether the results that were obtained
-    /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
+    /// Returns the winning regions `(W_even, W_odd)`
     fn zielonka<T: ParityGraph<u32>>(&mut self, game: &SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet) {
         self.iterations += 1;
         if precision_odd == 0 {
@@ -83,8 +81,6 @@ impl<'a> LiverpoolSolver<'a> {
             return even_and_odd(region_owner, g_1.game_vertices, opp)
         }
 
-        // We need to use a compressed priority starting set, or else the assumption that even and odd alternate is violated
-        // This would cause problems in the full precision call below.
         let starting_set = g_1.vertices_by_compressed_priority(d);
         let starting_set = AttractionComputer::make_starting_set(game, starting_set);
 

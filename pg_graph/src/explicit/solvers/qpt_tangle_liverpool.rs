@@ -77,8 +77,8 @@ impl<'a> TLZSolver<'a> {
         SolverOutput::from_winning(self.game.vertex_count(), &w_odd)
     }
 
-    /// Returns the winning regions `(W_even, W_odd)` as well as a flag indicating whether the results that were obtained
-    /// used an early cut-off using the `precision_even/odd` parameters (`false` if so).
+    /// Returns the winning regions `(W_even, W_odd)`, or a dominion if the last returned item in the tuple is [`Some`]
+    /// The dominion should be removed before restarting the search.
     fn zielonka<T: ParityGraph<u32> + OptimisedGraph<u32>>(&mut self, root_game: &SubGame<u32, T>, game: &SubGame<u32, T>, precision_even: usize, precision_odd: usize) -> (VertexSet, VertexSet, Option<Dominion>) {
         self.iterations += 1;
         if precision_odd == 0 {
@@ -126,15 +126,12 @@ impl<'a> TLZSolver<'a> {
             return (e, o, None)
         }
 
-        // We need to use a compressed priority starting set, or else the assumption that even and odd alternate is violated
-        // This would cause problems in the full precision call below.
         let starting_set = g_1.vertices_by_compressed_priority(d);
         let starting_set = AttractionComputer::make_starting_set(game, starting_set);
 
         crate::debug!("Starting vertices attractor: {:?}", starting_set.printable_vertices());
         // Reset the strategy for top vertices for better leak detection
         for v in starting_set.ones() {
-            // self.strategy.fill(VertexId::new(NO_STRATEGY as usize));
             self.strategy[v] = VertexId::new(NO_STRATEGY as usize);
         }
 
